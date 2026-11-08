@@ -84,6 +84,23 @@ impl Source {
     }
 }
 
+/// What ranking knows of a copy (`rank::factors`, `rank::sound`): its format and quality, the
+/// bitrate from its size and the song's length when the peer didn't report one. No speed.
+pub fn offer(s: &Source, duration: Option<u32>) -> Offer<'_> {
+    let quality = s.quality(duration);
+    Offer {
+        ext: &s.ext,
+        lossless: quality.lossless,
+        kbps: Some(quality.kbps).filter(|k| *k > 0),
+        khz: s.facts.khz,
+        bits: s.facts.bits,
+        speed: 0,
+        free_slot: s.free_slot,
+        queue: s.queue,
+        stalled_before: false,
+    }
+}
+
 /// A source with its score, as `GET /api/tracks/{id}/sources` returns it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -252,8 +269,21 @@ impl Sources {
     /// pass its minimum by its `pick`, then the rest by the same order, then peers whose queue
     /// is too long. `duration` (the song's) judges files whose bitrate the peer didn't report.
     pub fn ordered(&self, track: &Track, rules: &Rules, purpose: Purpose) -> Vec<Ranked> {
-        let ranked = self.pool(track).into_iter().map(|s| self.rank(s)).collect();
+        let cap = match purpose {
+            Purpose::Stream => rules.stream.max_kbps,
+            Purpose::Save => 0,
+        };
+        let ranked = self
+            .pool(track)
+            .into_iter()
+            .map(|s| self.rank_for(s, cap, track.duration))
+            .collect();
         order(ranked, track.duration, rules, purpose)
+    }
+
+    /// The listener's formats, most wanted first (`LULL_PREFERRED_FORMATS`).
+    pub fn preferred(&self) -> &[String] {
+        &self.preferred
     }
 
     /// One known source of the track, by reference.
@@ -266,23 +296,24 @@ impl Sources {
         !self.pool(track).is_empty()
     }
 
+    /// A copy ranked with no streaming cap: search results and saving.
     pub fn rank(&self, s: Source) -> Ranked {
+        self.rank_for(s, 0, None)
+    }
+
+    /// A copy ranked for streaming under the cap `max_kbps` (0 = none), `duration` the song's.
+    pub fn rank_for(&self, s: Source, max_kbps: u32, duration: Option<u32>) -> Ranked {
         let stalled_before = self.peers.stalled_before(&s.user);
         let (expected, measured) = self.peers.expected(&s.user, s.upload_speed);
         let shown = measured.map_or(s.upload_speed as f64, |m| m.rate);
         let factors = rank::factors(
             &Offer {
-                ext: &s.ext,
-                lossless: s.facts.lossless,
-                kbps: s.facts.kbps,
-                khz: s.facts.khz,
-                bits: s.facts.bits,
                 speed: expected as u64,
-                free_slot: s.free_slot,
-                queue: s.queue,
                 stalled_before,
+                ..offer(&s, duration)
             },
             &self.preferred,
+            max_kbps,
         );
         Ranked {
             peer: s.user.clone(),
@@ -339,58 +370,15 @@ pub fn order(mut ranked: Vec<Ranked>, duration: Option<u32>, rules: &Rules, purp
     ranked
 }
 
-/// Why the copy playing is a lesser one, worth switching away from mid-song.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Lesser {
-    /// YouTube's copy (a fallback, or start fast).
-    Youtube,
-    /// Below the streaming minimum (`playBest`).
-    Below,
-    /// A peer the fetch fell back to after better ones failed.
-    FellBack,
-}
-
-/// What a better copy has to beat: the copy playing, how good it is, why it is a lesser one, and
-/// the peers that already failed this play.
-#[derive(Debug, Clone)]
-pub struct Bar {
-    pub playing: SourceRef,
-    /// The copy playing's quality (`Source::quality` with the song's length).
-    pub quality: Quality,
-    pub why: Lesser,
-    pub avoid: Vec<String>,
-}
-
-/// Whether `copy` is better than the one playing, by quality alone: it clearly beats it
-/// (`Quality::beats`: lossless over lossy, or at least a fifth more bitrate), or it passes the
-/// streaming minimum the copy playing fails; and it is within the streaming cap. Passing the
-/// minimum is not enough on its own: a 256 kbps MP3 is better than YouTube's Opus 160 under a
-/// 320 minimum, and an MP3 160 is no better than it under a 128 one.
-pub fn beats(copy: &Source, bar: &Bar, rules: &Rules, duration: Option<u32>) -> bool {
-    let quality = copy.quality(duration);
-    let passes_where_playing_fails = bar.why == Lesser::Below && copy.meets(&rules.stream.minimum, duration);
-    quality.within(rules.stream.max_kbps) && (quality.beats(&bar.quality) || passes_where_playing_fails)
-}
-
-/// The copies in `ordered` (the streaming order) better than the one playing (`beats`), in that
-/// order: not busy beyond `maxPeerQueue`, not the copy playing, and not from a peer that failed
-/// this play.
-pub fn better(ordered: Vec<Ranked>, bar: &Bar, rules: &Rules, duration: Option<u32>) -> Vec<Ranked> {
-    ordered
-        .into_iter()
-        .filter(|r| {
-            !r.queue_too_long
-                && !r.source.is(&bar.playing)
-                && !bar.avoid.contains(&r.peer)
-                && beats(&r.source, bar, rules, duration)
-        })
-        .collect()
-}
-
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use lull_core::quality::{Minimum, Pick};
+
+    /// A peer's copy with a free slot at 1 MB/s, ranked as `copy` ranks it.
+    pub(crate) fn ranked_copy(user: &str, ext: &str, kbps: u32) -> Ranked {
+        copy(user, ext, kbps, 1.0, true, 0)
+    }
 
     /// A peer's copy: extension, bitrate (0 = unreported), MB/s, free slot, queue.
     fn copy(user: &str, ext: &str, kbps: u32, mbps: f32, free_slot: bool, queue: u32) -> Ranked {
@@ -427,6 +415,7 @@ mod tests {
                 stalled_before: false,
             },
             &["flac", "mp3"].map(String::from),
+            0,
         );
         Ranked {
             peer: user.into(),
@@ -535,113 +524,6 @@ mod tests {
         let save = order(peers(), Some(240), &capped, Purpose::Save);
         assert_eq!(save[0].peer, "slow-flac", "the saving order has no cap");
         assert!(save.iter().all(|r| !r.above_max));
-    }
-
-    #[test]
-    fn a_better_copy_clearly_beats_the_one_playing_within_the_cap_not_only_meets_the_minimum() {
-        // The owner streams with a 320 kbps minimum: a 256 kbps MP3 never replaced YouTube's
-        // Opus 160, because "better" meant only "passes the minimum".
-        let opus_160 = Quality {
-            lossless: false,
-            kbps: 160,
-        };
-        let bar = |why, quality, playing: &str, avoid: &[&str]| Bar {
-            playing: SourceRef {
-                user: playing.into(),
-                path: format!(
-                    "Music\\A\\B\\01 - Song.{}",
-                    if playing == "YouTube" { "webm" } else { "mp3" }
-                ),
-                size: 10_000_000,
-            },
-            quality,
-            why,
-            avoid: avoid.iter().map(|a| (*a).to_owned()).collect(),
-        };
-        let better_than = |rules: &Rules, bar: &Bar| {
-            let ordered = order(peers(), Some(240), rules, Purpose::Stream);
-            let mut got = users(&better(ordered, bar, rules, Some(240)))
-                .into_iter()
-                .map(str::to_owned)
-                .collect::<Vec<_>>();
-            got.sort();
-            got
-        };
-
-        let owner = rules(320, Pick::Fastest);
-        assert_eq!(
-            better_than(&owner, &bar(Lesser::Youtube, opus_160, "YouTube", &[])),
-            ["fast-320", "mid-256", "slow-flac", "unknown-mp3"],
-            "a 256 kbps copy below the minimum beats YouTube's Opus 160; 128 kbps doesn't, nor a peer whose queue is too long"
-        );
-
-        let mut capped = rules(320, Pick::Fastest);
-        capped.stream.max_kbps = 320;
-        assert_eq!(
-            better_than(&capped, &bar(Lesser::Youtube, opus_160, "YouTube", &[])),
-            ["fast-320", "mid-256"],
-            "nothing above the streaming cap: not the FLAC, not the 333 kbps MP3"
-        );
-
-        let low = rules(128, Pick::Fastest);
-        let opus_only = |kbps| Quality { lossless: false, kbps };
-        assert_eq!(
-            better_than(&low, &bar(Lesser::Youtube, opus_only(300), "YouTube", &[])),
-            ["slow-flac"],
-            "against a 300 kbps copy only lossless is clearly better here"
-        );
-
-        let below = better_than(
-            &rules(256, Pick::Fastest),
-            &bar(Lesser::Below, opus_only(128), "fast-128", &["mid-256"]),
-        );
-        assert_eq!(
-            below,
-            ["fast-320", "slow-flac", "unknown-mp3"],
-            "not the copy playing, nor a peer that failed this play"
-        );
-
-        let fell_back = better_than(
-            &rules(256, Pick::Fastest),
-            &bar(Lesser::FellBack, opus_only(320), "fast-320", &[]),
-        );
-        assert_eq!(
-            fell_back,
-            ["slow-flac"],
-            "a peer fallen back to is beaten by quality, not by its place"
-        );
-    }
-
-    #[test]
-    fn a_copy_that_passes_the_minimum_the_playing_one_fails_is_better_though_close_in_bitrate() {
-        let mut r = rules(160, Pick::Fastest);
-        r.stream.max_kbps = 0;
-        let bar = Bar {
-            playing: SourceRef {
-                user: "low".into(),
-                path: "Music\\A\\B\\01 - Song.mp3".into(),
-                size: 1,
-            },
-            quality: Quality {
-                lossless: false,
-                kbps: 150,
-            },
-            why: Lesser::Below,
-            avoid: Vec::new(),
-        };
-        let copy = copy("just-160", "mp3", 160, 1.0, true, 0).source;
-        assert!(
-            beats(&copy, &bar, &r, Some(240)),
-            "160 passes the listener's own minimum"
-        );
-        let youtube = Bar {
-            why: Lesser::Youtube,
-            ..bar
-        };
-        assert!(
-            !beats(&copy, &youtube, &r, Some(240)),
-            "but is no better than a 150 kbps copy otherwise"
-        );
     }
 
     #[test]

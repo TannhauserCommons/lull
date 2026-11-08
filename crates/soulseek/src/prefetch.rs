@@ -122,8 +122,8 @@ async fn preload(svc: &Service, id: &TrackId) -> Result<()> {
         return Ok(());
     }
     let track = svc.track(id).await?;
-    // A lesser copy in the cache (YouTube's, one below the minimum) is fetched again when a
-    // better one is known, so the song plays that from its start.
+    // A copy in the cache is fetched again when the streaming order knows one clearly above it
+    // (`Fetcher::better_than_cached`), so the song plays that from its start.
     let cached = svc.fetcher.best_cached(&track, Purpose::Stream).await?;
     if svc.searches.saved(id).await
         || cached

@@ -21,8 +21,8 @@ pub enum Mode {
     Off,
     /// When Soulseek has no playable copy, or none within `waitS`.
     Fallback,
-    /// A YouTube copy starts the song at once while Soulseek's best copy is fetched for later
-    /// plays and saves.
+    /// YouTube and Soulseek race: whichever copy passing the streaming minimum sends first
+    /// starts the song, and Soulseek's best copy is fetched for later plays and saves.
     StartFast,
 }
 

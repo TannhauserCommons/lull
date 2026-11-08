@@ -16,7 +16,8 @@
 | `albums.rs` | `Transfers::album_available`: whether peers share an album, remembered |
 | `rules.rs` | The streaming and saving profiles and peer limits, from the `settings` event |
 | `sources.rs` | Every known peer file per song (pooled across folders), in a profile's order on read |
-| `rank.rs` | The score and its factors |
+| `rank.rs` | The score and its factors. The format factor (`sound`) scales toward the streaming cap wherever streaming ranks copies; better copies are ranked by it alone |
+| `policy.rs` | The streaming policy: what a song starts on and what it switches to, from the streaming profile alone, for a copy of any source (ADR-0012, ADR-0013). Pure: the fetch code gathers copies and asks it |
 | `peers.rs` | Peers that stalled recently (`soulseek_peers`) |
 | `share.rs` | Sharing checks and rescans |
 | `recover.rs` | When to ask slskd for a fresh login (stale sessions) |

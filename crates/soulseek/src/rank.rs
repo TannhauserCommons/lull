@@ -51,10 +51,12 @@ impl Factors {
     }
 }
 
-/// `preferred` is `LULL_PREFERRED_FORMATS`: lowercase extensions, most wanted first.
-pub fn factors(offer: &Offer, preferred: &[String]) -> Factors {
+/// `preferred` is `LULL_PREFERRED_FORMATS`: lowercase extensions, most wanted first. `max_kbps`:
+/// the streaming cap the format factor scales toward when copies are ranked for streaming
+/// (`sound`); 0 for none, or for a saving or search ranking.
+pub fn factors(offer: &Offer, preferred: &[String], max_kbps: u32) -> Factors {
     Factors {
-        format: format_points(offer, preferred),
+        format: sound(offer, preferred, max_kbps),
         speed: (offer.speed as f32 / 1_000_000.0 / FULL_SPEED_MBPS * SPEED_MAX)
             .round()
             .min(SPEED_MAX) as u8,
@@ -72,10 +74,21 @@ pub fn factors(offer: &Offer, preferred: &[String]) -> Factors {
     }
 }
 
+/// The bitrate a lossy file earns full format points at, without a streaming cap.
+const FULL_KBPS: u32 = 320;
+
+/// How a copy sounds, by the listener's own terms and nothing about getting it: the format
+/// factor, its lossy part scaled toward the streaming cap `max_kbps` (0 = none, then toward
+/// 320). The score adds speed, slot and queue to it (what `pick: fastest` starts by); a better
+/// copy mid-song is ranked by it alone (`policy`).
+pub fn sound(offer: &Offer, preferred: &[String], max_kbps: u32) -> u8 {
+    format_points(offer, preferred, if max_kbps > 0 { max_kbps } else { FULL_KBPS })
+}
+
 /// Where the format sits in the preference list, then how good the file is within it: lossy
-/// files scale with bitrate (an MP3 128 is not an MP3 320); hi-res lossless costs a little,
-/// since its files are three times the size for no audible gain while streaming.
-fn format_points(offer: &Offer, preferred: &[String]) -> u8 {
+/// files scale with bitrate up to `full_kbps` (an MP3 128 is not an MP3 320); hi-res lossless
+/// costs a little, since its files are three times the size for no audible gain while streaming.
+fn format_points(offer: &Offer, preferred: &[String], full_kbps: u32) -> u8 {
     let Some(rank) = preferred.iter().position(|p| p == offer.ext) else {
         return 0;
     };
@@ -84,7 +97,9 @@ fn format_points(offer: &Offer, preferred: &[String]) -> u8 {
         let hi_res = offer.bits.is_some_and(|b| b > 16) || offer.khz.is_some_and(|k| k > 48.0);
         if hi_res { 0.95 } else { 1.0 }
     } else {
-        offer.kbps.map_or(0.6, |k| (k as f32 / 320.0).clamp(0.3, 1.0))
+        offer
+            .kbps
+            .map_or(0.6, |k| (k as f32 / full_kbps as f32).clamp(0.3, 1.0))
     };
     (base * quality).round() as u8
 }
@@ -113,7 +128,34 @@ mod tests {
     }
 
     fn score(o: &Offer) -> u8 {
-        factors(o, &prefs()).score()
+        factors(o, &prefs(), 0).score()
+    }
+
+    #[test]
+    fn the_format_factor_scales_toward_the_streaming_cap_for_the_start_and_the_switch_alike() {
+        let mp3 = |k| Offer {
+            kbps: Some(k),
+            ..offer("mp3")
+        };
+        let p = prefs();
+        assert_eq!(
+            factors(&mp3(256), &p, 256).format,
+            factors(&mp3(320), &p, 0).format,
+            "under a 256 cap a 256 kbps copy earns the full points"
+        );
+        assert!(
+            factors(&mp3(256), &p, 0).format < factors(&mp3(320), &p, 0).format,
+            "no cap: toward 320"
+        );
+        assert!(
+            factors(&mp3(192), &p, 256).format < factors(&mp3(256), &p, 256).format,
+            "nearer the cap, higher"
+        );
+        assert_eq!(
+            sound(&mp3(192), &p, 256),
+            factors(&mp3(192), &p, 256).format,
+            "one function"
+        );
     }
 
     #[test]
@@ -128,10 +170,10 @@ mod tests {
         assert!(score(&flac) > score(&mp3));
         assert!(score(&mp3) > score(&mp3_128));
         // A format the listener didn't list gets no format points at all.
-        assert_eq!(factors(&wav, &prefs()).format, 0);
+        assert_eq!(factors(&wav, &prefs(), 0).format, 0);
         // The order is the listener's: prefer mp3 and the same files rank the other way round.
         let mp3_first = ["mp3", "flac"].map(String::from);
-        assert!(factors(&mp3, &mp3_first).format > factors(&flac, &mp3_first).format);
+        assert!(factors(&mp3, &mp3_first, 0).format > factors(&flac, &mp3_first, 0).format);
     }
 
     #[test]
@@ -143,7 +185,7 @@ mod tests {
         };
         let free_mp3 = offer("mp3");
         assert!(score(&free_mp3) > score(&queued_flac));
-        let f = factors(&queued_flac, &prefs());
+        let f = factors(&queued_flac, &prefs(), 0);
         assert_eq!((f.slot, f.queue), (SLOT_BUSY, 3));
         // Real peers report queues in the thousands: the factor bottoms out at zero.
         let swamped = Offer {
@@ -151,7 +193,7 @@ mod tests {
             queue: 5_000,
             ..offer("flac")
         };
-        assert_eq!(factors(&swamped, &prefs()).queue, 0);
+        assert_eq!(factors(&swamped, &prefs(), 0).queue, 0);
     }
 
     #[test]
@@ -162,7 +204,7 @@ mod tests {
             ..offer("flac")
         };
         assert_eq!(score(&fresh) - score(&stalled), STALL_PENALTY);
-        let f = factors(&stalled, &prefs());
+        let f = factors(&stalled, &prefs(), 0);
         let sum =
             i16::from(f.format) + i16::from(f.speed) + i16::from(f.slot) + i16::from(f.queue) + i16::from(f.stalled);
         assert_eq!(sum, i16::from(f.score()));
@@ -171,6 +213,6 @@ mod tests {
             speed: 50_000_000,
             ..offer("flac")
         };
-        assert_eq!(factors(&fast, &prefs()).speed, SPEED_MAX as u8);
+        assert_eq!(factors(&fast, &prefs(), 0).speed, SPEED_MAX as u8);
     }
 }

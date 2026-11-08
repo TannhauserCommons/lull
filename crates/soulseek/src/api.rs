@@ -116,8 +116,8 @@ enum YoutubeRow {
 
 /// The song's YouTube copy as the picker lists it, when Settings › Sources › YouTube is on: the
 /// copy the player's YouTube path would play (the streaming cap's), with its chip ("YouTube ·
-/// Opus 160"). Lossy and exempt from the minimum, it has no score: the picker lists it after
-/// the peers.
+/// Opus 160"). Lossy, it has no score: the picker lists it after the peers. `meets`: it passes
+/// the streaming minimum (`policy::passes`), as a peer's copy does.
 async fn youtube_row(svc: &Service, track: &Track) -> YoutubeRow {
     let rules = svc.rules.get();
     if rules.youtube.mode == Mode::Off {
@@ -130,7 +130,7 @@ async fn youtube_row(svc: &Service, track: &Track) -> YoutubeRow {
             max_kbps: rules.stream.max_kbps,
         },
     );
-    let duration = track.duration;
+    let (duration, profile) = (track.duration, rules.stream.clone());
     // Its own task: a match still running when the wait ends goes on, and is remembered.
     let find = tokio::spawn(async move { yt.find(&track, want).await });
     match tokio::time::timeout(YOUTUBE_WAIT, find).await {
@@ -142,6 +142,8 @@ async fn youtube_row(svc: &Service, track: &Track) -> YoutubeRow {
                 "sizeBytes": found.source.size,
                 "format": copy.facts(found.source.size, duration).format,
                 "official": found.official,
+                "meets": crate::fetch::bare_source(&found.source, duration)
+                    .is_some_and(|s| crate::policy::passes(&profile, &s, duration)),
                 // A song cut from a full-album upload: where in the album it is, in seconds.
                 "section": copy.section.map(|(from, to)| [from / 1000, to.div_ceil(1000)]),
             })),

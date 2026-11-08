@@ -73,7 +73,7 @@ Starting the top two candidates for a few seconds and keeping the faster would f
 
 If measured ranking proves insufficient, racing could come back narrowly: only when the top two are both unmeasured, both have free slots, and the song is lossless.
 
-Start fast's race (ADR-0012's update of 2026-11-08) is not this. It races YouTube against one Soulseek request, the one start fast always made, and that request is never cancelled for losing. So it costs no peer anything.
+Start fast's race (ADR-0012's update of 2026-11-08) is not this. It races YouTube against one Soulseek request, the one start fast always made, and that request is never cancelled for losing. So it costs no peer anything. Which copies race is the streaming policy's (`soulseek::policy`, ADR-0012's later update of 2026-11-08).
 
 ## Before and after
 

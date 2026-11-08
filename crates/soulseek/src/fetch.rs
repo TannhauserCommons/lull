@@ -10,9 +10,12 @@
 //! song's first bytes first plays, the other carrying on beside it (ADR-0012). Its audio lands in
 //! the same cache, so everything downstream (ranges, preloading, pins, eviction) is unchanged.
 //!
-//! Better copies: while the player streams a lesser copy (YouTube's, one below the minimum, a peer
-//! fallen back to), an upgrade fetch gets the streaming profile's best one beside it; the player
-//! switches to it seamlessly once enough has arrived (docs/context/streaming.md#better-copies).
+//! What a song starts on and what it switches to are the streaming policy's (`policy`): this
+//! module gathers copies, from Soulseek and YouTube alike, and asks it.
+//!
+//! Better copies: while the policy knows a copy worth switching to from the one the player
+//! streams (`policy::better`), an upgrade fetch gets it beside it; the player switches to it
+//! seamlessly once enough has arrived (docs/context/streaming.md#better-copies).
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -39,11 +42,12 @@ use lull_core::quality::{SaveBelow, StreamBelow};
 
 use crate::budget::Lane;
 use crate::peers::Peers;
+use crate::policy::{self, Bar};
 use crate::ranges::Ranges;
 use crate::rules::{Current, Purpose, Rules};
 use crate::search::Searches;
 use crate::slskd::Slskd;
-use crate::sources::{self, Bar, Lesser, Ranked, Source, Sources};
+use crate::sources::{self, Ranked, Source, Sources};
 
 /// Received bytes after which a stream counts as playing rather than buffering.
 const BUFFERED: u64 = 256 * 1024;
@@ -540,13 +544,13 @@ impl Fetcher {
         Ok(f)
     }
 
-    /// A YouTube copy that has played through while Soulseek's copy arrived: asking for the song
-    /// now is a later play, which takes Soulseek's. Within the song's length (and a minute) it is
-    /// the same play seeking, which never jumps to another file.
+    /// A copy that has played through while a better one arrived beside it (`best_cached`, the
+    /// policy's order): asking for the song now is a later play, which takes the better one,
+    /// whatever either's source. Within the song's length (and a minute) it is the same play
+    /// seeking, which never jumps to another file.
     async fn superseded(&self, f: &Arc<Fetch>) -> Result<bool> {
         let length = i64::from(f.track.duration.unwrap_or(600));
-        let played_out = f.on_youtube.load(Ordering::Relaxed)
-            && f.now().status == Status::Done
+        let played_out = f.now().status == Status::Done
             && f.readers.load(Ordering::Relaxed) == 0
             && lull_core::now() - f.started > length + 60
             && want(f, |w| w.saving == 0);
@@ -554,7 +558,7 @@ impl Fetcher {
             return Ok(false);
         }
         let cached = self.best_cached(&f.track, Purpose::Stream).await?;
-        Ok(cached.is_some_and(|e| !youtube::is_youtube(&e.source)))
+        Ok(cached.is_some_and(|e| !holds(f, &e.source)))
     }
 
     /// Start fast: a preload still waiting for a Soulseek peer steps out of the player's way
@@ -590,16 +594,10 @@ impl Fetcher {
         if cached.is_some_and(|e| !youtube::is_youtube(&e.source)) {
             return Ok(());
         }
-        let (purpose, bar) = if self.rules.get().switch_to_better {
-            let bar = Bar {
-                quality: self.quality_of(&track, &playing),
-                playing,
-                why: Lesser::Youtube,
-                avoid: Vec::new(),
-            };
-            (Purpose::Stream, Some(bar))
-        } else {
-            (Purpose::Save, None)
+        let bar = self.bar(&track, &playing, Vec::new());
+        let (purpose, bar) = match bar {
+            Some(bar) if self.rules.get().switch_to_better => (Purpose::Stream, Some(bar)),
+            _ => (Purpose::Save, None),
         };
         if let Some(f) = self.start_upgrade(track, purpose, bar, since, Beside::StartFast) {
             tracing::info!(track = %f.track.id, job = f.job_id, "fetching Soulseek's copy while YouTube plays");
@@ -607,14 +605,15 @@ impl Fetcher {
         Ok(())
     }
 
-    /// The player streams `f`: when its copy is a lesser one, a better copy (`sources::beats`) is
-    /// fetched beside it, out of its way, so the player can switch to it seamlessly (and later
+    /// The player streams `f`: when the policy knows a copy worth switching to from the one
+    /// playing (`policy::better`, whatever either's source), it is fetched beside it, out of its way, so the player can switch to it seamlessly (and later
     /// plays and saves have it). Not when the listener picked the copy playing. When none is
-    /// known and the song hasn't been searched during this play, the upgrade searches again.
+    /// known, the copy playing fails the streaming minimum and the song hasn't been searched
+    /// during this play, the upgrade searches again.
     fn better_later(&self, f: &Fetch) {
         let rules = self.rules.get();
         let p = f.now();
-        let (Some(playing), Some(why)) = (p.source.as_ref(), lesser(&p)) else {
+        let Some(playing) = p.source.as_ref() else {
             return;
         };
         if !rules.switch_to_better
@@ -625,18 +624,16 @@ impl Fetcher {
             return;
         }
         let duration = f.track.duration;
-        let bar = Bar {
-            playing: playing.source_ref(),
-            quality: playing.quality(duration),
-            why,
-            avoid: p.failed_peers.iter().map(|failed| failed.peer.clone()).collect(),
+        let avoid = p.failed_peers.iter().map(|failed| failed.peer.clone()).collect();
+        let Some(bar) = self.bar(&f.track, &playing.source_ref(), avoid) else {
+            return;
         };
         if let Some(u) = self.upgrade(&f.track.id) {
             let up = u.now();
             let better = up
                 .source
                 .as_ref()
-                .is_none_or(|s| sources::beats(s, &bar, &rules, duration));
+                .is_none_or(|s| policy::switch_to(&rules.stream, s, &bar.playing, duration));
             if !up.ended() || better {
                 return;
             }
@@ -645,50 +642,77 @@ impl Fetcher {
             self.forget(&u);
         }
         let known = self.sources.ordered(&f.track, &rules, Purpose::Stream);
-        if sources::better(known, &bar, &rules, duration).is_empty()
-            && self.sources.searched_since(&f.track.id, f.opened)
-        {
+        let worth = !policy::better(&rules.stream, self.sources.preferred(), known, &bar, duration).is_empty();
+        if worth || (p.below && !self.sources.searched_since(&f.track.id, f.opened)) {
+            if let Some(u) = self.start_upgrade(f.track.clone(), Purpose::Stream, Some(bar), f.opened, Beside::Better) {
+                tracing::info!(track = %u.track.id, job = u.job_id, "fetching a better copy beside the one playing");
+            }
             return;
         }
-        if let Some(u) = self.start_upgrade(f.track.clone(), Purpose::Stream, Some(bar), f.opened, Beside::Better) {
-            tracing::info!(track = %u.track.id, job = u.job_id, ?why, "fetching a better copy beside the one playing");
+        // Start fast makes YouTube a source alongside Soulseek: its copy may be the target. Its
+        // match is looked up behind the listener's own lookups (remembered from the race, mostly).
+        if rules.youtube.mode != Mode::StartFast {
+            return;
         }
+        let (this, track, opened) = (self.clone(), f.track.clone(), f.opened);
+        tokio::spawn(async move {
+            let still = || this.live(&track.id).is_some_and(|l| want(&l, |w| w.streaming));
+            if this.targets(&track, &bar, &[]).await.is_empty() || !still() {
+                return;
+            }
+            if let Some(u) = this.start_upgrade(track, Purpose::Stream, Some(bar), opened, Beside::Better) {
+                tracing::info!(track = %u.track.id, job = u.job_id, "fetching a better copy beside the one playing");
+            }
+        });
     }
 
-    /// How good a copy of the song is, by what is known of it.
-    fn quality_of(&self, track: &Track, copy: &SourceRef) -> lull_core::quality::Quality {
-        self.sources
-            .get(track, copy)
-            .or_else(|| bare_source(copy, track.duration))
-            .map(|s| s.quality(track.duration))
-            .unwrap_or_default()
+    /// The copies worth switching to from `bar` (`policy::better`), best first, whatever their
+    /// source: Soulseek's known copies, and YouTube's while start fast makes YouTube a source
+    /// alongside Soulseek. None of `tried`.
+    async fn targets(&self, track: &Track, bar: &Bar, tried: &[SourceRef]) -> Vec<Ranked> {
+        let rules = self.rules.get();
+        let (duration, cap) = (track.duration, rules.stream.max_kbps);
+        let untried = |r: &SourceRef| !tried.iter().any(|t| t.user == r.user && t.path == r.path);
+        let mut copies: Vec<Ranked> = self
+            .sources
+            .ordered(track, &rules, Purpose::Stream)
+            .into_iter()
+            .filter(|r| untried(&r.source.source_ref()))
+            .collect();
+        if rules.youtube.mode == Mode::StartFast
+            && let Ok(Some(found)) = self
+                .youtube
+                .find_later(track, YoutubeWant::Stream { max_kbps: cap })
+                .await
+            && untried(&found.source)
+            && let Some(theirs) = bare_source(&found.source, duration)
+        {
+            copies.push(self.sources.rank_for(theirs, cap, duration));
+        }
+        let copies = sources::order(copies, duration, &rules, Purpose::Stream);
+        policy::better(&rules.stream, self.sources.preferred(), copies, bar, duration)
     }
 
-    /// Whether a preload should fetch the song although a copy is cached: that copy is a lesser
-    /// one and a better one is known (with switching to better copies on).
+    /// What a better copy has to beat: the copy `playing`, as known (a peer's from its search,
+    /// YouTube's from its own facts), and the peers that failed this play.
+    fn bar(&self, track: &Track, playing: &SourceRef, avoid: Vec<String>) -> Option<Bar> {
+        let playing = self
+            .sources
+            .get(track, playing)
+            .or_else(|| bare_source(playing, track.duration))?;
+        Some(Bar { playing, avoid })
+    }
+
+    /// Whether a preload should fetch the song although a copy is cached: the policy knows a copy
+    /// worth switching to from it (`policy::better`; with switching to better copies on).
     pub fn better_than_cached(&self, track: &Track, cached: &SourceRef) -> bool {
         let rules = self.rules.get();
-        let below = || {
-            self.sources
-                .get(track, cached)
-                .or_else(|| bare_source(cached, track.duration))
-                .is_some_and(|s| !s.meets(&rules.stream.minimum, track.duration))
-        };
-        let why = if youtube::is_youtube(cached) {
-            Lesser::Youtube
-        } else if below() {
-            Lesser::Below
-        } else {
+        let Some(bar) = self.bar(track, cached, Vec::new()) else {
             return false;
         };
-        let bar = Bar {
-            playing: cached.clone(),
-            quality: self.quality_of(track, cached),
-            why,
-            avoid: Vec::new(),
-        };
         let known = self.sources.ordered(track, &rules, Purpose::Stream);
-        rules.switch_to_better && !sources::better(known, &bar, &rules, track.duration).is_empty()
+        rules.switch_to_better
+            && !policy::better(&rules.stream, self.sources.preferred(), known, &bar, track.duration).is_empty()
     }
 
     /// The better copy on its way for the song, when it is `copy`.
@@ -814,27 +838,21 @@ impl Fetcher {
     }
 
     /// The better copy the player may switch to mid-song: switching is on, the listener didn't
-    /// pick the copy playing, which is a lesser one, and the copy on its way is better than it
-    /// (`sources::beats`: clearly better in quality, within the streaming cap).
+    /// pick the copy playing, and the copy on its way is worth switching to (`policy::switch_to`).
     fn offer(&self, f: &Fetch, p: &Progress) -> Option<serde_json::Value> {
         let rules = self.rules.get();
         if !rules.switch_to_better || f.picked.load(Ordering::Relaxed) {
             return None;
         }
-        let (why, playing) = (lesser(p)?, p.source.as_ref()?);
+        let playing = p.source.as_ref()?.source_ref();
         let u = self.upgrade(&f.track.id)?;
         let up = u.now();
         let duration = f.track.duration;
-        let bar = Bar {
-            playing: playing.source_ref(),
-            quality: playing.quality(duration),
-            why,
-            avoid: Vec::new(),
-        };
+        let bar = self.bar(&f.track, &playing, Vec::new())?;
         let s = up
             .source
             .as_ref()
-            .filter(|s| !s.is(&bar.playing) && sources::beats(s, &bar, &rules, duration))?;
+            .filter(|s| !s.is(&playing) && policy::switch_to(&rules.stream, s, &bar.playing, duration))?;
         Some(json!({
             "peer": s.user,
             "path": s.path,
@@ -847,22 +865,32 @@ impl Fetcher {
     }
 
     /// The song's best finished copy in the cache by `purpose`'s profile (none of YouTube's
-    /// while YouTube is off): what a later play or a save takes.
+    /// while YouTube is off): what a later play (`policy::cached_key`, any source alike) or a save
+    /// (passing the saving minimum, then its order) takes.
     pub async fn best_cached(&self, track: &Track, purpose: Purpose) -> Result<Option<Entry>> {
         let rules = self.rules.get();
+        let duration = track.duration;
         let mut entries = self.cache.complete(&track.id).await?;
         entries.retain(|e| rules.youtube.mode != Mode::Off || !youtube::is_youtube(&e.source));
-        let ordered = self.sources.ordered(track, &rules, purpose);
-        let rank = |e: &Entry| {
-            let meets = self
-                .sources
+        let known = |e: &Entry| {
+            self.sources
                 .get(track, &e.source)
-                .or_else(|| bare_source(&e.source, track.duration))
-                .is_some_and(|s| s.meets(rules.minimum(purpose), track.duration));
-            let at = ordered.iter().position(|r| r.source.is(&e.source));
-            (!meets, at.unwrap_or(usize::MAX))
+                .or_else(|| bare_source(&e.source, duration))
         };
-        Ok(best_first(entries, rank).into_iter().next())
+        let best = match purpose {
+            Purpose::Stream => best_first(entries, |e| {
+                known(e).map(|s| policy::cached_key(&rules.stream, self.sources.preferred(), &s, duration))
+            }),
+            Purpose::Save => {
+                let ordered = self.sources.ordered(track, &rules, purpose);
+                best_first(entries, |e| {
+                    let meets = known(e).is_some_and(|s| s.meets(rules.minimum(purpose), duration));
+                    let at = ordered.iter().position(|r| r.source.is(&e.source));
+                    (!meets, at.unwrap_or(usize::MAX))
+                })
+            }
+        };
+        Ok(best.into_iter().next())
     }
 
     /// The upgrade is no longer wanted (YouTube didn't start the song after all, and the
@@ -1177,11 +1205,10 @@ impl Fetcher {
             .get(&track, &e.source)
             .or_else(|| bare_source(&e.source, track.duration));
         let on_youtube = youtube::is_youtube(&e.source);
-        // YouTube copies are exempt from the minimum: they carry their own badge instead.
-        let below = !on_youtube
-            && source
-                .as_ref()
-                .is_some_and(|s| !s.meets(&self.rules.get().stream.minimum, track.duration));
+        // Every source's copy is judged by the streaming profile, YouTube's too.
+        let below = source
+            .as_ref()
+            .is_some_and(|s| !policy::passes(&self.rules.get().stream, s, track.duration));
         let f = self.new_fetch(
             track,
             Purpose::Stream,
@@ -1338,29 +1365,71 @@ impl Fetcher {
         self.search_beside(f);
         // A preload that made way is Soulseek's side already.
         let mut soulseek = self.upgrade(&f.track.id).or_else(|| self.racer(f));
-        let (outcome, youtube_sent) = {
-            let youtube = async {
-                let copy = self.youtube_copy(f, stop).await?;
-                self.youtube_plays(f, copy, stop).await
-            };
-            tokio::pin!(youtube);
-            let mut progress = f.progress();
-            let mut youtube_sent = false;
-            let outcome = loop {
+        // YouTube's lookup, while Soulseek's side may send first.
+        let looked = {
+            let lookup = self.youtube_copy(f, stop);
+            tokio::pin!(lookup);
+            loop {
                 tokio::select! {
-                    r = &mut youtube => break Ok(r),
-                    _ = progress.wait_for(sent), if !youtube_sent => youtube_sent = true,
-                    won = soulseek_sends(soulseek.clone()), if !youtube_sent && soulseek.is_some() => {
+                    r = &mut lookup => break Some(r),
+                    won = soulseek_sends(soulseek.clone()), if soulseek.is_some() => {
                         if won {
-                            break Err(());
+                            break None;
                         }
-                        // It ended without sending (no copy passes, every peer failed): YouTube's
-                        // copy plays alone.
                         soulseek = None;
                     }
                 }
-            };
-            (outcome, youtube_sent)
+            }
+        };
+        let (outcome, youtube_sent) = match looked {
+            None => (Err(()), false),
+            Some(Err(e)) => (Ok(Err(e)), false),
+            // A copy that may not start the song (`policy::may_start`: below the minimum, under
+            // `keepLooking` or `ask`) doesn't race: Soulseek's side may still send a passing copy,
+            // and when none comes the policy decides, with this copy one more found.
+            Some(Ok(copy)) if !self.may_start(f, &copy) => {
+                tracing::info!(track = %f.track.id, copy = copy.path, "YouTube's copy is below the streaming minimum: it doesn't race");
+                let won = match soulseek.clone() {
+                    Some(u) => tokio::select! {
+                        won = soulseek_sends(Some(u)) => won,
+                        () = stopped(stop) => return Err(Stop::Cancelled),
+                    },
+                    None => false,
+                };
+                if !won {
+                    f.on_youtube.store(false, Ordering::Relaxed);
+                    return self.race_below(f, copy, stop).await;
+                }
+                (Err(()), false)
+            }
+            Some(Ok(copy)) => {
+                let theirs = copy.clone();
+                let youtube = self.youtube_plays(f, copy, stop);
+                tokio::pin!(youtube);
+                let mut progress = f.progress();
+                let mut youtube_sent = false;
+                let outcome = loop {
+                    tokio::select! {
+                        r = &mut youtube => break Ok(r),
+                        _ = progress.wait_for(sent), if !youtube_sent => {
+                            // Soulseek's side ready at the same moment: the policy picks.
+                            if self.soulseek_starts(f, &theirs, soulseek.as_ref()) {
+                                break Err(());
+                            }
+                            youtube_sent = true;
+                        }
+                        won = soulseek_sends(soulseek.clone()), if !youtube_sent && soulseek.is_some() => {
+                            if won {
+                                break Err(());
+                            }
+                            // It ended without sending (no copy passes, every peer failed):
+                            // YouTube's copy plays alone.
+                            soulseek = None;
+                        }
+                    }
+                };
+                (outcome, youtube_sent)
+            }
         };
         // Soulseek's side, unless it failed or was stopped (finished is fine: it sent everything).
         let u = soulseek.filter(|u| !matches!(u.now().status, Status::Failed | Status::Cancelled));
@@ -1395,18 +1464,102 @@ impl Fetcher {
     }
 
     /// Soulseek's side of start fast's race: the streaming profile's copy, fetched beside the
-    /// player's fetch from the start. Not when copies are known and none passes the streaming
-    /// minimum (the race is YouTube's alone; YouTube failing, the player's fetch applies the
-    /// `below` rule).
+    /// player's fetch from the start, in the profile's order, of copies that may start the song
+    /// (`policy::may_start`: passing the minimum, or any under `playBest`).
     fn racer(&self, f: &Fetch) -> Option<Arc<Fetch>> {
-        let rules = self.rules.get();
-        let known = self.sources.ordered(&f.track, &rules, Purpose::Stream);
-        if !known.is_empty() && !known.iter().any(|r| r.meets && !r.queue_too_long) {
-            return None;
-        }
         let u = self.start_upgrade(f.track.clone(), Purpose::Stream, None, f.opened, Beside::Racer)?;
         tracing::info!(track = %f.track.id, job = u.job_id, "racing Soulseek's copy against YouTube's");
         Some(u)
+    }
+
+    /// The copy `copy` as known: a peer's from its search, YouTube's from its own facts.
+    fn known(&self, f: &Fetch, copy: &SourceRef) -> Option<Source> {
+        self.sources
+            .get(&f.track, copy)
+            .or_else(|| bare_source(copy, f.track.duration))
+    }
+
+    /// Whether `copy` may start the song (`policy::may_start`).
+    fn may_start(&self, f: &Fetch, copy: &SourceRef) -> bool {
+        self.known(f, copy)
+            .is_some_and(|s| policy::may_start(&self.rules.get().stream, &s, f.track.duration))
+    }
+
+    /// YouTube's copy (`youtube`) has its first bytes here: whether the policy starts the song on
+    /// Soulseek's side instead, its bytes here at the same moment (`policy::start`).
+    fn soulseek_starts(&self, f: &Fetch, youtube: &SourceRef, soulseek: Option<&Arc<Fetch>>) -> bool {
+        let rules = self.rules.get();
+        let duration = f.track.duration;
+        let theirs = soulseek
+            .map(|u| u.now())
+            .filter(sent)
+            .and_then(|p| p.source.filter(|s| !youtube::is_youtube(&s.source_ref())));
+        let (Some(theirs), Some(ours)) = (theirs, self.known(f, youtube)) else {
+            return false;
+        };
+        let ready: Vec<Ranked> = sources::order(
+            vec![
+                self.sources.rank_for(theirs.clone(), rules.stream.max_kbps, duration),
+                self.sources.rank_for(ours, rules.stream.max_kbps, duration),
+            ],
+            duration,
+            &rules,
+            Purpose::Stream,
+        );
+        let seen: Vec<policy::Seen> = ready
+            .iter()
+            .map(|r| policy::Seen {
+                copy: &r.source,
+                ready: true,
+            })
+            .collect();
+        matches!(policy::start(&rules.stream, &seen, false, duration), policy::Start::Play(c) if c.is(&theirs.source_ref()))
+    }
+
+    /// Start fast once neither side has a copy that may start the song, YouTube's (`youtube`)
+    /// held: the policy decides with the copies found (`policy::start`). `keepLooking` searches
+    /// on, so YouTube's copy below the minimum never plays; `ask` offers it with Soulseek's.
+    async fn race_below(
+        &self,
+        f: &Fetch,
+        youtube: SourceRef,
+        stop: &mut watch::Receiver<bool>,
+    ) -> Result<PathBuf, Stop> {
+        let rules = self.rules.get();
+        let duration = f.track.duration;
+        let (copies, _) = self.untried(f, &[], &rules);
+        let ours = self.known(f, &youtube);
+        let seen: Vec<policy::Seen> = copies
+            .iter()
+            .map(|r| &r.source)
+            .chain(ours.as_ref())
+            .map(|copy| policy::Seen { copy, ready: false })
+            .collect();
+        match policy::start(&rules.stream, &seen, false, duration) {
+            policy::Start::Search | policy::Start::Fail => self.soulseek_then_youtube(f, None, false, stop).await,
+            policy::Start::Ask => self.ask_among(f, Some(&youtube), stop).await,
+            policy::Start::Play(_) | policy::Start::Wait => self.youtube_plays(f, youtube, stop).await,
+        }
+    }
+
+    /// `ask` among the copies found, YouTube's (`youtube`) with Soulseek's, in the profile's order;
+    /// the listener's choice plays.
+    async fn ask_among(
+        &self,
+        f: &Fetch,
+        youtube: Option<&SourceRef>,
+        stop: &mut watch::Receiver<bool>,
+    ) -> Result<PathBuf, Stop> {
+        let rules = self.rules.get();
+        let (mut choices, _) = self.untried(f, &[], &rules);
+        choices.extend(
+            youtube
+                .and_then(|y| self.known(f, y))
+                .map(|s| self.sources.rank_for(s, rules.stream.max_kbps, f.track.duration)),
+        );
+        let choices = sources::order(choices, f.track.duration, &rules, Purpose::Stream);
+        let chosen = self.ask(f, choices, stop).await?;
+        self.soulseek(f, Some(chosen.source_ref()), stop.clone()).await
     }
 
     /// Soulseek's side of the race becomes the player's fetch, before `f` sent a byte: it takes
@@ -1437,6 +1590,8 @@ impl Fetcher {
         tracing::info!(track = %f.track.id, from = f.job_id, to = u.job_id, why, "the player's fetch is Soulseek's copy");
         if streaming {
             self.bus.publish("stream", self.player_event(u, &u.now()));
+            // The policy may know a better copy than the one that won (YouTube's among them).
+            self.better_later(u);
         }
     }
 
@@ -1525,11 +1680,30 @@ impl Fetcher {
             return Err(Stop::Failed(why));
         }
         tracing::info!(track = %f.track.id, why, "playing from YouTube instead");
-        let tried = async {
-            let copy = self.youtube_copy(f, stop).await?;
-            self.youtube_plays(f, copy, stop).await
+        let copy = match self.youtube_copy(f, stop).await {
+            Ok(copy) => copy,
+            Err(Stop::Failed(yt)) => return Err(Stop::Failed(format!("{why}; YouTube: {yt}"))),
+            Err(other) => return Err(other),
         };
-        match tried.await {
+        // YouTube's copy is judged as any (`policy`): one below the minimum plays only under
+        // `playBest`. Otherwise Soulseek, only slow, goes on; with nothing there, `keepLooking`
+        // fails as Soulseek's search did, and `ask` offers YouTube's copy with Soulseek's.
+        if !self.may_start(f, &copy) {
+            f.on_youtube.store(false, Ordering::Relaxed);
+            let rules = self.rules.get();
+            if gave_way {
+                tracing::info!(track = %f.track.id, "YouTube's copy is below the streaming minimum: Soulseek goes on");
+                return self.soulseek(f, None, stop.clone()).await;
+            }
+            return match rules.stream.below {
+                StreamBelow::Ask => self.ask_among(f, Some(&copy), stop).await,
+                _ => Err(Stop::Failed(format!(
+                    "{why}; YouTube's copy is below your streaming minimum ({})",
+                    rules.stream.minimum
+                ))),
+            };
+        }
+        match self.youtube_plays(f, copy, stop).await {
             Err(Stop::Failed(yt)) => Err(Stop::Failed(format!("{why}; YouTube: {yt}"))),
             other => other,
         }
@@ -1579,10 +1753,11 @@ impl Fetcher {
             return Err(Stop::Failed(format!("{} is not a YouTube copy", copy_ref.path)));
         };
         let attempt = f.now().attempt + 1;
+        let below = !policy::passes(&self.rules.get().stream, &source, f.track.duration);
         let begin = |p: &mut Progress| {
             p.attempt = attempt;
             p.source = Some(source.clone());
-            p.below = false;
+            p.below = below;
             p.choices.clear();
             p.ranges = Ranges::default();
             p.speed = 0;
@@ -1788,7 +1963,18 @@ impl Fetcher {
                     left.iter().map(|r| r.expected).fold(0.0, f64::max)
                 }
             };
-            match self.legs(f, attempt, &next, faster, &mut stop).await {
+            // A copy of YouTube's (the better copy the policy named, or the listener's choice
+            // when asked) downloads as YouTube's always do; failing, the next copy is tried.
+            let got = if youtube::is_youtube(&next.source_ref()) {
+                match self.youtube_attempt(f, &next.source_ref(), true, &mut stop).await {
+                    Err(Stop::Failed(why)) => Err(Ok(Skip::Unavailable(why))),
+                    Err(other) => Err(Err(other)),
+                    Ok(path) => Ok(path),
+                }
+            } else {
+                self.legs(f, attempt, &next, faster, &mut stop).await
+            };
+            match got {
                 Ok(path) => return Ok(path),
                 Err(Ok(skip)) => {
                     let (reason, stalled) = match skip {
@@ -1863,8 +2049,8 @@ impl Fetcher {
                     ),
                 }));
             };
-            if f.racing.load(Ordering::Relaxed) {
-                // Racing YouTube: a copy below the minimum is no copy to race with.
+            if f.racing.load(Ordering::Relaxed) && !policy::may_start(&rules.stream, &best.source, f.track.duration) {
+                // Racing YouTube: a copy below the minimum races only under `playBest`.
                 return Err(Stop::Failed(format!(
                     "no Soulseek copy meets your streaming minimum ({})",
                     rules.stream.minimum
@@ -1916,14 +2102,13 @@ impl Fetcher {
         tried: &[SourceRef],
         stop: &mut watch::Receiver<bool>,
     ) -> Result<Source, Stop> {
-        let rules = self.rules.get();
         let mut searched = false;
         loop {
-            let (copies, _) = self.untried(f, tried, &rules);
-            if let Some(best) = sources::better(copies, bar, &rules, f.track.duration)
-                .into_iter()
-                .next()
-            {
+            let targets = tokio::select! {
+                t = self.targets(&f.track, bar, tried) => t,
+                () = stopped(stop) => return Err(Stop::Cancelled),
+            };
+            if let Some(best) = targets.into_iter().next() {
                 return Ok(best.source);
             }
             if searched {
@@ -2100,7 +2285,7 @@ fn want<T>(f: &Fetch, change: impl FnOnce(&mut Want) -> T) -> T {
 
 /// A source known only by reference (picked before a restart, named by a save, a YouTube copy):
 /// its facts come from the file name alone, a YouTube copy's from its format and the song's length.
-fn bare_source(r: &SourceRef, duration: Option<u32>) -> Option<Source> {
+pub(crate) fn bare_source(r: &SourceRef, duration: Option<u32>) -> Option<Source> {
     if let Some(copy) = youtube::Copy::of(r) {
         return Some(Source {
             user: r.user.clone(),
@@ -2129,21 +2314,6 @@ fn bare_source(r: &SourceRef, duration: Option<u32>) -> Option<Source> {
     })
 }
 
-/// Why the copy a fetch has is a lesser one: YouTube's, below the streaming minimum, or a peer
-/// fallen back to. `None` while it has none, or has the profile's first choice.
-fn lesser(p: &Progress) -> Option<Lesser> {
-    let source = p.source.as_ref()?;
-    if youtube::is_youtube(&source.source_ref()) {
-        Some(Lesser::Youtube)
-    } else if p.below {
-        Some(Lesser::Below)
-    } else if !p.failed_peers.is_empty() {
-        Some(Lesser::FellBack)
-    } else {
-        None
-    }
-}
-
 /// Whether the player can switch to a better copy: all of it is here, or it arrives at least
 /// `OUTRUN` times faster than it plays, so from wherever the song is it stays ahead. The player
 /// still checks that what arrived covers where the song is.
@@ -2162,10 +2332,9 @@ fn holds(f: &Fetch, copy: &SourceRef) -> bool {
     f.now().source.is_some_and(|s| s.is(copy))
 }
 
-/// Cached copies, best first: Soulseek's before YouTube's, then by `rank` (whether a copy fails
-/// the profile's minimum, then its place in the profile's order), then the most recently played.
-fn best_first(mut entries: Vec<Entry>, rank: impl Fn(&Entry) -> (bool, usize)) -> Vec<Entry> {
-    entries.sort_by_cached_key(|e| (youtube::is_youtube(&e.source), rank(e), -e.used_at));
+/// Cached copies, best first by `rank` (lowest first), then the most recently played.
+fn best_first<K: Ord>(mut entries: Vec<Entry>, rank: impl Fn(&Entry) -> K) -> Vec<Entry> {
+    entries.sort_by_cached_key(|e| (rank(e), -e.used_at));
     entries
 }
 
@@ -2475,29 +2644,6 @@ mod tests {
     }
 
     #[test]
-    fn youtube_a_copy_below_the_minimum_and_a_peer_fallen_back_to_are_lesser_copies() {
-        let yt = youtube::Copy {
-            video: "LUjGtyYEi90".into(),
-            format: "251".into(),
-            ext: "webm".into(),
-            section: None,
-        }
-        .source_ref(5_730_310);
-        let from_youtube = playing(copy_of(&yt, "webm"), Status::Done, 0, 0);
-        assert_eq!(lesser(&from_youtube), Some(Lesser::Youtube));
-        let mut p = playing(peer_copy("peer", "mp3", 3_000_000), Status::Streaming, 0, 0);
-        assert_eq!(lesser(&p), None, "the profile's first choice");
-        p.failed_peers.push(FailedPeer {
-            peer: "stalled".into(),
-            at: 12,
-        });
-        assert_eq!(lesser(&p), Some(Lesser::FellBack));
-        p.below = true;
-        assert_eq!(lesser(&p), Some(Lesser::Below));
-        assert_eq!(lesser(&Progress::new(Status::Finding)), None, "no copy yet");
-    }
-
-    #[test]
     fn a_later_play_takes_the_best_cached_copy_not_the_latest() {
         let entry = |user: &str, ext: &str, used_at| Entry {
             track: TrackId("t".into()),
@@ -2531,8 +2677,8 @@ mod tests {
         let best = best_first(vec![yt, below, second, first], rank);
         assert_eq!(
             users(best),
-            ["first", "second", "below", youtube::PEER],
-            "Soulseek before YouTube, passing before below, then the profile's order, whatever was played last"
+            ["first", "second", youtube::PEER, "below"],
+            "passing before below whatever the source, Soulseek before YouTube, then the profile's order, whatever was played last"
         );
     }
 
@@ -2970,6 +3116,8 @@ mod tests {
         struct Timed {
             lookup: Duration,
             found: bool,
+            /// Its copy is Opus 160 (format 251), else AAC 128 (140).
+            opus: bool,
             downloads: std::sync::atomic::AtomicUsize,
         }
 
@@ -2978,6 +3126,16 @@ mod tests {
                 Arc::new(Timed {
                     lookup,
                     found,
+                    opus: false,
+                    downloads: Default::default(),
+                })
+            }
+
+            fn opus(lookup: Duration) -> Arc<Timed> {
+                Arc::new(Timed {
+                    lookup,
+                    found: true,
+                    opus: true,
                     downloads: Default::default(),
                 })
             }
@@ -2987,8 +3145,18 @@ mod tests {
         impl Youtube for Timed {
             async fn find(&self, _: &Track, _: Want) -> Result<Option<Found>> {
                 tokio::time::sleep(self.lookup).await;
+                let source = match self.opus {
+                    true => lull_core::youtube::Copy {
+                        video: "rightupload".into(),
+                        format: "251".into(),
+                        ext: "webm".into(),
+                        section: None,
+                    }
+                    .source_ref(SIZE),
+                    false => upload("rightupload"),
+                };
                 Ok(self.found.then(|| Found {
-                    source: upload("rightupload"),
+                    source,
                     title: "Song".into(),
                     channel: "Artist - Topic".into(),
                     official: true,
@@ -3032,9 +3200,11 @@ mod tests {
             Ok((fake, fetcher))
         }
 
+        /// Start fast, with a minimum YouTube's copy here (AAC 128) passes: it may start the song.
         fn start_fast_rules() -> Rules {
             let mut rules = Rules::default();
             rules.youtube.mode = lull_core::youtube::Mode::StartFast;
+            rules.stream.minimum.kbps = 128;
             rules
         }
 
@@ -3254,6 +3424,176 @@ mod tests {
                 assert!(fetcher.event(&yt)["upgrade"].is_null(), "offered a copy above the cap");
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn youtube_below_the_minimum_first_follows_the_below_rule_under_start_fast() -> Result<()> {
+            // YouTube's AAC 128 is ready at once, below a 192 minimum; a passing MP3 320 from a
+            // peer comes after it. At the start lull can't know a passing copy will come, so "none
+            // is good enough yet", and `below` decides (policy.rs's table, run for real here).
+            use lull_core::quality::StreamBelow;
+            for below in [StreamBelow::PlayBest, StreamBelow::KeepLooking, StreamBelow::Ask] {
+                let bytes: Vec<u8> = vec![5u8; 300_000];
+                let youtube = Timed::new(Duration::ZERO, true);
+                let mut rules = start_fast_rules();
+                rules.stream.minimum.kbps = 192;
+                rules.stream.below = below;
+                let (_fake, fetcher) = racing(
+                    HashMap::from([(REMOTE.to_owned(), bytes.clone())]),
+                    rules,
+                    youtube.clone(),
+                )
+                .await?;
+                let known = shared("peer", REMOTE, bytes.len() as u64, "mp3", Some(320), false);
+                fetcher.sources.add(HashMap::from([(track().id, vec![known])]));
+                fetcher.sources.mark_searched(&track().id);
+
+                let opened = fetcher.stream(track(), None).await?;
+                let (chunk, _) = first_bytes(&opened).await?;
+                let playing = last(&opened);
+                let event = fetcher.event(&playing);
+                if below == StreamBelow::PlayBest {
+                    // The first ready plays, marked below; the passing copy is fetched beside it
+                    // and offered as the better copy.
+                    assert!(chunk.iter().all(|b| *b == 7), "{below:?}: YouTube's copy plays");
+                    assert_eq!(event["belowMinimum"], true, "{below:?}: {event}");
+                    let up = fetcher
+                        .upgrade(&track().id)
+                        .ok_or_else(|| Error::internal("no passing copy beside"))?;
+                    assert_eq!(ended(&up).await?.status, Status::Done);
+                    assert_eq!(fetcher.event(&playing)["upgrade"]["peer"], "peer", "{below:?}");
+                } else {
+                    // Only passing copies start the song: the peer's, and YouTube's is never fetched.
+                    assert!(
+                        chunk.iter().all(|b| *b == 5),
+                        "{below:?}: the passing peer's copy plays"
+                    );
+                    assert_eq!(event["belowMinimum"], false, "{below:?}: {event}");
+                    assert_eq!(ended(&playing).await?.status, Status::Done);
+                    assert_eq!(
+                        youtube.downloads.load(std::sync::atomic::Ordering::Relaxed),
+                        0,
+                        "{below:?}"
+                    );
+                }
+            }
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn with_no_copy_passing_start_fast_follows_the_below_rule() -> Result<()> {
+            // Nobody on Soulseek shares the song, and YouTube's AAC 128 is below a 192 minimum.
+            let below = |rule| {
+                let mut rules = start_fast_rules();
+                rules.stream.minimum.kbps = 192;
+                rules.stream.below = rule;
+                rules
+            };
+            // `keepLooking`: only a passing copy plays, so YouTube's never does.
+            let youtube = Timed::new(Duration::ZERO, true);
+            let (_fake, fetcher) = racing(
+                HashMap::new(),
+                below(lull_core::quality::StreamBelow::KeepLooking),
+                youtube.clone(),
+            )
+            .await?;
+            let f = fetcher.stream(track(), None).await?;
+            let p = ended(&f).await?;
+            assert_eq!(p.status, Status::Failed, "{p:?}");
+            assert_eq!(youtube.downloads.load(std::sync::atomic::Ordering::Relaxed), 0);
+
+            // `playBest`: the best copy found plays, YouTube's here, marked below the minimum.
+            let youtube = Timed::new(Duration::ZERO, true);
+            let (_fake, fetcher) = racing(
+                HashMap::new(),
+                below(lull_core::quality::StreamBelow::PlayBest),
+                youtube.clone(),
+            )
+            .await?;
+            let f = fetcher.stream(track(), None).await?;
+            let (chunk, _) = first_bytes(&f).await?;
+            assert!(chunk.iter().all(|b| *b == 7), "YouTube's copy plays");
+            assert_eq!(fetcher.event(&last(&f))["belowMinimum"], true, "and says it is below");
+
+            // `ask`: YouTube's copy is one of the copies offered.
+            let (_fake, fetcher) = racing(
+                HashMap::new(),
+                below(lull_core::quality::StreamBelow::Ask),
+                Timed::new(Duration::ZERO, true),
+            )
+            .await?;
+            let f = fetcher.stream(track(), None).await?;
+            let mut rx = f.progress();
+            let asked = tokio::time::timeout(Duration::from_secs(10), rx.wait_for(|p| p.status == Status::Choosing))
+                .await
+                .map_err(|_| Error::internal("the listener was never asked"))?
+                .map(|p| p.choices.iter().map(|c| c.peer.clone()).collect::<Vec<_>>())
+                .map_err(|e| Error::internal(e.to_string()))?;
+            assert_eq!(asked, [lull_core::youtube::PEER]);
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn no_switch_mid_song_for_a_tiny_gain() -> Result<()> {
+            // YouTube's AAC 128 starts the song; Soulseek's side brings an MP3 of 144 kbps, within
+            // the cap and passing the minimum, but only an eighth more: no switch is offered.
+            let bytes: Vec<u8> = vec![5u8; 300_000];
+            let (_fake, fetcher) = racing(
+                HashMap::from([(REMOTE.to_owned(), bytes.clone())]),
+                start_fast_rules(),
+                Timed::new(Duration::ZERO, true),
+            )
+            .await?;
+            let known = shared("peer", REMOTE, bytes.len() as u64, "mp3", Some(144), false);
+            fetcher.sources.add(HashMap::from([(track().id, vec![known])]));
+            fetcher.sources.mark_searched(&track().id);
+            let yt = fetcher.stream(track(), None).await?;
+            let (chunk, _) = first_bytes(&yt).await?;
+            assert!(chunk.iter().all(|b| *b == 7), "YouTube's copy plays");
+            let up = fetcher
+                .upgrade(&track().id)
+                .ok_or_else(|| Error::internal("Soulseek's copy stopped"))?;
+            assert_eq!(ended(&up).await?.status, Status::Done, "it is kept for later plays");
+            for _ in 0..10 {
+                assert!(fetcher.event(&yt)["upgrade"].is_null(), "offered a tiny gain");
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn youtubes_copy_is_a_better_copy_like_any_and_the_upgrade_fetches_it() -> Result<()> {
+            // A 128 minimum: a peer's MP3 128 starts the song first (YouTube's lookup is slower),
+            // and YouTube's Opus 160, a fifth and more above it, is the better copy the policy
+            // names. The upgrade fetches it from YouTube, and the player is offered it.
+            let bytes: Vec<u8> = vec![5u8; 300_000];
+            let youtube = Timed::opus(Duration::from_secs(1));
+            let (_fake, fetcher) = racing(
+                HashMap::from([(REMOTE.to_owned(), bytes.clone())]),
+                start_fast_rules(),
+                youtube.clone(),
+            )
+            .await?;
+            let known = shared("peer", REMOTE, bytes.len() as u64, "mp3", Some(128), false);
+            fetcher.sources.add(HashMap::from([(track().id, vec![known])]));
+            fetcher.sources.mark_searched(&track().id);
+
+            let opened = fetcher.stream(track(), None).await?;
+            let (chunk, _) = first_bytes(&opened).await?;
+            assert!(chunk.iter().all(|b| *b == 5), "the peer's MP3 128 starts the song");
+            let playing = last(&opened);
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+            let offer = loop {
+                let event = fetcher.event(&playing);
+                if event["upgrade"]["ready"] == true || tokio::time::Instant::now() > deadline {
+                    break event;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            };
+            assert_eq!(offer["upgrade"]["peer"], lull_core::youtube::PEER, "{offer}");
+            assert_eq!(offer["upgrade"]["format"], "YouTube · Opus 160", "{offer}");
+            assert_eq!(youtube.downloads.load(std::sync::atomic::Ordering::Relaxed), 1);
             Ok(())
         }
 

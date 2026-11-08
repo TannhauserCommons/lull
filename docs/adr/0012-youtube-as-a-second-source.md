@@ -5,7 +5,7 @@
 
 ## Context
 
-The listener asked for YouTube as a source (2026-11-02): through yt-dlp, streamed into the existing stream cache so preloading, seeking and resume work unchanged, with three ranking modes (off by default, fallback only, start fast then upgrade), its own quality badge, exempt from the minimum bitrate, and every choice a setting.
+The listener asked for YouTube as a source (2026-11-02): through yt-dlp, streamed into the existing stream cache so preloading, seeking and resume work unchanged, with three ranking modes (off by default, fallback only, start fast then upgrade), its own quality badge, and every choice a setting. (Corrected 2026-11-08: this line said "exempt from the minimum bitrate", which the owner never asked for. A YouTube copy is judged by the streaming settings as any copy is; see the update "one streaming policy".)
 
 Facts that shaped it, checked on 2026-11-02 with yt-dlp 2026.10.26:
 - YouTube's audio-only streams (Opus 251 in WebM, AAC 140 in M4A) come with an exact `filesize`, so byte ranges can be served before the download ends.
@@ -74,3 +74,42 @@ The owner: start fast "doesn't mean YouTube first, it's if YouTube finds it firs
   |---|---|---|
   | before | 15.02 s | YouTube |
   | after | 0.27-0.28 s | Soulseek |
+
+## Update 2026-11-08: one streaming policy, for every source
+
+The owner: "why won't YouTube play even at start fast when YouTube's copy is found faster?", and "build it modularly so we don't have to keep doing this patchwork: the app already has clear foundations and intentions of how things should work". The race above, and the fixes after it, judged YouTube's copy by rules of their own:
+- a race that was "YouTube's alone" when no known Soulseek copy passed;
+- YouTube's copy marked a lesser one by its source;
+- this ADR's own line making YouTube "exempt from the minimum", which the owner never asked for.
+
+**Decision.** One module, `soulseek::policy`, decides what a song starts on and what it switches to, from the listener's streaming profile alone (`sources.stream`: `minimum`, `below`, `pick`, `maxKbps`). It is pure. The fetch, race, fallback and upgrade code only gather copies, from any source, and ask it. A copy is a copy, a Soulseek peer's or YouTube's.
+
+**`youtube.mode` only says when YouTube is a source.** It never changes how a copy is judged.
+- `off`: never.
+- `fallback`: searched when Soulseek has nothing or is too slow (`waitS`).
+- `startFast`: searched alongside Soulseek from the start.
+
+**Starting a song** (`policy::start`). At a song's start lull can't know yet whether a copy passing the minimum exists. So a copy below it arriving first means "none is good enough yet", and `stream.below` decides, as its setting says:
+- **`playBest`:** the first copy whose first bytes are ready plays, from any source, above or below the minimum.
+  - A passing copy ready at the same moment wins.
+  - A copy below the minimum is marked so (`belowMinimum`), and the upgrade fetches the best passing copy beside it.
+- **`keepLooking`:** only passing copies play.
+  - Under start fast they race, and the first ready wins, from any source.
+  - With none, lull searches on. A copy below the minimum is never fetched to start the song.
+- **`ask`:** the first passing copy plays. Once the search ends with none passing, the listener picks among the copies found, YouTube's with Soulseek's.
+- **`pick`** keeps its meaning: it orders the copies tried first (`sources::order`), and so breaks ties.
+
+**Switching mid-song** follows the same module (ADR-0013's update of the same day).
+
+**Consequences.**
+- **YouTube starts a song under start fast when its copy is ready first:**
+  - always, when it passes the minimum;
+  - under `playBest`, also when it doesn't, marked below the minimum.
+- Under `keepLooking` or `ask`, with a minimum above YouTube's best (Opus 160, AAC 128), a passing Soulseek copy starts the song, and YouTube's copy is never fetched.
+- **The same rule holds in `fallback`:**
+  - YouTube's copy below the minimum plays only under `playBest`;
+  - otherwise a Soulseek peer that was only slow goes on;
+  - with nothing on Soulseek, `keepLooking` fails and `ask` offers it.
+- **Cached copies:** a later play takes one passing the minimum first, then one within the cap, then the better sounding (`policy::cached_key`), whatever its source.
+- **A better copy may be YouTube's.** While start fast makes YouTube a source, its copy is one of the targets the policy weighs mid-song. The upgrade fetches whatever copy the policy names, from either source, and the switch is the same: lined up, or the next play. Example: under a 128 minimum, a peer's MP3 128 that started the song is followed by YouTube's Opus 160.
+- **A copy that has played through gives way to a better cached one** on the next play, whatever either's source. Before, only a finished YouTube copy did.

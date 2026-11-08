@@ -562,7 +562,7 @@ window is the same equaliser, not a second one.
 
 ### Better copies
 
-ADR-0013, [streaming.md](streaming.md#better-copies) for the hub's half. While the playing Soulseek song is a lesser copy, its `stream` events offer `upgrade`; the engine (`trySwitch`) switches when:
+ADR-0013, [streaming.md](streaming.md#better-copies) for the hub's half. While the hub has a copy clearly better than the one playing on its way (streaming.md#better-copies), the song's `stream` events offer `upgrade`; the engine (`trySwitch`) switches when:
 - the listener didn't pick the copy (`e.source`), and the output has `switchTo`;
 - the song plays steadily (not paused, waiting or crossfading), at least 45 s from its end;
 - `ready`, and what arrived covers 20 s past where the song is.

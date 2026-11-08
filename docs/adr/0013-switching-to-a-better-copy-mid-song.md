@@ -69,3 +69,24 @@ The owner on 2026-11-07, about a song that switched: "the source on the bottom l
 - **Activity records the outcome:** "switched to <format> from <peer>", or why the player couldn't.
 - **The next song's latest event is kept** and applied when it hands over.
 - **Where the switch picks up is unchanged:** at the point the song has reached, lined up to the sample, never from the copy's start. Copies that can't be lined up wait for the next play, which plays the better copy from its start.
+
+## Update 2026-11-08: one streaming policy decides the switch
+
+The owner: better quality "is whatever is available fast that's on or above the minimum streaming bitrate, higher score if it's closer to maximum", "no tiny gains", and "we already have a score system". The update above still had its own idea of what is better:
+- a copy below the minimum counted when it beat the one playing;
+- crossing the minimum counted as a step on its own;
+- the copy playing was a "lesser" one by its source (`Lesser::Youtube`).
+
+**Decision.** The streaming policy (`soulseek::policy`, ADR-0012's update of the same day) decides the switch, for a copy of any source.
+- **The target** (`policy::better`) is the best copy that passes the minimum and is within `maxKbps` (lossless counts as above any cap), by lull's score for how it sounds (`rank::sound`). The speed expected only breaks ties.
+- **The score, for this:**
+  - **Sound decides, speed doesn't.** It is the score's format factor alone (`rank::sound`): where the format sits in `LULL_PREFERRED_FORMATS`, then its bitrate. Speed, a free slot and the queue decide only what starts the song.
+  - **The bitrate part scales toward the profile's `maxKbps`, not a fixed 320** (no cap: toward 320, higher is better). So under a 256 cap a 256 kbps copy earns the full points, and the copy nearer the cap scores higher.
+  - **It is one function.** The start's score adds speed, slot and queue to that same format factor (`rank::factors`), wherever streaming ranks copies (`Sources::ordered` for streaming, the race's tie, `ask`'s choices). Search results and saving still rank with no cap.
+- **The switch** (`policy::switch_to`) happens only for a clear step in sound over the copy playing: lossless over lossy, or at least a fifth more bitrate (`Quality::beats`). 192 to 256 and 256 to 320 kbps are steps; 300 to 320 and 192 to 224 aren't.
+- **The target may be any source's.** Soulseek's known copies are candidates, and so is YouTube's while start fast makes YouTube a source. The upgrade fetches whichever the policy names; a YouTube copy downloads as YouTube's always do.
+- **When it is looked for:**
+  - Whenever the policy knows a target for the copy playing, whatever its source. YouTube's copy is looked up behind the listener's own lookups, and is mostly remembered from the race.
+  - With none known, the song is searched again once per play when the copy playing fails the minimum.
+  - Never for a copy the listener picked.
+  - So a song started by `pick: fastest` on a fast copy moves to the best-sounding passing copy known, when that is a clear step; under `pick: highest` it usually started on it already. A replay of a cached copy fetches a clearly better one known beside it.
