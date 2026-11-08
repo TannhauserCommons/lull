@@ -1,15 +1,16 @@
 // The chrome works at any width: in every design and theme, with a song loaded, the window is narrowed from 2560 to
 // 360 px and widened back, 20 px at a time, and the header, the player bar, the mini player and the tab bar are
 // checked at each step (checks.mjs `chrome`): every control on the screen and reachable by a click, no text covered,
-// on other text, off the screen or cut off, every essential there; and Home's rows show every cover whole
-// (`clippedCovers`). Function only, never form (ADR-0083): where a part sits, whether it rises out of its bar or sits
-// in another control's area, and the bar's shape are the design's. The header and the bar fit themselves (layout.js,
-// data-fit), so no design needs a width band to patch them; a new one that would is caught here. The desktop app's mini
-// player is checked at its own sizes. docs/context/quality.md#ui-gates.
+// on other text, off the screen or cut off, every feature reached (checks.mjs `features`, web/designs/features.json),
+// and what the menus and sheets one click opens hold checked by opening them at a few widths; and Home's rows show every
+// cover whole (`clippedCovers`). Function only, never form (ADR-0083, ADR-0101): where a part sits, whether it rises
+// out of its bar or sits in another control's area, and the bar's shape are the design's. The header and the bar fit
+// themselves (layout.js, data-fit), so no design needs a width band to patch them; a new one that would is caught here.
+// The desktop app's mini player is checked at its own sizes. docs/context/quality.md#ui-gates.
 
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import { chrome, chromeNow, clippedCovers, gateFree } from '../checks.mjs';
+import { chrome, chromeNow, clippedCovers, FEATURES, features, gateFree, holders, unknownFeatures } from '../checks.mjs';
 import { designs, ids, openScreen, settle, themes } from './lib.mjs';
 
 const widths = [];
@@ -22,11 +23,11 @@ const frames = (page) => page.evaluate(() => new Promise((r) => requestAnimation
 // the chrome as the frame that first draws each width shows it: checked inside that frame, by a resize observer made after
 // the page's own (layout.js's), so it runs once the fitter has fitted the rows for the width and before the frame is
 // painted. A row a frame late shows here, however soon after it fits
-const checkDrawn = (page) => page.evaluate((src) => {
+const checkDrawn = (page) => page.evaluate(([src, list]) => {
   const check = (0, eval)('(' + src + ')');
   window.__drawnChrome = {};
-  new ResizeObserver(() => { window.__drawnChrome[innerWidth] = check(); }).observe(document.documentElement);
-}, chromeNow.toString());
+  new ResizeObserver(() => { window.__drawnChrome[innerWidth] = check(null, { list }); }).observe(document.documentElement);
+}, [chromeNow.toString(), FEATURES]);
 const drawnAt = (page, w) => page.evaluate((w) => new Promise((r) => {
   const look = () => requestAnimationFrame(() => (window.__drawn === w ? requestAnimationFrame(() => r()) : look()));
   look();
@@ -83,7 +84,8 @@ for (const design of designs) {
         await since(page);
         await page.setViewportSize({ width: w, height: 900 });
         await drawnAt(page, w);
-        const now = (await page.evaluate((w) => window.__drawnChrome[w], w)) || await chrome(page);
+        // every feature reached too (checks.mjs features), less the findings features-known.json lists for this design
+        const now = unknownFeatures((await page.evaluate((w) => window.__drawnChrome[w], w)) || await chrome(page), { design, width: w, screen: 'home' });
         if (now.length) {
           /* what the rows looked like then, and whether the next frame, then the settled page (fonts in), still
              overflow: a moment's overflow fails as one that stays does, and this names its cause */
@@ -103,6 +105,26 @@ for (const design of designs) {
       expect(report, 'the chrome at some width\n' + [...seen].map(([w, g]) => `at ${w} px: ${g}`).join('\n')).toEqual([]);
     });
 
+    // what one click opens holds what features.json says (the features check trusts it at every width above): the
+    // player's "…" menu and Following and playlists on a laptop and a tablet, the More sheet on a phone, each opened and
+    // closed again; and on a phone Now Playing, the player's sheet there, with its own "…", and Settings' list, which
+    // holds the design picker
+    test(`what one click opens holds its features / ${design} / ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openScreen(page, `/album/${ids.album}`, { design, theme });
+      await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');
+      await page.waitForFunction(() => App.player.current());
+      const found = [];
+      for (const [w, route] of [[1440, '/home'], [800, '/home'], [390, '/home'], [390, '/now'], [390, '/settings']]) {
+        await page.setViewportSize({ width: w, height: w < 640 ? 844 : 900 });
+        await page.evaluate((r) => { location.hash = '#' + r; }, route);
+        await settle(page);
+        const screen = route.split('/')[1];
+        for (const p of unknownFeatures([...await holders(page), ...await features(page)], { design, width: w, screen })) found.push(`${route} at ${w} px: ${p}`);
+      }
+      expect(found, 'what the holders hold').toEqual([]);
+    });
+
     // nothing playing, private listening on: the song side holds only the Private pill, which shows whole or keeps
     // its eye, never clipped by the side's edge (tablet's song side clips what runs out of it)
     test(`player bar, nothing playing, private listening / ${design} / ${theme}`, async ({ page }) => {
@@ -113,7 +135,7 @@ for (const design of designs) {
       for (let w = 1400; w >= 640; w -= 20) {
         await page.setViewportSize({ width: w, height: 900 });
         await drawnAt(page, w);
-        for (const p of await chrome(page)) found.set(p, [...(found.get(p) || []), w]);
+        for (const p of unknownFeatures(await chrome(page), { design, width: w, screen: 'home' })) found.set(p, [...(found.get(p) || []), w]);
         const clipped = await page.evaluate(() => { const n = document.querySelector('#pbar-now'); return n.scrollWidth > n.clientWidth + 1 ? `the song side runs ${n.scrollWidth - n.clientWidth} px past its edge` : ''; });
         if (clipped) found.set(clipped, [...(found.get(clipped) || []), w]);
       }
@@ -202,7 +224,7 @@ for (const design of designs) {
       for (let w = 620; w >= 360; w -= 20) {
         await page.setViewportSize({ width: w, height: 800 });
         await drawnAt(page, w);
-        for (const p of await chrome(page)) found.set(p, [...(found.get(p) || []), w]);
+        for (const p of unknownFeatures(await chrome(page), { design, width: w, screen: 'album' })) found.set(p, [...(found.get(p) || []), w]);
       }
       expect([...found].map(([p, ws]) => `${p} at ${ws.join(', ')} px`), 'the mini player while a song streams').toEqual([]);
     });
@@ -348,7 +370,7 @@ for (const design of designs) {
           return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && r.right > c.left + 0.5 && r.left < c.right && r.top < c.bottom && r.bottom > c.top;
         }).map((e) => `${e.getAttribute('aria-label') || String(e.className).split(' ')[0]} under the window's buttons`);
       });
-      for (const p of [...under, ...await chrome(page)]) found.set(p, [...(found.get(p) || []), w]);
+      for (const p of [...under, ...unknownFeatures(await chrome(page), { design, width: w, screen: 'home' })]) found.set(p, [...(found.get(p) || []), w]);
     }
     expect([...found].map(([p, ws]) => `${p} at ${ws.join(', ')} px`), "the header in the desktop app's window").toEqual([]);
   });

@@ -1,10 +1,11 @@
 // Key screens in every design and theme at a phone, a laptop and a wide window, on the fixture hub: each must load
 // without errors or failed requests, keep inside the window, give every title room, line up
-// the tags side by side, clip what they clamp, show each cover whole in the rows that scroll it, and match its golden.
+// the tags side by side, clip what they clamp, show each cover whole in the rows that scroll it, reach every feature
+// expected there (checks.mjs features, web/designs/features.json), and match its golden.
 // Approving an intended change: docs/context/quality.md#ui-gates.
 
 import { expect, test } from '@playwright/test';
-import { clippedCovers, overflow, settle, squeezed, unclippedClamps, unevenTags, watch } from '../checks.mjs';
+import { clippedCovers, features, overflow, settle, squeezed, unclippedClamps, unevenTags, unknownFeatures, watch } from '../checks.mjs';
 import { designs, NOW, screens, themes } from './lib.mjs';
 
 const sizes = {
@@ -31,6 +32,7 @@ for (const [size, use] of Object.entries(sizes)) {
             expect.soft(await unevenTags(page), 'tags side by side of different heights or off one centre line').toBeNull();
             expect.soft(await unclippedClamps(page), 'text clamped to some lines that draws the lines past them').toBeNull();
             expect.soft(await clippedCovers(page), 'a cover cut by the row that scrolls it').toBeNull();
+            expect.soft(unknownFeatures(await features(page), { design, width: use.viewport.width, screen: route.split(/[/?]/)[1] }), 'a feature nothing reaches').toEqual([]);
             expect.soft(problems.console, 'console errors').toEqual([]);
             expect.soft(problems.requests, 'failed requests').toEqual([]);
             await expect(page).toHaveScreenshot(`${size}/${name}-${design}-${theme}.png`);

@@ -4,12 +4,12 @@
 // folders; none: the built-ins only). The route `mini` draws the desktop app's mini player windows instead (the device
 // and the strip, at the size the app opens them, fitted to the player as the app fits them), through the stand-in
 // bridge the gates use (gates/desktop-bridge.js), a song playing and the theme handed over as one package, as the app
-// gets it. Each picture runs the checks the gates run (checks.mjs: a control outside its bar or the window, two on each
-// other, text cut off, an essential missing; anything sticking out sideways; a clamp that doesn't clip; a squeezed
-// title; console errors) and a contrast check against what is drawn behind each line of text (checks.mjs, contrast;
-// only reported for the built-in designs, which some screens fall short of), and one contact sheet shows them all:
-// tests/ui/themes-check/index.html (or in --out's folder). It exits 1 when a check finds something. Flags
-// (themes-check-args.mjs):
+// gets it. Each picture runs the checks the gates run (checks.mjs: a control nothing can click, text covered or cut
+// off, a feature nothing reaches, and what the menus and sheets one click opens hold; anything sticking out sideways; a
+// clamp that doesn't clip; a squeezed title; console errors) and a contrast check against what is drawn behind each
+// line of text (checks.mjs, contrast; only reported for the built-in designs, which some screens fall short of), and
+// one contact sheet shows them all: tests/ui/themes-check/index.html (or in --out's folder). It exits 1 when a check
+// finds something. Flags (themes-check-args.mjs):
 //   --only <id>[,<id>...]  those looks only (built in or in LULL_THEMES_DIR); --mine: LULL_THEMES_DIR's and no built-in
 //   --sizes WxH[,WxH...]   the desktop at each of these sizes instead (--size: one); a laptop at 125% is 1536x864
 //   --mockup <file-or-url> the mockup beside each picture, at its size; {mode}, {route} and {size} in it are filled in
@@ -23,7 +23,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from '@playwright/test';
-import { chrome, contrast, overflow, squeezed, unclippedClamps } from './checks.mjs';
+import { chrome, contrast, holders, overflow, squeezed, unclippedClamps, unknownFeatures } from './checks.mjs';
 import { designs as BUILT_IN, ids, openScreen, ownHub, screens } from './gates/lib.mjs';
 import { mockupUrl, outDir, parseArgs, USAGE, UsageError } from './themes-check-args.mjs';
 
@@ -113,13 +113,17 @@ async function playFirst(page, look, errors) {
 async function judge(page, job, errors, { seeThrough = false } = {}) {
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(300);
-  const found = [...(await chrome(page)), await overflow(page), await unclippedClamps(page), await squeezed(page)].filter(Boolean).map(String);
+  // a built-in design's features findings the owner has yet to decide on (gates/features-known.json) aren't counted
+  const known = (found) => (job.builtIn ? unknownFeatures(found, { design: job.design, width: page.viewportSize().width, screen: job.route.name }) : found);
+  const found = [...known(await chrome(page)), await overflow(page), await unclippedClamps(page), await squeezed(page)].filter(Boolean).map(String);
   const file = slug(job) + (seeThrough ? '.png' : '.jpg');
   // a see-through window keeps its transparency, so the sheet shows what the desktop would show through
   await page.screenshot(seeThrough ? { path: join(OUT, file), omitBackground: true } : { path: join(OUT, file), type: 'jpeg', quality: 72 });
   const problems = [...found, ...errors], notes = [];
   const low = await contrast(page, { seeThrough });
   if (low) (job.builtIn && CONTRAST_REPORT_ONLY_FOR_BUILT_INS ? notes : problems).push('contrast ' + low);
+  // last, as it opens and closes them: the menus and sheets one click opens hold what web/designs/features.json says
+  problems.push(...known(await holders(page)));
   return { ...job, file, viewport: page.viewportSize(), problems, notes };
 }
 

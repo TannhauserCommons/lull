@@ -1,6 +1,13 @@
 // Page checks shared by the visual matrix (matrix.spec.mjs, the real hub) and the screens gate (gates/, the fixture
 // hub): what a page must not do besides looking different from its golden.
 
+import { readFileSync } from 'node:fs';
+
+// lull's features and how each is reached (ADR-0101, section 6): the features check below holds every design and theme
+// to them. A finding the owner has yet to decide on is in gates/features-known.json.
+export const FEATURES = JSON.parse(readFileSync(new URL('../../web/designs/features.json', import.meta.url), 'utf8'));
+const KNOWN_FEATURES = JSON.parse(readFileSync(new URL('./gates/features-known.json', import.meta.url), 'utf8')).known;
+
 // Console errors, page errors and failed requests, minus the ones `tolerated` names ({ url: regex, status: [...] }).
 export function watch(page, tolerated = []) {
   const problems = { console: [], requests: [], pending: new Set() };
@@ -191,16 +198,70 @@ export function overflow(page) {
 
 // What a region does wrong, as a list, judged by what it does and never by its shape (ADR-0083): a control nothing can
 // click (another element takes every point of it) or off the screen, text something else covers, text on other text,
-// text off the screen or cut off without an ellipsis, and, in the chrome, a missing essential (play, previous, next,
-// the player's "…", search). Where a part sits, whether it rises out of its bar or sits in another control's area (a
-// play key in a disc), and whether a bar is full width or rectangular, are the design's: none of that is a problem.
+// text off the screen or cut off without an ellipsis, and, with the chrome, a feature nothing reaches (`features`,
+// below). Where a part sits, whether it rises out of its bar or sits in another control's area (a play key in a disc),
+// and whether a bar is full width or rectangular, are the design's: none of that is a problem.
 // The regions are the chrome by default (the header, the player bar, the mini player, the tab bar, the desktop app's
 // mini); a test may pass its own, [name, selector, { scrolls }], where `scrolls` says the region scrolls, so what is
 // scrolled out of sight is not off the screen. The header and the player bar fit themselves (layout.js, data-fit), so
 // no design needs a width band to patch them. chromeNow is the check itself, self-contained, to run in the page where a
-// test needs it at a given moment (the fit gate runs it inside the frame that draws a width).
-export function chrome(page, regions) { return page.evaluate(chromeNow, regions || null); }
-export const chromeNow = (only) => {
+// test needs it at a given moment (the fit gate runs it inside the frame that draws a width): chromeNow(regions, feats),
+// where feats ({ list, where, holder }) runs the features check too.
+export function chrome(page, regions) { return runChrome(page, regions || null, regions ? null : { list: FEATURES }); }
+const runChrome = (page, only, feats) => page.evaluate(([src, o, f]) => (0, eval)('(' + src + ')')(o, f), [chromeNow.toString(), only, feats]);
+
+// Every feature lull has (web/designs/features.json, ADR-0101 section 6) is reached where it is expected: by a control a
+// click reaches (shown, at least the 24 x 24 px the accessibility gate asks, on the screen and reached by a click at some
+// point of it, as the chrome check's hit test finds, or out of sight only in something that scrolls), or it is held in
+// something one such click opens: the player's "…" menu, the phone's More sheet, Following and playlists, and on a phone
+// Now Playing, the player's sheet (`holders` in features.json). That a holder holds what features.json says is checked
+// by opening it (`holders`, below), not in every picture: a theme may hide, move, group, fold or redraw any of lull's
+// controls, and this still knows every feature is there. `where` overrides what is read from the page: { screen, phone
+// (under 640 px), player (a song in the player), app (the desktop app) }. One string per feature nothing reaches,
+// "feature <id>: ...".
+export function features(page, list = FEATURES, where = {}) { return runChrome(page, [], { list, where }); }
+
+// Whether the layers one click opens hold what features.json says they do: each `layer` holder whose opener can be
+// clicked now (Playwright's click, which fails when something else would take it) is opened, every feature expected here
+// that names it must be in it, reached by a click inside it (one of the feature's controls, or a menu item in its words),
+// and Escape closes it. A few hundred ms a holder: the fit gate opens them at a few widths, not at every one.
+export async function holders(page, list = FEATURES, where = {}) {
+  const out = [];
+  for (const [id, h] of Object.entries(list.holders)) {
+    if (!h.layer) continue;
+    const opener = page.locator(h.opens.join(', ')).filter({ visible: true }).first();
+    if (!(await opener.count())) continue;
+    const layer = page.locator('body > .menu.is-open, body > .popover.is-open, #overlay-host > .is-open:is(.sheet, .dialog)').last();
+    let el;
+    try {
+      await opener.click({ timeout: 3000 });
+      el = await layer.elementHandle({ timeout: 3000 });
+    } catch (e) { out.push(`holder ${id}: ${h.name} doesn't open (${e.message.split('\n')[0]})`); continue; }
+    await arrived(page);   // judged once it has arrived (a sheet slides up)
+    out.push(...await runChrome(page, [], { list, where, holder: id }));
+    await page.keyboard.press('Escape');
+    // gone, not only closing: a sheet slides away over the page before it is removed
+    await page.waitForFunction((e) => !e.isConnected, el, { timeout: 3000 }).catch(() => out.push(`holder ${id}: Escape doesn't close ${h.name}`));
+    await el.dispose();
+  }
+  return out;
+}
+const arrived = (page) => page.evaluate(() => Promise.race([
+  Promise.all(document.getAnimations().filter((a) => Number.isFinite(a.effect?.getComputedTiming().endTime)).map((a) => a.finished.catch(() => {}))),
+  new Promise((r) => setTimeout(r, 2000)),
+]));
+
+// What the features check found, less what gates/features-known.json lists for a built-in design at this width and
+// screen (findings the owner has yet to decide on; the list only shrinks).
+export function unknownFeatures(found, { design, width, screen }) {
+  return found.filter((p) => {
+    const id = /^feature (\S+):/.exec(p)?.[1];
+    return !(id && KNOWN_FEATURES.some((k) => k.feature === id && k.designs.includes(design) &&
+      (!k.widths || (width >= k.widths[0] && width <= k.widths[1])) && (!k.screens || k.screens.includes(screen))));
+  });
+}
+
+export const chromeNow = (only, feats) => {
   const out = [];
   const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
   const shown = (e) => {
@@ -322,14 +383,52 @@ export const chromeNow = (only) => {
       if (a.lines.some((p) => b.lines.some((q) => meet(p, q)))) out.push(`${name}: text ${a.what} on text ${b.what}`);
     }
   }
-  if (only) return out;
-  const bar = regions.find(([n]) => n === 'bar');
-  if (bar) for (const act of ['play', 'prev', 'next', 'player-more']) {
-    const e = bar[1].querySelector(`[data-act="${act}"]`); if (!e || !shown(e)) out.push(`bar: ${act} missing`);
+  // the features (`features` above): lull's page only, not the desktop app's mini player windows
+  const app = document.getElementById('app');
+  if (!feats || !app) return out;
+  const { list, where = {}, holder } = feats;
+  const cur = window.App && App.player && App.player.current();
+  const at = {
+    screen: where.screen || app.getAttribute('data-screen'), phone: where.phone ?? vw < 640,
+    player: where.player ?? !!cur, app: where.app ?? !!(window.LullDesktop && LullDesktop.inWrapper),
+  };
+  const song = at.player && cur ? String(cur.id) : '';
+  const HIT = 24;   // the smallest target the accessibility gate takes (axe's target-size, WCAG 2.2 AA)
+  // why a click can't use a control, or '' when it can
+  const why = (c) => {
+    if (!shown(c) || c.closest('.tooltip')) return 'hidden';
+    const box = c.getBoundingClientRect();
+    if (box.width < HIT - 0.5 || box.height < HIT - 0.5) return `${Math.round(box.width)} x ${Math.round(box.height)} px, under ${HIT}`;
+    const r = seen(c);
+    if (r.empty || offScreen(r)) return r.scrolled ? '' : 'off screen';   // out of sight in a scroller: scrolling brings it in
+    const b = blocker(c, r);
+    return b ? `under ${label(b)}` : '';
+  };
+  const found = (s, root) => (s.includes('{song}') && !song ? [] : [...root.querySelectorAll(s.split('{song}').join(CSS.escape(song)))]);
+  const reached = (sels, root = document) => sels.some((s) => found(s, root).some((c) => !why(c)));
+  const expected = (f) => {
+    const rule = f.where[at.phone ? 'phone' : 'wide'];
+    if (!rule || (f.player && !at.player) || (f.app && !at.app)) return false;
+    return rule === 'all' || (rule === 'not-now' ? at.screen !== 'now' : rule.includes(at.screen));
+  };
+  if (holder) {
+    // a holder open now (the newest layer): what features.json says it holds is in it, reached by a click there
+    const h = list.holders[holder];
+    const layer = [...document.querySelectorAll('body > .menu.is-open, body > .popover.is-open, #overlay-host > .is-open:is(.sheet, .dialog)')].pop();
+    if (!layer) return [`holder ${holder}: ${h.name} isn't open`];
+    const item = (f) => !!f.label && [...layer.querySelectorAll('[role="menuitem"], .menu__item')].some((m) => new RegExp(f.label).test(m.textContent.trim()) && !why(m));
+    for (const f of list.features) {
+      if ((f.in || []).includes(holder) && expected(f) && !reached(f.controls, layer) && !item(f)) out.push(`feature ${f.id}: ${h.name} doesn't hold ${f.name}`);
+    }
+    return out;
   }
-  const head = regions.find(([n]) => n === 'header');
-  const search = head && head[1].querySelector('#header-search');
-  if (head && vw >= 640 && !(search && shown(search))) out.push('header: search missing');
+  const opens = (id) => { const h = list.holders[id]; return !!h && (!h.phone || at.phone) && reached(h.opens); };
+  for (const f of list.features) {
+    if (!expected(f) || reached(f.controls) || (f.in || []).some(opens)) continue;
+    // what came closest: a control of the feature's that is there but can't be used
+    const near = f.controls.flatMap((s) => found(s, document)).map((c) => [c, why(c)]).find(([, w]) => w !== 'hidden');
+    out.push(`feature ${f.id}: nothing a click reaches gives ${f.name}${near ? ` (${label(near[0])}: ${near[1]})` : ''}`);
+  }
   return out;
 };
 

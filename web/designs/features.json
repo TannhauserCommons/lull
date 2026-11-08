@@ -1,0 +1,37 @@
+{
+  "note": "lull's features and how each is reached (ADR-0101, section 6; docs/themes.md section 5). A theme may hide, move, group, fold or redraw any of lull's controls; the gates (tests/ui/checks.mjs, features) fail a feature no control reaches where it is expected. `controls`: selectors of controls that reach it ({song} is the playing song's id). `in`: holders one click opens that hold it (a menu item whose words match `label`, or one of its controls inside the holder). `where`: on a phone (under 640 px) and wider, the screens it is expected on: `all`, `not-now` (every screen but Now Playing, which on a phone is a sheet over the shell), or a list of screens (`.app[data-screen]`); left out: not expected at that size. `player`: only with a song in the player. `app`: only in the desktop app.",
+  "holders": {
+    "more": { "name": "the player's \"…\" menu", "opens": ["[data-act=\"player-more\"]"], "layer": true },
+    "more-sheet": { "name": "the phone's More sheet", "opens": ["[data-act=\"more-sheet\"]"], "layer": true },
+    "shelf": { "name": "Following and playlists", "opens": ["[data-act=\"shelf\"]"], "layer": true },
+    "now": { "name": "Now Playing, the player's sheet on a phone", "opens": ["a[href=\"#/now\"]", "[data-act=\"open-now\"]"], "phone": true, "route": "/now" },
+    "settings-list": { "name": "the list of Settings' sections", "opens": ["a[href=\"#/settings\"]"], "route": "/settings" }
+  },
+  "features": [
+    { "id": "play", "name": "play and pause", "controls": ["[data-act=\"play\"]"], "where": { "wide": "all", "phone": "all" } },
+    { "id": "prev", "name": "the previous song", "controls": ["[data-act=\"prev\"]"], "in": ["now"], "where": { "wide": "all", "phone": "all" } },
+    { "id": "next", "name": "the next song", "controls": ["[data-act=\"next\"]"], "where": { "wide": "all", "phone": "all" } },
+    { "id": "seek", "name": "seeking in the song", "controls": ["[role=\"slider\"][data-seek=\"player\"]"], "in": ["now"], "player": true, "where": { "wide": "all", "phone": "all" } },
+    { "id": "volume", "name": "the volume and mute", "controls": ["[data-act=\"mute\"]", "[role=\"slider\"][data-seek=\"volume\"]", "[data-act=\"now-vol\"]"], "where": { "wide": "all" } },
+    { "id": "like", "name": "liking the song", "controls": ["[data-act=\"like\"][data-id=\"{song}\"]"], "label": "^(Like|Remove from Liked)$", "in": ["more", "now"], "player": true, "where": { "wide": "all", "phone": "all" } },
+    { "id": "save", "name": "saving the song to the library", "controls": ["[data-act=\"save\"][data-id=\"{song}\"]", "[data-save-btn=\"{song}\"]"], "label": "^(Save to library|In your library)$", "in": ["more", "now"], "player": true, "where": { "wide": "all", "phone": "all" } },
+    { "id": "shuffle", "name": "shuffle", "controls": ["[data-act=\"shuffle\"]"], "in": ["now"], "where": { "wide": "all", "phone": "all" } },
+    { "id": "repeat", "name": "repeat", "controls": ["[data-act=\"repeat\"]"], "in": ["now"], "where": { "wide": "all", "phone": "all" } },
+    { "id": "queue", "name": "the queue", "controls": ["[data-act=\"toggle-panel\"][data-tab=\"queue\"]", "[data-ctx-tab=\"queue\"]", "[data-act=\"panel-expand\"][data-tab=\"queue\"]", "[data-act=\"now-tab\"][data-tab=\"queue\"]"], "in": ["now"], "where": { "wide": "all", "phone": "all" } },
+    { "id": "lyrics", "name": "the lyrics", "controls": ["[data-act=\"toggle-panel\"][data-tab=\"lyrics\"]", "[data-ctx-tab=\"lyrics\"]", "[data-act=\"panel-expand\"][data-tab=\"lyrics\"]", "[data-act=\"now-tab\"][data-tab=\"lyrics\"]"], "label": "^Lyrics$", "in": ["more", "now"], "where": { "wide": "all", "phone": "all" } },
+    { "id": "activity", "name": "Activity", "controls": ["[data-act=\"open-activity\"]", "[data-ctx-tab=\"activity\"]", "[data-act=\"panel-expand\"][data-tab=\"activity\"]"], "in": ["more-sheet"], "where": { "wide": "all", "phone": "not-now" } },
+    { "id": "now-playing", "name": "Now Playing", "controls": ["a[href=\"#/now\"]", "[data-act=\"open-now\"]"], "label": "^Device view$", "in": ["more"], "where": { "wide": "not-now", "phone": "not-now" } },
+    { "id": "more", "name": "the player's \"…\" (the song's actions and the player's views)", "controls": ["[data-act=\"player-more\"]"], "in": ["now"], "where": { "wide": "all", "phone": "all" } },
+    { "id": "search", "name": "Search", "controls": ["#header-search", "[data-nav=\"search\"]", "a[href=\"#/search\"]"], "where": { "wide": "all", "phone": "not-now" } },
+    { "id": "home", "name": "Home", "controls": ["[data-nav=\"home\"]", "a[href=\"#/home\"]"], "where": { "wide": "all", "phone": "not-now" } },
+    { "id": "library", "name": "the Library", "controls": ["[data-nav=\"library\"]", "a[href=\"#/library\"]"], "where": { "wide": "all", "phone": "not-now" } },
+    { "id": "playlists", "name": "Playlists", "controls": ["[data-nav=\"playlists\"]", "a[href=\"#/playlists\"]"], "in": ["more-sheet", "shelf"], "where": { "wide": "all", "phone": "not-now" } },
+    { "id": "stats", "name": "Stats", "controls": ["[data-nav=\"stats\"]", "a[href=\"#/stats\"]"], "in": ["more-sheet"], "where": { "wide": "all", "phone": "not-now" } },
+    { "id": "settings", "name": "Settings", "controls": ["[data-nav=\"settings\"]", "a[href=\"#/settings\"]"], "in": ["more-sheet"], "where": { "wide": "all", "phone": "not-now" } },
+    { "id": "connect", "name": "playing on another device", "controls": ["[data-act=\"connect\"]"], "label": "^Play on another device$", "in": ["more", "now"], "where": { "wide": "all", "phone": "all" } },
+    { "id": "equaliser", "name": "the equaliser", "controls": [], "label": "^Equaliser$", "in": ["more", "now"], "where": { "wide": "all", "phone": "all" } },
+    { "id": "classic", "name": "Classic mode", "controls": ["[data-act=\"classic\"]", "a[href=\"#/classic\"]"], "label": "^Classic mode$", "in": ["more", "more-sheet", "now"], "where": { "wide": "all", "phone": "all" } },
+    { "id": "mini-player", "name": "the mini player (the desktop app)", "controls": ["[data-act=\"open-now\"]"], "label": "^Device view$", "in": ["more"], "app": true, "where": { "wide": "all" } },
+    { "id": "design-picker", "name": "the design picker (Settings › Appearance)", "controls": ["a[href=\"#/settings/appearance\"]", "[data-key=\"device.design\"] [role=\"radio\"]"], "in": ["settings-list"], "where": { "wide": ["settings"], "phone": ["settings"] } }
+  ]
+}

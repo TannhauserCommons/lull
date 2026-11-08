@@ -83,6 +83,41 @@ Theme Studio writes exactly this kind of block for you (between `/* tokens: writ
 
 lull's CSS is in cascade layers, in this order: `reset`, `tokens`, `base`, `components`, `screens`, `design`, `user`. A later layer wins over an earlier one whatever the selectors, and your `theme.css` is the last one, `user`. So `.card { border-radius: 0 }` beats any design's `:root[data-design="lull"] .app .main .card` rule. Inside your own file the usual rules apply (specificity, then order). You don't write `@layer` yourself; lull puts your file in `user`.
 
+An `!important` in your theme can't beat one of lull's: an important declaration in an earlier layer wins over one in a later layer.
+
+**What lull holds fixed, and why.** lull's own CSS (`web/*.css`, `web/screens/*.css`, `web/desktop/`, not the designs in `web/designs/`, which are themes) uses `!important` only where something must hold whatever a design or theme draws (ADR-0101): a part that gave way leaves its row, a strip hides its panel's contents, reduced motion stops movement, `[hidden]` hides, the desktop app keeps its window's buttons clear. These are the only places your CSS can't change; style around them. `tests/web/important.test.mjs` (in `mise run check`) fails a new one that isn't listed here, and a listed one that is gone.
+
+| File | Rule | Holds | Why |
+|---|---|---|---|
+| `base.css` | `[hidden]` | `display` | What lull hides with `hidden` (a state tab while all is well, a pane not in use) stays hidden, whatever `display` a design gives it. |
+| `base.css` | `:root[data-window]` | `background`, `color-scheme` | A see-through window (section 12): the wallpaper steps aside for `--window-backdrop`, so the desktop shows through; Chromium paints a root opaque when its colour scheme differs from the webview's. |
+| `base.css` | `:root[data-window] body` | `background` | The same: the page's body lets the desktop through. |
+| `base.css` | `:root[data-window] .sky-specks` | `display` | The same: the wallpaper's specks step aside with it. |
+| `base.css` | `:root[data-window-preview]` | `background` | The browser's preview of a see-through window (`#/home?window=blur`) shows the worst desktop there is, black and white, under the glass. |
+| `base.css` | `:root[data-window-preview] body` | `background` | The same preview: the page shows `--window-backdrop` over it. |
+| `base.css` | `.vh` | `position` | Words for screen readers only take no room and show nowhere, whatever a design sets on an element they share. |
+| `base.css` | `:root:not([data-motion="full"]) *, :root:not([data-motion="full"]) *::before, :root:not([data-motion="full"]) *::after` | `animation`, `scroll-behavior`, `transition-property`, `transition-duration` | The system's reduced motion stops movement: loops stop and transitions keep only their fades, unless the listener chose full motion. |
+| `base.css` | `:root[data-motion="reduce"] *, :root[data-motion="reduce"] *::before, :root[data-motion="reduce"] *::after` | `animation`, `scroll-behavior`, `transition-property`, `transition-duration` | The listener's own reduced motion, the same. |
+| `components.css` | `.header :is(.kbd, .tray__label-long, .tray--full, .tray__word)[data-fit-out], .header .nav-pill[data-fit-out] .nav-pill__label` | `display` | A part of the header that gave way leaves its row (section 5, Never patch a width band), so the row fits. |
+| `components.css` | `.header .tray--full[data-fit-out] ~ .tray--compact` | `display` | When the full status tray gives way, the compact one takes its place: the services' state stays one click away. |
+| `components.css` | `.header .header__search[data-fit-out]` | `min-width` | The search that gave way gives up its room (down to 96 px), whatever least width a design gives the field, so the header fits. |
+| `components.css` | `.app[data-panel="strip"] .ctx > :not(.ctx__strip)` | `display` | The side panel collapsed to its strip hides its contents. |
+| `components.css` | `.app:is([data-nowcol="open"], [data-nowcol="strip"]) .main` | `margin-right` | The main area makes room for the Now column at its dragged width, so the column never covers the page. |
+| `components.css` | `.app[data-nowcol="strip"] .nowcol > :not(.nowcol__strip)` | `display` | The Now column collapsed to its strip hides its contents. |
+| `components.css` | `.pbar :is(.btn-icon, .seek:not(.vol > .seek), .pbar__from)[data-fit-out], .pbar__badges > [data-fit-out]:not(.pbar__private)` | `display` | A part of the player bar that gave way leaves its row; what it did is in the "…" menu. |
+| `components.css` | `.pbar .vol > .seek[data-fit-out]` | `position` | The volume slider that gave way leaves the row and opens over the volume button. |
+| `components.css` | `.pbar__private[data-fit-out] .pbar__private-label` | `display` | Private that gave way keeps its eye; its word leaves the row. |
+| `components.css` | `.pbar__acts[data-fit-out]` | `display` | Like and Save that gave way leave the row; both are in the "…" menu. |
+| `components.css` | `.mini__chip[data-fit-out]` | `display` | The mini player's state chip that gave way leaves, never over a button. |
+| `components.css` | `:root.is-hidden *` | `animation-play-state` | Loops pause while the page is hidden: nothing is drawn for a page nobody sees. |
+| `screens/now.css` | `.now-ly__state .skel--text` | `margin` | The lyrics' loading lines keep their spacing against the inline margin `ui.skeleton` writes on them. |
+| `screens/now.css` | `.now__dev` | `display` | In a short landscape window (under 600 px tall) Now Playing shows the compact device; the full one doesn't fit there. |
+| `desktop/desktop.css` | `:root[data-titlebar="win"] .header` | `padding-right` | The desktop app on Windows draws its minimise, maximise and close buttons over the page's top right corner (138 × 32 px): no header key goes under them. |
+| `desktop/desktop.css` | `:root[data-titlebar="win"][data-shell="topnav"] .header, :root[data-titlebar="win"][data-shell="dock"] .header` | `padding-right`, `margin-right` | The same, for a header drawn as a strip: the strip stops short of the buttons. |
+| `desktop/desktop.css` | `:root[data-titlebar="win"] #app` | `padding-top` | The same, from 640 to 819 px, where a header can't spare the room: the buttons get a strip of their own above the shell. |
+| `desktop/desktop.css` | `:root[data-graphics="light"] *, :root[data-graphics="light"] *::before, :root[data-graphics="light"] *::after` | `animation`, `scroll-behavior`, `transition-property`, `transition-duration`, `-webkit-backdrop-filter`, `backdrop-filter` | The lighter look, for a desktop app whose page the processor draws: nothing moves and nothing blurs what's behind it. |
+| `desktop/wrapper.html` | `:root.dk-transparent, :root.dk-transparent body` | `background` | The mini player's window is transparent: the player's own shape is the window, whatever wallpaper a design or theme paints. |
+
 ## 4. Tokens
 
 Set any of these in `:root` (both modes) or `:root[data-theme="day"]` / `[data-theme="night"]`. The full list, with every default, is `web/tokens.css`.
@@ -230,7 +265,14 @@ whether a region keeps lull's usual shape: none of it fails a gate. What does, a
   A page is judged once it has arrived: an entrance that slides it in from off the screen is fine, and so is content
   that scrolls under a part laid over its scroller (the page under the chrome, lyrics under a foot), since it scrolls
   clear;
-- a missing essential (play, previous, next, the player's "…", search);
+- a feature nothing reaches. lull's features are listed in `web/designs/features.json`, each with the controls that reach
+  it and where it is expected: play and pause, previous, next, seek, the volume, Like, Save, shuffle, repeat, the queue,
+  the lyrics, Activity, Now Playing, the player's "…", Search, Home, the Library, Playlists, Stats, Settings, playing on
+  another device, the equaliser, Classic mode, the mini player (the desktop app) and the design picker. On every screen
+  where lull offers one, a control a click reaches (shown, at least 24 × 24 px, not covered at every point) must give
+  it, or it must be in a menu or sheet one such click opens: the player's "…", the phone's More sheet, Following and
+  playlists, and on a phone Now Playing, the player's sheet there. So hide, move, group, fold or redraw lull's
+  controls as you like; just leave every feature one click away;
 - a control under 24 × 24 px or anything else the accessibility gate (axe, WCAG 2.2 AA) finds, and the order the
   keyboard and a screen reader take, which is lull's markup order whatever the CSS moves.
 
@@ -463,7 +505,8 @@ Also a window narrowed past each `data-size` step. Nothing may scroll sideways, 
 - **`mise run check`** includes this document's own gate (`tests/web/theme-hooks.test.mjs`): every hook lull's CSS and markup use must be in section 11, and a built-in design may not style a hook that no longer exists.
 - **`mise run check:ui`** runs the UI gates on every built-in design: performance budgets, the key screens and accessibility (docs/context/quality.md#ui-gates).
 - **`mise run themes:check`** (see Preview it) runs these checks on every picture. Whatever they find is listed under the picture in the contact sheet, and the run exits 1.
-  - **Fit:** a control nothing can click, text cut off or on other text or under something that paints over it, a missing play or search, anything sticking out sideways, a squeezed title, and console errors. An element faded out (opacity 0, its own or an ancestor's) or `visibility: hidden` paints nothing, so text under it is fine.
+  - **Fit:** a control nothing can click, text cut off or on other text or under something that paints over it, a feature nothing reaches (section 5), anything sticking out sideways, a squeezed title, and console errors. An element faded out (opacity 0, its own or an ancestor's) or `visibility: hidden` paints nothing, so text under it is fine.
+  - **Every feature one click away:** after each picture the menus and sheets one click opens there (the player's "…", the phone's More sheet, Following and playlists) are opened, and each must hold what `web/designs/features.json` says it does, reached by a click inside it.
   - **Contrast against what is drawn:** each line of text is checked against the pixels actually behind it: the picture, gradient or glass, not the token it was meant to sit on. A line passes when 95% of those pixels give 4.5:1, or 3:1 for large text (24px, or 18.66px bold). The sheet names the worst line, its ratio and its colour, and how many more fall short.
   - **What the contrast check counts:** an outline (`-webkit-text-stroke`) counts as ink, and a fill counts against an outline 2px or wider. A line under a fade or a mask is left out. A see-through mini player is checked over black and over white.
   - **What it skips as decoration:** text drawn at under 50% opacity (its own times its ancestors'), and text blurred by a `filter` on it or round it. A blurred, faded copy of a title behind it is not checked; the title itself is. Text hidden from screen readers (`aria-hidden="true"`) is still checked when it shows: a sighted listener reads it.
