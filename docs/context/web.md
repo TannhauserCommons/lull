@@ -201,8 +201,9 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   the slider's value says "waiting for 2:40". Words come only for a long wait (`P.seekWaitLong`: estimated over 8 s or
   unknown, or lasting 3 s): then the state tab and the mini line say "Waiting for 2:40, about 8 s"
   (`LullRules.seekWaitS`, from the transfer's speed) and screen readers hear it once, and "Playing from 2:40" when it
-  lands. It lands as soon as those bytes are here (`landKept`, on each `stream` event and tick). The next seek
-  replaces it, another song drops it, and stepping (arrow keys, Media Session) goes on from it (`P.seekTarget`). A
+  lands. It lands as soon as those bytes are here (`landKept`, on each `stream` event and tick), and is over without a
+  jump once the song has played up to it (the state tab said "Waiting for 2:29" at 2:32 once, 2026-11-08, when the
+  player had stopped hearing how far the copy had arrived; `gates/kept-seek.spec.mjs`). The next seek replaces it, another song drops it, and stepping (arrow keys, Media Session) goes on from it (`P.seekTarget`). A
   lyric line seeks the same way. The hub holds a range ahead of the transfer until its bytes arrive (never 416 for a
   range inside the file), so a start the browser maps past `received` (VBR, a big embedded cover) only buffers.
 - **The seek bar's look** is one language in every design and view (the bar, Now Playing, the device waveform, the

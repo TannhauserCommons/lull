@@ -10,41 +10,9 @@
 // docs/context/quality.md#ui-gates.
 
 import { expect, test } from '@playwright/test';
-import { designs, openScreen } from './lib.mjs';
+import { designs, fakeOutput, openScreen } from './lib.mjs';
 
 const fixtureClient = () => `${test.info().testId}:${test.info().repeatEachIndex}`;
-
-/* a native player that plays nothing: time runs while it "plays", ended() hands over to the next item, switchTo commits */
-function fakeOutput() {
-  const subs = {};
-  let cur = null, next = null, pos = 0, playing = false;
-  const fire = (type, d) => (subs[type] || []).forEach((fn) => fn(d));
-  setInterval(() => {
-    if (!cur) return;
-    if (playing) pos += 0.1;
-    fire('time', { key: cur.key, position: pos, duration: cur.duration || 240, playing, waiting: false });
-  }, 100);
-  window.__out = {
-    switches: [],
-    end() { const was = cur; cur = next; next = null; pos = 0; fire('ended', { key: was.key, next: cur ? cur.key : null }); },
-  };
-  window.LullNative = {
-    player: {
-      on(type, fn) { (subs[type] = subs[type] || []).push(fn); return () => { subs[type] = subs[type].filter((f) => f !== fn); }; },
-      load(item, o) { cur = item; next = null; pos = (o && o.at) || 0; playing = !o || o.autoplay !== false; },
-      play() { playing = true; },
-      pause() { playing = false; },
-      seek(s) { pos = s; },
-      setVolume() {},
-      setNext(item) { next = item; },
-      crossfade() {},
-      switchTo(item, o) {
-        window.__out.switches.push(item.url);
-        return o.commit().then(() => ({ switched: true, residualMs: 0.01, offsetS: 0 }));
-      },
-    },
-  };
-}
 
 const youtube = (id, job, size) => ({
   trackId: id, jobId: job, status: 'streaming', attempt: 1, peer: 'YouTube', format: 'YouTube · Opus 160', youtube: true,

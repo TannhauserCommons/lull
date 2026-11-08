@@ -2271,9 +2271,10 @@
     w.said = true;
     App.announce(P.seekWaitText() + '. The song plays on until then.');
   }
-  /* a kept seek lands once what arrived reaches it */
+  /* a kept seek lands once what arrived reaches it, and is over once the song has played up to it */
   function landKept() {
     var w = ps.seekWait; if (!w || !cur) return;
+    if (ps.pos >= w.fraction * P.duration()) { clearTimeout(keptSay); ps.seekWait = null; changed('seek'); return; }
     if (LullRules.seekTo(w.fraction, playable(), null, null).how !== 'now') return;
     clearTimeout(keptSay);
     ps.seekWait = null; ps.pos = w.fraction * P.duration(); out.seek(ps.pos);

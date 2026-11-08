@@ -66,6 +66,8 @@ export default defineConfig({
     { name: 'source-details', testMatch: 'source-details.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // a switch to a better copy shows on every surface at once, and the next song's offer survives a gapless hand-over
     { name: 'better-copy', testMatch: 'better-copy.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
+    // a kept seek is over once the song has played up to it
+    { name: 'kept-seek', testMatch: 'kept-seek.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // a tooltip never shows away from its control: a sheet's Close takes focus while the sheet still slides up
     { name: 'sheet-tip', testMatch: 'sheet-tip.spec.mjs', fullyParallel: true },
     // Esc on search goes back to the page before it, where it was
