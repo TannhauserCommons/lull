@@ -159,6 +159,8 @@
     if (clockOn) tick(); else { clearTimeout(timer); timer = 0; }
   };
   L.used = function () { return Object.keys(used); };
+  /* values set from outside: the desktop app's mini player windows get the main window's (desktop.js) */
+  L.feed = function (o) { Object.keys(o || {}).forEach(function (p) { if (L.known(p)) set(p, o[p]); }); };
 
   /* every named value on the page again: after lull draws a screen or the shell, whose hosts are new */
   L.paint = function () { if (any) Object.keys(vals).forEach(write); };

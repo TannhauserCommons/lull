@@ -77,39 +77,21 @@ test('nothing turns while the page is hidden; it catches up once shown', async (
   await ctx.close();
 });
 
-/* Home across a minute's edge in a design: the elements restyled in the two seconds around it, and the layouts forced.
-   The page's own timers run in that window too, so the clock's cost is what a theme that names it adds over the same
-   window in lull's own design, which names nothing */
-async function acrossTheEdge(browser, design) {
+/* what the minute's edge writes, alone: a new minute and hour published to every host and binding on Home (the page's
+   other timers, which a fast-forwarded clock would run in the same window, aren't the clock's cost) */
+test('the minute\'s edge restyles only the hosts and the words, and forces no layout', async ({ browser }) => {
   const ctx = await context(browser), page = await ctx.newPage();
-  await page.clock.install({ time: new Date('2026-11-08T14:12:30Z') });
-  await openScreen(page, '/home', { design, clock: false });
-  /* a second before the next minute's edge, from wherever the page's clock got to while it loaded (a slow machine
-     takes seconds), with room to settle first */
-  const now = await page.evaluate(() => Date.now());
-  let turn = Math.ceil(now / 60000) * 60000;
-  if (turn - now < 5000) turn += 60000;
-  await page.clock.pauseAt(turn - 1000);
-  await settle(page);
+  await openScreen(page, '/home', { design: 'clocked' });
   await quiet(browser, page);
   const s = await traced(browser, page, async () => {
-    await page.evaluate(() => console.timeStamp('gate-start'));
-    await page.clock.runFor(2000);
+    await page.evaluate(() => { console.timeStamp('gate-start'); Live.feed({ 'clock.minute': 7, 'clock.hour': 3 }); });
     await page.waitForTimeout(300);
     await page.evaluate(() => console.timeStamp('gate-end'));
   });
-  const minute = await page.evaluate(() => document.querySelectorAll('.ck b')[1]?.textContent ?? null);
+  expect(await page.locator('.ck b').nth(1).textContent()).toBe('07');
+  expect(s.marked[0] ?? 0, 'elements restyled by one minute\'s publish').toBeLessThanOrEqual(B.fanOutElements);
+  expect(s.forcedLayouts, 'layouts forced by it').toBe(0);
   await ctx.close();
-  return { restyled: s.marked.reduce((a, b) => a + b, 0), forced: s.forcedLayouts, minute, want: String(new Date(turn).getUTCMinutes()).padStart(2, '0') };
-}
-
-test('the minute\'s edge restyles only the hosts and the words', async ({ browser }) => {
-  const base = await acrossTheEdge(browser, 'lull'), clocked = await acrossTheEdge(browser, 'clocked');
-  expect(clocked.minute).toBe(clocked.want);
-  expect(clocked.restyled - base.restyled, `elements the clock restyled at its edge (${clocked.restyled} against lull's ${base.restyled})`)
-    .toBeLessThanOrEqual(B.fanOutElements);
-  // the page's own timers force a few layouts in that window, give or take one between runs; the clock adds none
-  expect(clocked.forced - base.forced, `layouts forced (${clocked.forced} against lull's ${base.forced})`).toBeLessThanOrEqual(1);
 });
 
 for (const design of designs) {

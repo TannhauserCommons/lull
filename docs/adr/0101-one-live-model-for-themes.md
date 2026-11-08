@@ -6,8 +6,7 @@
 ## Context
 
 Three complete listener themes were built against the theme contract (docs/themes.md) from approved mockups, each a
-world of its own: a train window with a pocket player's remote on its ledge, a poster whose giant type slides behind
-fluted glass, a carriage with an LED display over three windows. All three pass the gates. All three also drifted from
+world of its own. All three pass the gates. All three also drifted from
 their mockups, and about a quarter of each `theme.css` (101 to 180 rules) hides, moves, re-orders, fixes in place or
 re-labels lull's own parts rather than expressing the theme's idea. Where the contract made the mockup hard, the
 builders fell back to lull's usual look, because that was the part that came already wired.
@@ -22,7 +21,7 @@ What they fought, from their code and their own notes:
   (206 and 290 px), with the header clipped to a fixed height so the sums hold;
 - the time of day on every mockup ("14:12"): lull gives themes no clock, so one theme shows the weekday, sized by
   hand-measured widths per English weekday name;
-- "next ▸" on the LED and on the poster: the next song exists only as a field of Home's lead slot;
+- "next ▸" on two of the mockups: the next song exists only as a field of Home's lead slot;
 - Like and Save among the player's tools: placed `position: absolute` at `right: calc(12px + var(--fit-side, 336px) -
   88px)`, outside the fit, so they never give way, and a padding reserved to feed the fit's measure;
 - the repeat mode as a word ("RPT 1"): read with `[aria-label*="one" i]`, which breaks with any rewording;
