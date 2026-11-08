@@ -959,6 +959,7 @@
       App.on('pwa', function () { repaint('#sys-install', installBody()); }),
       App.on('config', function (key) { if (key === 'LULL_NAMING' || key === 'LULL_MUSIC_DIR') repaint('#sys-naming', namingBox()); })
     ];
+    offs.push(App.fitSettingsNav());   // the tab list fits the view below where it sits (screens/settings-fit.js)
     ctx.onCleanup(function () {
       offs.forEach(function (off) { off(); });
       if (!/^#\/settings\/app\b/.test(location.hash)) { desk = null; srvUpd = null; }   // leaving Settings > App: ask again next visit

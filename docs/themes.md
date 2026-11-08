@@ -690,7 +690,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
 ### Settings, Stats and first run
 
 - **Settings:**
-  - structure: `.sys-settings`, `.sys-nav`, `.sys-page`, `.sys-section`, `.sys-card`, `.sys-group`, `.sys-row`, `.sys-grid`, `.sys-span`, `.sys-head`, `.sys-lede`;
+  - structure: `.sys-settings`, `.sys-nav` (with `--nav-lift` beside a section: how far below where it sticks it still sits, the page's heading's height until the page scrolls past it; lull's list is `--view-h` less that tall), `.sys-page`, `.sys-section`, `.sys-card`, `.sys-group`, `.sys-row`, `.sys-grid`, `.sys-span`, `.sys-head`, `.sys-lede`;
   - controls: `.sys-period`, `.sys-pal`, `.sys-usage`, `.sys-ios`;
   - the design picker: `.sys-designs`, `.sys-design` (`data-value` is the design's id; on other elements `data-value` is wiring).
 - **Stats:** `.sys-stats`, `.sys-tiles`, `.sys-tile`, `.sys-bars`, `.sys-bar`, `.sys-heat` (`data-l`: the cell's level, 0 to 4), `.sys-empty-stats`.

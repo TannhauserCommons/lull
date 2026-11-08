@@ -289,23 +289,28 @@ for (const design of designs) {
       expect(found, 'the side panel strip with a long song title').toEqual([]);
     });
 
-    // Settings' tab list on a short laptop window (a 1080p screen at 125%: 1536 x 864): stuck beside a section that
-    // scrolls, it fits in the view and its last tab can be reached, scrolling the list itself where it must (screens/
-    // settings-fit.js, with --view-h). Before, its end hid until the section had scrolled to its own end.
+    // Settings' tab list on a short laptop window (a 1080p screen at 125%: 1536 x 864): beside a section that scrolls,
+    // it fits in the view and its last tab can be reached and clicked, scrolling the list itself where it must, both at
+    // the top of the page (the page's heading above it) and stuck mid-section (screens/settings-fit.js, --view-h and
+    // --nav-lift). Before, its end hid under the player bar until the section had scrolled.
     test(`settings tab list on a short window / ${design} / ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width: 1536, height: 864 });
       await openScreen(page, '/settings/playback', { design, theme });
-      const at = await page.evaluate(() => {
-        const view = document.querySelector('#view'), nav = document.querySelector('.sys-nav');
-        view.scrollTop = (view.scrollHeight - view.clientHeight) / 2;                 // mid-section: a sticky list is stuck
-        [nav, ...nav.querySelectorAll('*')].forEach((e) => { e.scrollTop = e.scrollHeight; }); // and scrolled to its end, where it scrolls
-        const v = view.getBoundingClientRect(), n = nav.getBoundingClientRect(), tabs = nav.querySelectorAll('.sys-nav__item');
-        const last = tabs[tabs.length - 1].getBoundingClientRect();
-        const stuck = getComputedStyle(nav).position === 'sticky' && n.top >= v.top - 1;
-        return { stuck, fits: n.bottom <= v.bottom + 1, lastShows: last.top >= Math.max(v.top, n.top) - 1 && last.bottom <= Math.min(v.bottom, n.bottom) + 1 };
-      });
-      // a design that lets the list scroll with the page (not sticky) shows every tab on the way; a stuck one must fit
-      if (at.stuck) expect(at, 'the stuck tab list fits in the view and shows its last tab').toEqual({ stuck: true, fits: true, lastShows: true });
+      for (const [where, at] of [['at the top of the page', 0], ['mid-section', 0.5]]) {
+        await page.evaluate((at) => { const view = document.querySelector('#view'); view.scrollTop = (view.scrollHeight - view.clientHeight) * at; }, at);
+        await frames(page);
+        const seen = await page.evaluate(() => {
+          const view = document.querySelector('#view'), nav = document.querySelector('.sys-nav');
+          [nav, ...nav.querySelectorAll('*')].forEach((e) => { e.scrollTop = e.scrollHeight; });   // the list scrolled to its end, where it scrolls
+          const v = view.getBoundingClientRect(), n = nav.getBoundingClientRect(), tabs = nav.querySelectorAll('.sys-nav__item');
+          const tab = tabs[tabs.length - 1], last = tab.getBoundingClientRect();
+          const hit = document.elementFromPoint((last.left + last.right) / 2, (last.top + last.bottom) / 2);
+          return { scrolls: getComputedStyle(nav).position === 'sticky', fits: n.bottom <= v.bottom + 1,
+            lastShows: last.top >= Math.max(v.top, n.top) - 1 && last.bottom <= Math.min(v.bottom, n.bottom) + 1, lastClicks: !!hit && tab.contains(hit) };
+        });
+        // a design that lets the list scroll with the page (not sticky) shows every tab on the way; a sticky one must fit
+        if (seen.scrolls) expect(seen, `the tab list ${where} fits in the view and its last tab shows and takes a click`).toEqual({ scrolls: true, fits: true, lastShows: true, lastClicks: true });
+      }
     });
 
     // Settings' choices on a phone at the largest text size: a choice whose buttons don't fit its row side by side wraps
