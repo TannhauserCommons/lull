@@ -1106,14 +1106,15 @@
     </div>`;
   }
   /* the song's YouTube copy (docs/context/youtube.md): after the peers whatever the sort, as it is lossy and has no
-     score; never "below minimum", as YouTube copies carry their own chip instead */
+     score; "below minimum" as any peer's copy (meets) */
   function youtubeRow(t, y, first) {
     /* a song cut from a full-album upload says where in the album it is; word joiners keep the range on one line */
     var f = fmt(y.format), cut = y.section ? ', from the full album, ' + App.fmt.time(y.section[0]) + '\u2060–\u2060' + App.fmt.time(y.section[1]) : '';
-    return html`<div class="src-row disc-src__youtube" role="row">
+    var below = y.meets === false ? ', below minimum' : '';
+    return html`<div class="src-row disc-src__youtube${below ? ' is-below' : ''}" role="row">
       <span class="disc-src__peer" role="cell"><button class="src-row__peer" data-act="disc-use-youtube" data-id="${t.id}" ${first ? raw('autofocus') : ''}
-        aria-label="Play from YouTube, ${f.label}, lossy${cut}">${icon('globe')}<span class="ellipsis">YouTube</span></button>
-        <span class="disc-src__note">lossy${y.official ? ', official upload' : ''}${cut}</span></span>
+        aria-label="Play from YouTube, ${f.label}, lossy${below}${cut}">${icon('globe')}<span class="ellipsis">YouTube</span></button>
+        <span class="disc-src__note">lossy${y.official ? ', official upload' : ''}${below}${cut}</span></span>
       <span role="cell">${ui.qualityChip(y.format)}</span>
       <span class="src-row__opt" role="cell">${y.sizeBytes ? size(y.sizeBytes / 1e6) : ''}</span>
       <span class="src-row__opt" role="cell"></span><span class="src-row__opt" role="cell"></span><span class="src-row__opt" role="cell"></span>

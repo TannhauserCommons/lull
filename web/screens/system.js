@@ -512,7 +512,7 @@
     var mode = get('sources.youtube.mode'), off = mode === 'off';
     loadYoutube();
     return html`${group('youtube')}
-      ${row('Use YouTube', 'Off: songs only ever play from Soulseek. As a fallback: YouTube plays a song when no Soulseek peer has it, or none starts in time. Start fast: YouTube starts every song at once while the best Soulseek copy is fetched, for this play (with "Switch to a better copy" on), the next one and saving.',
+      ${row('Use YouTube', 'Off: songs only ever play from Soulseek. As a fallback: YouTube plays a song when no Soulseek peer has it, or none starts in time. Start fast: YouTube and Soulseek are searched together, and the first copy ready that passes your minimum starts the song ("If none is good enough" decides while none does yet); the best Soulseek copy is fetched for this play (with "Switch to a better copy" on), the next one and saving.',
         choice('sources.youtube.mode', 'Use YouTube', [['off', 'Off'], ['fallback', 'As a fallback'], ['startFast', 'Start fast, then upgrade']], 'sys-seg--wrap'), { cls: 'sys-row--stack' })}
       ${row('Wait for Soulseek', 'How long a song waits for a Soulseek peer before YouTube plays it.', range('sources.youtube.waitS', 'Wait for Soulseek, seconds', 5, 120, 5), { when: 'youtube-wait', hidden: mode !== 'fallback', cls: 'sys-row--sub' })}
       ${row('Format', 'Opus sounds a little better for its size. AAC plays on more devices. Either way it is YouTube\'s own audio, never converted.',
