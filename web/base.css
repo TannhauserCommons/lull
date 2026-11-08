@@ -32,6 +32,11 @@
   :root[data-window-preview] { background: repeating-conic-gradient(#000 0 25%, #fff 0 50%) 0 0 / 64px 64px !important; }
   :root[data-window-preview] body { background: var(--window-backdrop) !important; }
 
+  /* ---------- a theme's slots (docs/themes.md section 6) ----------
+     a part of lull's catalogue keeps its <lull-part> as its box, out of the layout, so the part is an item of whatever
+     holds it (a grid, a row); a theme that wants the box gives it a display */
+  lull-part { display: contents; }
+
   /* ---------- fonts (self-hosted, Latin subset, SIL OFL 1.1; licences in fonts/) ---------- */
   @font-face {
     font-family: "Nunito"; font-style: normal; font-weight: 200 1000; font-display: swap;

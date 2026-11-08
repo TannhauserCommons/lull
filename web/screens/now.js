@@ -382,11 +382,15 @@
 
   /* up next preview (2 songs) with a link into the queue */
   function upNext() {
-    var rows = [], i = ps.index + 1;
-    while (rows.length < 2 && i < ps.queue.length) { if (M.track(ps.queue[i].trackId)) rows.push(qRow(ps.queue[i], i, { preview: true })); i++; }
     return html`${ui.labelRule('up next', { action: { label: 'Queue', act: 'now-open-queue' } })}
-      ${rows.length ? html`<ol class="tlist tlist--dense now-q__list" aria-label="Up next">${rows}</ol>`
-        : html`<p class="now-next__none">${icon('sparkle', null, 'ic-16')}Nothing up next.</p><button class="btn btn--sm" data-act="start-radio-current">${icon('radio')}Start radio</button>`}`;
+      ${nextRows(2, 'Up next')}`;
+  }
+  /* the next songs as the queue's rows (a click jumps there), or what to do when there are none */
+  function nextRows(n, label) {
+    var rows = [], i = ps.index + 1;
+    while (rows.length < n && i < ps.queue.length) { if (M.track(ps.queue[i].trackId)) rows.push(qRow(ps.queue[i], i, { preview: true })); i++; }
+    return rows.length ? html`<ol class="tlist tlist--dense now-q__list" aria-label="${label}">${rows}</ol>`
+      : html`<p class="now-next__none">${icon('sparkle', null, 'ic-16')}Nothing up next.</p><button class="btn btn--sm" data-act="start-radio-current">${icon('radio')}Start radio</button>`;
   }
 
   /* =====================================================================
@@ -488,6 +492,7 @@
     var c = $('[data-now="lyrics"]'); if (c) swap(c, lyricsBlock('page'));
     swap($('[data-nowcol="lyrics"]'), lyricsBlock('col'));
     if (App.store.get('ctxTab') === 'lyrics') App.refreshPanel();
+    App.parts.redraw('lyrics');                           // a theme's lyrics part, wherever its slot is
     lyMountAll();
   }
 
@@ -972,6 +977,17 @@
   /* synced lyrics follow the position on every engine tick */
   App.on('tick', lyTick);
 
+  /* Now Playing's parts in lull's catalogue (app.js App.parts; docs/themes.md section 6), for any slot of the page: the
+     hero's facts and state words, the next songs as the queue's rows (count, label), and the lyrics as the Lyrics card
+     draws them (their own instance, 'slot': no ids, so as many as a theme places) */
+  var PLAYED = ['track', 'source', 'status', 'play', 'ended'];
+  App.parts.add('facts', { on: PLAYED, make: factsLine });
+  App.parts.add('state', { on: PLAYED, make: function () { return App.esc(stateText()); } });
+  App.parts.add('up-next', { on: ['track', 'queue', 'ended'], make: function (a) {
+    return nextRows(App.clamp(parseInt(a('count'), 10) || 5, 1, 20), a('label') || 'Up next');
+  } });
+  App.parts.add('lyrics', { on: ['track', 'lyrics'], make: function () { return lyricsBlock('slot'); } });
+
   /* =====================================================================
      8. Actions
      ===================================================================== */
@@ -1237,6 +1253,7 @@
   });
   App.on('save', function (d) { if (colOpen() && d.id === P.currentId()) swap($('[data-nowcol="src"]'), sourceCard()); });
 
+  /* a theme's before.now and after.now slots are items of the page's grid, beside the hero and the cards (slotsIn) */
   App.route('/now', { render: render, mount: mount, title: function () { var t = cur(); return t ? t.title + ', Now Playing' : 'Now Playing'; }, view: 'now', nav: null,
-    meta: function () { return App.fmt.formatLine(cur()); } });
+    meta: function () { return App.fmt.formatLine(cur()); }, slotsIn: '.now__grid' });
 })();

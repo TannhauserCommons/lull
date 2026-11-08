@@ -56,3 +56,14 @@ test('every data-dk a built-in slot names, or its CSS styles, is a mini player k
     .map((m) => ({ at: `${d}/theme.css`, name: m[1] })));
   assert.deepEqual(styled.filter((k) => !(k.name in keys)).map((k) => `${k.at}: ${k.name}`), []);
 });
+
+// docs/themes.md section 15 lists the actions a theme's own button can name (data-act): each is one web/ runs, so a
+// theme built from the list never draws a button that does nothing
+test('every action docs/themes.md lists for a theme\'s own buttons is an action web/ runs', () => {
+  const docs = readFileSync(join(ROOT, 'docs', 'themes.md'), 'utf8');
+  const at = docs.indexOf('**The actions a button of yours can name**');
+  const rows = at < 0 ? -1 : docs.indexOf('|---|', at), table = rows < 0 ? '' : docs.slice(rows, docs.indexOf('\n\n', rows));
+  const listed = [...table.matchAll(/^\| ((?:`[a-z][a-z0-9-]*`(?:, )?)+) \|/gm)].flatMap((m) => [...m[1].matchAll(/`([^`]+)`/g)].map((x) => x[1]));
+  assert.ok(listed.length > 20, 'docs/themes.md section 15 lists the actions');
+  assert.deepEqual(listed.filter((a) => !registered.has(a)), []);
+});

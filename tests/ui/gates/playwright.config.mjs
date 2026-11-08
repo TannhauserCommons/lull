@@ -107,6 +107,8 @@ export default defineConfig({
     { name: 'live', testMatch: 'live.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // layout switches (ADR-0101): the built-ins decide layout as before, and a theme that sets a switch gets it
     { name: 'layout-switches', testMatch: 'layout-switches.spec.mjs', fullyParallel: true },
+    // a theme's markup at every region's and screen's edge, and lull's parts in it, kept and current (ADR-0101)
+    { name: 'slots', testMatch: 'slots.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // the UI sounds: once per start, never over music or on a reload, the buffering loop gone as the song sounds
     { name: 'sounds', testMatch: 'sounds.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // confirmations collapse into one note, and Quiet keeps them off the screen but not from a screen reader (ADR-0040)

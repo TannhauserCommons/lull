@@ -306,6 +306,8 @@
     try { return renderSlot(name, tpl.text, ctx, tpl.trusted); } catch (e) { console.error('[theme slot ' + name + ']', e); }
     return fallback(ctx);
   };
+  /* whether the theme in use (or what it extends) has a template for a slot: a region or screen slot is drawn only then */
+  D.has = function (name) { return template(name, '') != null; };
   var VARIANT = {
     nowHero: function (c) { return c.variant || 'full'; },
     homeLead: function (c) { return c.track ? 'playing' : 'idle'; },
@@ -338,7 +340,7 @@
   /* sanitize: no scripts, event handlers, forms, embeds, <use>, and links only inside the app (#/...). DOMPurify checks
      every attribute value against ALLOWED_URI_REGEXP; the hook keeps that to links, so data-title="Error: x" stays. */
   var PURIFY = {
-    RETURN_DOM: true, ADD_TAGS: ['lull-part'], ADD_ATTR: ['pick', 'inner', 'size', 'bars', 'icon', 'cls', 'label', 'focusable'],
+    RETURN_DOM: true, ADD_TAGS: ['lull-part'], ADD_ATTR: ['pick', 'inner', 'size', 'bars', 'icon', 'cls', 'label', 'count', 'focusable'],
     FORBID_TAGS: ['style', 'form', 'input', 'textarea', 'select', 'iframe', 'object', 'embed', 'foreignobject'],
     FORBID_ATTR: ['src', 'srcset', 'action', 'formaction'],
     ALLOWED_URI_REGEXP: /^#/
@@ -376,16 +378,41 @@
     });
     var body = isTrusted ? parsed(filled) : D.sanitize(filled);
     var parts = body.querySelectorAll('lull-part'), made = {};
-    for (var i = 0; i < parts.length; i++) parts[i].outerHTML = part(name, parts[i], ctx, made);
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i];
+      if (catalogued(name, p.getAttribute('name'), ctx)) { p.innerHTML = D.drawPart(p); D.partsDrawn++; }
+      else p.outerHTML = part(name, p, ctx, made);
+    }
+    if (!isTrusted && body.querySelector('[data-bind]')) D.partsDrawn++;   // a theme's own bound keys, for app.js to set
     if (window.Live) Live.fill(body);                // its bindings and live hosts as they are now (live.js)
     return body.innerHTML;
   }
+  /* lull's catalogue of parts (app.js App.parts, docs/themes.md section 6): every part in every slot of lull's page. The
+     slots that hand parts of their own (homeLead, nowHero, miniPlayer) keep drawing those as they always have, each where
+     it hands what the part needs; anything else comes from the catalogue, drawn into the <lull-part> element, which stays
+     as its box and which lull draws again when what it shows changes. The desktop app's mini windows have no App: there
+     a slot keeps what it hands. D.partsDrawn counts what slots drew of it since the theme was set (app.js looks for
+     parts to draw again only then). */
+  D.partsDrawn = 0;
+  var HANDS = { homeLead: 1, nowHero: 1, miniPlayer: 1 };
+  var NEEDS = { device: 'device', compact: 'compact', strip: 'strip', screen: 'screen', facts: 'facts', state: 'state', wave: 'wave',
+    'play-button': 'playButton', 'like-button': 'likeButton', 'track-list': 'trackList' };
+  function catalogued(slot, name, ctx) {
+    if (!window.App || !App.parts || !App.parts.has(name)) return false;
+    return !(HANDS[slot] && PARTS[name] && (!NEEDS[name] || hasPart(ctx, NEEDS[name])));
+  }
+  /* a catalogue part's markup for its <lull-part> box, with its pick and cls */
+  D.drawPart = function (el) {
+    return finish(el, App.parts.make(el.getAttribute('name'), function (a) { return el.getAttribute(a); }));
+  };
   /* made: what this render already built, so ten picks from one device build it once */
   function part(slot, el, ctx, made) {
     var name = el.getAttribute('name'), make = PARTS[name];
     if (!make) { console.warn('[theme slot ' + slot + '] unknown part', name); return ''; }
     var key = [name, el.getAttribute('size'), el.getAttribute('bars'), el.getAttribute('icon'), el.getAttribute('label')].join('|');
-    var out = made[key] != null ? made[key] : (made[key] = String(make(ctx, el, slot) || ''));
+    return finish(el, made[key] != null ? made[key] : (made[key] = String(make(ctx, el, slot) || '')));
+  }
+  function finish(el, out) {
     var pick = el.getAttribute('pick');
     if (pick) {
       var host = parsed(out);
@@ -575,7 +602,7 @@
   }
   function applyAttrs(id) {
     var m = D.list[id];
-    D.current = id;
+    D.current = id; D.partsDrawn = 0;
     root.setAttribute('data-design', designOf(id) || id);
     root.setAttribute('data-shell', m.shell || 'rail');
     if (m.modes && m.modes.length === 1) D.applyTheme(themePref);

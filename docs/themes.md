@@ -340,7 +340,7 @@ Prefer `@container main` to `@media`: it follows the main area, so it stays righ
 
 ## 6. Slots: your own markup
 
-Six pieces of markup can be replaced by a template in `slots/`:
+A template in `slots/` is markup of yours. Six slots replace a piece of lull's:
 
 | Slot | Where | Variants (`slots/<slot>.<variant>.html`) |
 |---|---|---|
@@ -352,6 +352,18 @@ Six pieces of markup can be replaced by a template in `slots/`:
 | `coverArt` | every cover | no template: use `coverVariety` |
 
 lull looks for `slots/<slot>.<variant>.html`, then `slots/<slot>.html`, then your `extends` design's, then its own. An empty file renders nothing (an empty `homeLead.idle.html` hides the lead while nothing plays).
+
+Two more put markup of yours at the edges of any region or screen of lull's page, where lull has nothing to replace (ADR-0101):
+
+| Slot | Where | Names (`slots/<slot>.<name>.html`) |
+|---|---|---|
+| `before` | the first thing inside a region or a screen | regions: `rail`, `header`, `content`, `ctx`, `nowcol`, `playerbar`, `mini`, `tabbar`; screens: `home`, `search`, `now`, `library`, `liked`, `downloads`, `history`, `following`, `album`, `artist`, `tag`, `playlists`, `playlist`, `outside`, `stats`, `settings` |
+| `after` | the last thing inside it | the same |
+
+- **A region slot** (`slots/after.playerbar.html`) is drawn in a box of its own, `<div class="region-slot" data-slot="after.playerbar">`, as the region's first child (`before`) or its last (`after`); the regions are the `[data-region]` hosts of section 5. lull draws it with the shell, when your theme loads or changes, and never again for a song or a state: what changes reaches it through the live model (section 14) and lull's parts (below), in place. Nothing lull draws in a region replaces it.
+- **A screen slot** (`slots/before.home.html`) is drawn in the same box inside the screen's own top container: Home's `.disc-home`, Now Playing's grid `.now__grid`, Search's `.disc-search`, the library's pages' `.view__inner` (Library, Liked, History, Following, Downloads, album, artist, tag, playlists, playlist, outside), Stats' `.sys-stats`, Settings' `.sys-settings`. It is drawn with the screen, each time lull draws it, so your box is an item of the screen's grid beside lull's parts, placed by the same grid.
+- **You place the box.** A region lays out its children its own way (the player bar is a grid of three columns, the mini player a row), so give the box a place there (`#pbar > [data-slot="after.playerbar"] { grid-column: 1 / -1; }`), take it out of the flow, or say `display: contents` to hand what's inside to the region's own layout. A box you don't place lands where that layout puts a new child. What CSS moves is still read in the markup's order: a `before` box is read, and tabbed through, before the region.
+- **A theme with none adds nothing**, not even the box. A `before` or `after` always names its region or screen: the hub refuses `slots/before.html` and a name lull doesn't have, and says which there are.
 
 A template is static HTML. Two things are live:
 
@@ -370,6 +382,43 @@ Line breaks between tags are dropped and comments are removed, so indent freely;
 | `miniPlayer` | `title`, `artist`, `format`, `quality` (`ll`, `ly`), `playing`, `liked`, `playLabel`, `playIcon`, `playIconClass`, `likeIcon`, `likeClass`, `opaqueClass` | `device`, `strip`, `cover` (`size`), `wave` |
 
 Booleans render as `true` or `false`, so CSS can follow them: `[data-playing="true"]`.
+
+**lull's parts, in every slot.** Besides what a slot hands (the table above), every slot of lull's page takes any part of
+one catalogue: `brand`, `emptyArt`, `homeLead`, `nowHero`, and the region and screen slots. Each is lull's own markup,
+wired and kept current by lull exactly as lull's own copy is, so a part goes where your idea puts it and keeps working
+there. It is drawn inside its `<lull-part>` element, which stays as its box with `display: contents`: the part is an
+item of whatever holds it (a grid, a row), and a `display` of yours makes the box a box. `pick` and `cls` work as above.
+
+| Part | What | Attributes | Drawn again |
+|---|---|---|---|
+| `play-button` | the round play key (`.btn-gloss`), Play or Pause | `size`: 40, 48, 52, 56, 64 | never: kept by `data-bind="play"` |
+| `prev`, `next` | the player bar's keys | | never |
+| `shuffle`, `repeat` | the player bar's toggles, pressed or not (`aria-pressed`); repeat's label and icon say the mode | | never: kept by `data-bind` |
+| `like-button` | Like, for whatever plays | | never: kept by `data-bind="like"` |
+| `save-button` | the player's Save, for whatever plays, with its progress | | never: kept by `data-bind="save"` |
+| `seek` | the song's seek bar | `label` | never: kept by `data-seek="player"` |
+| `volume` | Mute and the volume slider (`.vol`) | | never: kept by `data-bind="mute"`, `data-seek="volume"` |
+| `cover` | the playing song's cover | `size` (px, or a CSS length) | with the song |
+| `source-badge` | Saved or Soulseek, a button to the source details (none for a YouTube copy, as in the bar) | | with the song and its copy |
+| `quality-chip` | the copy's quality, a button to the source details | | with the song, its copy and its state |
+| `playing-from` | "Playing from" the place, a link that opens it at the song | `label` (the words before the name) | with the song and the queue |
+| `facts` | the source badge, the quality chip and the stream's fact (peers, queue place, how much arrived), as Now Playing's screen has them | | with the song, its copy, its state and play or pause |
+| `state` | the player's state in a few words (`buffering`, `paused`) | | the same |
+| `up-next` | the next songs, as the queue's rows (a click plays from there), or "Nothing up next" with Start radio | `count` (1 to 20, 5 if absent), `label` | with the song and the queue |
+| `lyrics` | the song's lyrics as Now Playing's Lyrics card draws them: synced lines that follow the song, a click to jump, text size | | with the song and when its lyrics arrive |
+| `icon` | one of lull's icons | `icon`, `size="16"` | |
+
+A part drawn again is redrawn in place, only where it changed, so focus and what didn't change stay. In `homeLead` and
+`nowHero` a part the slot hands itself is drawn as it always was (`cover`, `play-button`, `like-button`, `seek`,
+`playing-from`, and the hero's `facts` and `state`); every other part comes from the catalogue. The desktop app's mini
+player windows have no catalogue: `miniPlayer` takes the parts its row lists.
+
+**Or no part at all.** Your own markup reaches the same features: `<button data-act="shuffle" data-bind="shuffle">SHUF</button>`
+is a shuffle key lull keeps pressed (`aria-pressed`), and `<b data-bind="song.quality"></b>` the copy's quality (section
+14). A button with `data-bind` lull keeps as it keeps its own, leaving your words in it: `play` (its label, and lull's icon
+if you put one in), `shuffle` and `mute` (pressed), `repeat` (pressed, and its label says the mode), `like` (the playing song, and
+pressed while it is liked), `save` (the playing song: pressed, its label, disabled while nothing plays), and `xfade` (shown while songs crossfade). Section 15
+lists the actions a button of yours can name.
 
 Every slot also takes the live model's values, by path, as fields (`{{clock.time}}`, as the slot is drawn) and as bindings that stay current (`<b data-bind="clock.time"></b>`): section 14. A field is the value when the slot was drawn; a binding is the value now.
 
@@ -547,6 +596,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   - `.is-resizing` (a resize handle is being dragged);
   - the layout switches, `--layout-*` (section 5, Layout switches): custom properties a theme sets on `.app`, which lull's script reads.
 - **Regions:** `data-region` (section 5), `.region-title`, `.region-meta`.
+- **A theme's slots at the edges** (section 6): `.region-slot`, the box a `before` or `after` slot is drawn in, the first or last child of its region or screen, with `data-slot` naming it (`after.playerbar`, `before.home`). A part of lull's catalogue keeps its `lull-part` element as its box (`display: contents`).
 - **Live hosts:** `data-live` on an element of a theme's slot markup: it carries the live model's custom properties, as lull's own hosts do (section 14).
 - **Shell parts:** `.rail`, `.header`, `.main`, `.view` (with `--view-h` once Settings has opened: its height below its top padding, where something sticky at its top ends), `.ctx` (with `data-ctx-tab` on its tab buttons), `.ctx-scrim`, `.nowcol`, `.pbar`, `.mini`, `.tabbar`, `.tab`, `.nav-item`, `.nav-pill`, `.wordmark`, `.brand` (the default brand slot), `.skip-link`, `.sky-specks`, `.col-resize` (a resize handle, `data-resize`).
 - **Links:** `data-nav` on every nav link, `data-brand` on brand links.
@@ -567,7 +617,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
 ### Components
 
 - **Buttons:** `.btn`, `.btn-icon`, `.btn-gloss`, `.btn-save` (`data-state`), `.kbd`, `.switch`, `.switch-row`.
-- **Every control:** `data-act` names its action, `data-tip` its tooltip (with `data-tip-cut`, words that show it only while they are cut off, and on a tap: the state tab's line, the mini player's; a tooltip a tap showed is `.tooltip--asked`, which a theme that hides tooltips on phones should still show), `data-bind` the player state it shows, or the live model's value it holds (section 14). `data-answer` (`yes`, `no`) is the player bar's "Right song?" answer (`.pbar__ask`, internal).
+- **Every control:** `data-act` names its action (section 15 lists those a theme's own button can name), `data-tip` its tooltip (with `data-tip-cut`, words that show it only while they are cut off, and on a tap: the state tab's line, the mini player's; a tooltip a tap showed is `.tooltip--asked`, which a theme that hides tooltips on phones should still show), `data-bind` the player state it shows (`play`, `shuffle`, `repeat`, `like`, `save`, `mute`, `xfade`, `private`, and the times `pos`, `dur`, `buffered-to`, `received`: section 6), or the live model's value it holds (section 14). `data-answer` (`yes`, `no`) is the player bar's "Right song?" answer (`.pbar__ask`, internal).
 - **Chips and badges:** `.chip`, `.chip-reason`, `.chip-more`, `.pill-filter`, `.badge`, `.badge-saved`, `.badge-slsk`, `.badge-new`, `.badge-count`, `.badge-below`, `.q-chip`, `.src-badge` (`data-was`: `saved` `slsk`), `.dup-note`, `.dup-better`, `.resolve`, `.scrobble`, `.sg`, `.spin-ring`.
 - **Cards:** `.card` (`data-head`: `rule` `hidden`; `data-meta`), `.card-head`, `.label-rule`, `.inset`, `.source-card`, `.disc-pick` (a Home pick).
 - **Covers:** `.cover`, `.c1`, `.c2`, `.c3`, `.c4`, `.c5`, `.c6`, `.c7`, `.c8`, `.has-art`, `data-look` (cover variety), `.mosaic`, `.bezel-thumb`, `.cover-zoom`, `.cover-view`.
@@ -962,3 +1012,71 @@ own: lull leaves it alone.
 
 **What the hub refuses:** a slot that binds or fields a path in one of the model's branches that the model doesn't
 have (`data-bind="clock.hours"`), naming the ones it has. Names outside the model are your own, as always.
+
+## 15. Building from a mockup
+
+A mockup is your theme's idea drawn whole: an LED over the page that names the song, a pocket player's LCD in the
+bar, a column of lyrics and what plays next beside the page. Build it part by part, and make each part one of two
+things (ADR-0101):
+
+- **Your own markup**, for what lull doesn't draw: a slot at the edge of the region or screen it sits in (section 6),
+  `slots/before.header.html` for the LED, `slots/after.playerbar.html` for the LCD. Its words and states are the live
+  model's values (`<b data-bind="song.title"></b>`, `--song-pos`, `:root[data-player-repeat="one"]`, section 14), and its
+  controls are plain buttons that name an action (below), with a `data-bind` where lull keeps one pressed
+  (`<button data-act="shuffle" data-bind="shuffle">SHUF</button>`). lull never redraws your markup; it changes the values
+  in it, in place.
+- **One of lull's parts**, where the mockup shows one: lull's own, styled and placed by the grid of the screen or region
+  it is in, or a copy from the catalogue in your markup (`<lull-part name="up-next" count="4">`, section 6). The column of
+  lyrics and up next is your markup in `slots/after.ctx.html` (or `before.content`) holding the `lyrics` and `up-next`
+  parts, each in a box of yours, laid out by your grid, at the size its content takes. Nothing is fixed in place at
+  measured heights: where a size matters, each region's own is in the model (`--region-height`, section 14).
+
+Where you draw your own version of something lull shows, hide lull's on that screen (its card, its tag) rather than
+moving it, and keep what it told a screen reader: lull's cards are named (`aria-label`, a heading), so give your box
+the same name, or a heading of yours hidden only from sight (`clip-path: inset(50%)` on a 1 px box), never
+`display: none` on the words a screen reader needs. The gates still check that the essentials stay visible, named and
+clickable whatever you hide (section 5).
+
+**Which screens are already one grid.** Place lull's parts and your boxes as items of one grid rather than stacking
+boxes over each other:
+- **Now Playing:** `.now__grid` is a grid whose items are the hero (`.now__dev`), the title and actions (`.now-head`,
+  `.now__acts`, or `.now__intro` as one box), the source and lyrics cards (`.now-srccard`, `.now-lycard`, or
+  `.now__side`) and up next (`.now-next`), placed by `grid-template-areas`; your `before.now` and `after.now` boxes are
+  items of it too.
+- **Home:** its modules each have a box that names them, `.disc-mod[data-module]` (`picks`, `new`, `radio`, `jump`,
+  `tags`), inside `.disc-modules` (columns), after the greeting (`.disc-hello`) and the lead (`.disc-lead`), in
+  `.disc-home`, where your `before.home` and `after.home` boxes are too. To place them all in one grid, make `.disc-home`
+  the grid and `.disc-modules` `display: contents`: a window behind the greeting and the first module is then a box of
+  yours in the same grid area, not a pseudo-element stretched behind two of lull's.
+- **The shell:** each region is a child of `.app`, a grid; a region's slot boxes are items of the region's own layout.
+
+**The actions a button of yours can name** (`data-act`), each what lull's own control with that action does. Buttons
+for the playing song need no `data-id`.
+
+| `data-act` | What it does |
+|---|---|
+| `play` | play, or pause |
+| `prev`, `next` | the song before, the next song |
+| `shuffle` | shuffle on or off (`data-bind="shuffle"` keeps it pressed) |
+| `repeat` | repeat off, all, one, in turn (`data-bind="repeat"`) |
+| `mute` | mute or unmute (`data-bind="mute"`) |
+| `now-vol` | the volume a step up (`data-dir="1"`) or down (`data-dir="-1"`) |
+| `like` | like the playing song, or unlike it (`data-bind="like"`) |
+| `save` | save the playing song to the library, or try a failed save again (`data-bind="save"`) |
+| `add-to-playlist` | add the playing song to a playlist (a picker opens) |
+| `start-radio-current` | a radio from the playing song |
+| `go-playing` | open the place the song plays from, at the song |
+| `source-details` | where the playing copy comes from, and its file |
+| `pick-source` | choose another copy of the song |
+| `retry-search` | look for the song on Soulseek again |
+| `player-more` | the player's "…" menu |
+| `connect` | play on another device |
+| `toggle-panel` | open or close the side panel at a tab: `data-tab="queue"`, `"lyrics"` or `"activity"` |
+| `now-column` | show or hide the Now Playing column |
+| `open-now` | Now Playing (in the desktop app, the mini player) |
+| `classic` | Classic mode |
+| `theme` | day or night |
+| `status` | the services' status, by the button |
+| `shortcuts`, `palette` | the keyboard shortcuts, the command palette |
+
+Screens are links: `<a href="#/library">`, `#/search`, `#/now`, `#/settings/appearance`.

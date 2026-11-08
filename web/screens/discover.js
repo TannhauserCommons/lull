@@ -153,15 +153,11 @@
     var t = P.current();
     var out = String(App.slot('homeLead', { track: t, player: P.state, queue: P.upNext(8), parts: {
       cover: function (x, size) { return ui.cover(x, size || 64); },
-      playButton: function (size) { return gloss(size); },
+      playButton: ui.playButton,
       likeButton: function (x) { return ui.likeButton((x || t || {}).id || ''); },
       trackList: function (tracks, opts) { return ui.trackList(tracks, Object.assign({ dense: true }, opts || {})); },
       formatLine: App.fmt.formatLine } }, function () { return ''; }));
     return out ? html`<div class="disc-lead" data-region="lead">${raw(out)}</div>` : '';
-  }
-  function gloss(size) {             // sizes with a .btn-gloss--N class: 40 48 52 56 64
-    var on = P.state.playing;
-    return html`<button class="btn-gloss btn-gloss--${size || 56}" data-act="play" data-bind="play" aria-label="${on ? 'Pause' : 'Play'}" data-tip="${on ? 'Pause (Space)' : 'Play (Space)'}"><i class="btn-gloss__spin" aria-hidden="true"></i>${icon(on ? 'pause' : 'play', null, on ? '' : 'ic-play')}</button>`;
   }
 
   /* shelves: key in the feed (and in its `errors`) -> region and body, so one shelf can be repainted alone */

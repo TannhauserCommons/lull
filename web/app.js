@@ -388,7 +388,8 @@
      render(ctx) returns markup (Safe or string); mount(ctx) runs after it is in the DOM.
      ctx = { params, query, el (the view), onCleanup(fn) }. ':name?' marks an optional segment.
      need(params, query): code the route's screen loads on first use (docs/context/web.md, Code loads where it is used):
-     a promise while some is still to load (App.needScript, App.needHub, App.needClassic), nothing once it is here. */
+     a promise while some is still to load (App.needScript, App.needHub, App.needClassic), nothing once it is here.
+     slotsIn: the selector of the element a theme's screen slots go into, when it isn't the first the screen draws. */
   App.route = function (pattern, render, opts) {
     var def = typeof render === 'function' ? Object.assign({ render: render }, opts || {}) : render;
     var keys = [];
@@ -689,9 +690,9 @@
     /* first: the page loaded on this route (nothing shown before it in this page) */
     App.current = { path: loc.path, params: params, query: loc.query, route: route, first: lastPath === null };
 
-    var markup;
+    var markup, drawn = Designs.partsDrawn, screen = loc.path.split('/')[1] || 'home';
     if (!route) markup = notFound(loc.path);
-    else { try { markup = route.render(ctx); } catch (e) { console.error(e); markup = renderError(e); } }
+    else { try { markup = withScreenSlots(route.render(ctx), screen, route); } catch (e) { console.error(e); markup = renderError(e); } }
     if (same) patch(view, markup || ''); else view.innerHTML = String(markup || '');   // a new page starts fresh
     if (route && route.mount) { try { route.mount(ctx); } catch (e) { console.error(e); } }
 
@@ -701,7 +702,7 @@
     document.title = (title ? title + ' - ' : '') + App.product;
     /* title-bar hooks: .app[data-screen] = first path segment (album, playlist, now ...), .main[data-title] = the
        page title, .main[data-meta] = the route's live meta line (route.meta(ctx), e.g. "9 songs, 37 min"; App.setMeta) */
-    $('#app').setAttribute('data-screen', loc.path.split('/')[1] || 'home');
+    $('#app').setAttribute('data-screen', screen);
     $('.main').setAttribute('data-title', String(title).toLowerCase());
     App.setMeta(route && route.meta ? safeCall(route.meta, ctx) : '');
     var nav = route && route.nav;
@@ -719,6 +720,8 @@
     if (arrived) { shownEntry = entry; shownAt = history.state && history.state.lullAt || 0; anchorFix = null; returnTo = spot ? Object.assign({ entry: entry, until: Date.now() + 4000 }, spot) : null; }
     lastPath = loc.path; if (shownAt != null) pathAt[shownAt] = loc.path;
     App.syncRows();
+    /* a slot drew lull's parts or bound keys with the screen: they take the player's state now, not at its next change */
+    if (Designs.partsDrawn !== drawn) { paintBound(); updateSeeks(); }
     App.emit('route', App.current);
     settleSpot(); settleReveal();
     if (arrived) awaitSpot(view);
@@ -1262,6 +1265,26 @@
   ui.likeButton = function (id, cls) {
     var on = App.isLiked(id), t = M.track(id);
     return html`<button class="btn-icon btn-icon--bare ${on ? 'is-liked' : ''} ${cls || ''}" data-act="like" data-id="${id}" data-like="${id}" aria-pressed="${on ? 'true' : 'false'}" aria-label="Like ${t ? t.title : ''}" data-tip="${on ? 'Liked' : 'Like'}">${icon(on ? 'heart-fill' : 'heart')}</button>`;
+  };
+  /* Like for whatever plays, as data-bind="like" keeps it (App.syncRows): the song it likes follows the player; with
+     nothing playing it does nothing (the action) */
+  function likeKey() {
+    var t = P.current(), on = !!t && App.isLiked(t.id);
+    return html`<button class="btn-icon btn-icon--bare ${on ? 'is-liked' : ''}" data-act="like" data-bind="like" data-id="${t ? t.id : ''}" aria-pressed="${on ? 'true' : 'false'}" aria-label="Like" data-tip="Like (L)">${icon(on ? 'heart-fill' : 'heart')}</button>`;
+  }
+  /* the round play key (sizes with a .btn-gloss--N class: 40 48 52 56 64), kept by data-bind="play" (renderBar) */
+  ui.playButton = function (size) {
+    var on = P.state.playing;
+    return html`<button class="btn-gloss btn-gloss--${size || 56}" data-act="play" data-bind="play" aria-label="${on ? 'Pause' : 'Play'}" data-tip="${on ? 'Pause (Space)' : 'Play (Space)'}"><i class="btn-gloss__spin" aria-hidden="true"></i>${icon(on ? 'pause' : 'play', null, on ? '' : 'ic-play')}</button>`;
+  };
+  /* the player bar's own transport keys (index.html), for a slot: shuffle and repeat kept by their data-bind (renderBar) */
+  var REPEAT_LABEL = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' };
+  ui.transportKey = function (act) {
+    var s = P.state;
+    if (act === 'shuffle') return html`<button class="btn-icon btn-icon--bare" data-act="shuffle" data-bind="shuffle" aria-pressed="${String(!!s.shuffle)}" aria-label="Shuffle" data-tip="Shuffle (S)">${icon('shuffle')}</button>`;
+    if (act === 'repeat') return html`<button class="btn-icon btn-icon--bare" data-act="repeat" data-bind="repeat" aria-pressed="${String(s.repeat !== 'off')}" aria-label="${REPEAT_LABEL[s.repeat]}" data-tip="${REPEAT_LABEL[s.repeat]} (R)">${icon(s.repeat === 'one' ? 'repeat-one' : 'repeat')}</button>`;
+    return act === 'prev' ? html`<button class="btn-icon btn-icon--bare" data-act="prev" aria-label="Previous" data-tip="Previous (P)">${icon('prev')}</button>`
+      : html`<button class="btn-icon btn-icon--bare" data-act="next" aria-label="Next" data-tip="Next (N)">${icon('next')}</button>`;
   };
 
   /* Track row. opts: { index, dense, added (ISO), draggable (default true), showSources, dup ('saved'|'better'),
@@ -3444,6 +3467,12 @@
       b.setAttribute('data-tip', on ? 'Liked' : 'Like');
       var u = $('use', b); if (u) u.setAttribute('href', '#i-' + (on ? 'heart-fill' : 'heart'));
     });
+    /* Like for whatever plays (a slot's like-button part, a theme's own data-bind="like" button): its song and whether
+       it is liked; its words are the button's own */
+    $$kept('[data-bind="like"]').forEach(function (b) {
+      setAttr(b, 'data-id', cur || ''); setAttr(b, 'aria-pressed', String(liked)); b.classList.toggle('is-liked', liked);
+      var u = $('use', b); if (u) setAttr(u, 'href', '#i-' + (liked ? 'heart-fill' : 'heart'));
+    });
     $$('[data-src-badge]').forEach(function (el) {
       var want = App.isSaved(el.getAttribute('data-src-badge')) ? 'saved' : 'slsk';
       if (el.getAttribute('data-was') === want) return;
@@ -3622,8 +3651,9 @@
         el.addEventListener('click', function (e) { if (e.target.closest('a')) setTimeout(function () { App.closePopover(); }, 0); });
       } });
   }
-  /* everything outside the view that a design can change: brand, rail, tray, context panel, player bar */
-  function renderShell() { renderBrand(); renderRail(); renderTray(); renderCtx(); renderBar(); layoutCtx(); }
+  /* everything outside the view that a design can change: its region slots, brand, rail, tray, context panel, player bar
+     (which also brings the region slots' bound keys to the player's state) */
+  function renderShell() { renderRegionSlots(); renderBrand(); renderRail(); renderTray(); renderCtx(); renderBar(); layoutCtx(); }
   var STATE_WORDS = { ok: 'ok', warn: 'needs attention', down: 'down', off: 'not set up' };
   function trayLabel() {
     var s = state.services, parts = [];
@@ -3912,39 +3942,7 @@
       patch(stEl, html`${icon(ic)}<span class="pbar__state-line" data-tip="${line}" data-tip-cut ${raw(waiting ? 'aria-hidden="true"' : err ? 'tabindex="0"' : '')}>${line}</span>${acts}`);
       stEl.classList.toggle('is-error', err); stEl.classList.toggle('is-seek-wait', !!waiting); stEl.hidden = false;
     } else { stEl.hidden = true; stEl.innerHTML = ''; }
-    // transport
-    var busy = st === 'finding' || st === 'queued' || st === 'buffering' || st === 'stalled';
-    $$kept('[data-bind="play"]').forEach(function (b) {
-      var playingNow = ps.playing && !idle && st !== 'ended' && st !== 'failed';
-      b.setAttribute('aria-label', playingNow ? 'Pause' : 'Play'); b.setAttribute('data-tip', playingNow ? 'Pause (Space)' : 'Play (Space)');
-      $('use', b).setAttribute('href', '#i-' + (playingNow ? 'pause' : 'play'));
-      $('svg', b).classList.toggle('ic-play', !playingNow);
-      b.classList.toggle('is-buffering', busy && ps.playing);
-    });
-    $$kept('[data-bind="shuffle"]').forEach(function (b) { b.setAttribute('aria-pressed', String(ps.shuffle)); });
-    $$kept('[data-bind="repeat"]').forEach(function (b) {
-      b.setAttribute('aria-pressed', String(ps.repeat !== 'off'));
-      var label = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' }[ps.repeat];
-      b.setAttribute('aria-label', label); b.setAttribute('data-tip', label + ' (R)');
-      $('use', b).setAttribute('href', '#i-' + (ps.repeat === 'one' ? 'repeat-one' : 'repeat'));
-    });
-    /* the song's Save button (beside it, in the bar's song side): as its saving stands, between renders */
-    $$kept('[data-bind="save"]').forEach(function (b) {
-      if (!t) { b.disabled = true; return; } b.disabled = false;
-      var look = saveLook(t), stp = $('.pbar__save-step', b);
-      b.setAttribute('aria-label', look.label); b.setAttribute('data-tip', look.label); b.setAttribute('data-id', t.id);
-      $('use', b).setAttribute('href', '#i-' + look.icon);
-      b.setAttribute('aria-pressed', String(look.saved));
-      if (look.step) { if (!stp) { stp = document.createElement('span'); stp.className = 'pbar__save-step'; stp.setAttribute('aria-hidden', 'true'); b.appendChild(stp); } stp.textContent = look.step; }
-      else if (stp) stp.remove();
-    });
-    $$kept('[data-bind="mute"]').forEach(function (b) {
-      var v = ps.muted ? 0 : ps.volume;
-      $('use', b).setAttribute('href', '#i-' + (ps.muted ? 'mute' : v === 0 ? 'volume-0' : v < .5 ? 'volume-1' : 'volume-2'));
-      b.setAttribute('aria-label', ps.muted ? 'Unmute (M)' : 'Mute (M)'); b.setAttribute('data-tip', ps.muted ? 'Unmute (M)' : 'Mute (M)');
-      b.setAttribute('aria-pressed', String(ps.muted));
-    });
-    $$kept('[data-bind="xfade"]').forEach(function (el) { el.hidden = !ps.crossfade; });
+    paintBound();
     // mini-player text
     setText($('#mini-title'), idle ? 'Nothing playing' : t.title);
     /* the artist, and where the song plays from (the whole text opens Now Playing, whose "Playing from" opens it);
@@ -3961,10 +3959,146 @@
     updateSeeks();
     updateMediaSession();
   }
+  /* every key and word bound to the player (data-bind: play, shuffle, repeat, save, mute, xfade), wherever it is: the
+     player bar's, Now Playing's, a slot's part, a theme's own button. Drawn with the bar, and after lull draws slots */
+  function paintBound() {
+    var t = P.current(), st = ps.status, idle = !t || st === 'idle';
+    var busy = st === 'finding' || st === 'queued' || st === 'buffering' || st === 'stalled';
+    $$kept('[data-bind="play"]').forEach(function (b) {
+      var playingNow = ps.playing && !idle && st !== 'ended' && st !== 'failed';
+      b.setAttribute('aria-label', playingNow ? 'Pause' : 'Play'); b.setAttribute('data-tip', playingNow ? 'Pause (Space)' : 'Play (Space)');
+      /* a theme's own key (words, no icon) keeps its words: only lull's icon follows */
+      var u = $('use', b), svg = $('svg', b);
+      if (u) u.setAttribute('href', '#i-' + (playingNow ? 'pause' : 'play'));
+      if (svg) svg.classList.toggle('ic-play', !playingNow);
+      b.classList.toggle('is-buffering', busy && ps.playing);
+    });
+    $$kept('[data-bind="shuffle"]').forEach(function (b) { b.setAttribute('aria-pressed', String(ps.shuffle)); });
+    $$kept('[data-bind="repeat"]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(ps.repeat !== 'off'));
+      var label = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' }[ps.repeat];
+      b.setAttribute('aria-label', label); b.setAttribute('data-tip', label + ' (R)');
+      var u = $('use', b); if (u) u.setAttribute('href', '#i-' + (ps.repeat === 'one' ? 'repeat-one' : 'repeat'));
+    });
+    /* the song's Save button (beside it, in the bar's song side): as its saving stands, between renders */
+    $$kept('[data-bind="save"]').forEach(function (b) {
+      if (!t) { b.disabled = true; return; } b.disabled = false;
+      var look = saveLook(t), stp = $('.pbar__save-step', b);
+      b.setAttribute('aria-label', look.label); b.setAttribute('data-tip', look.label); b.setAttribute('data-id', t.id);
+      var u = $('use', b); if (u) u.setAttribute('href', '#i-' + look.icon);
+      b.setAttribute('aria-pressed', String(look.saved));
+      if (look.step) { if (!stp) { stp = document.createElement('span'); stp.className = 'pbar__save-step'; stp.setAttribute('aria-hidden', 'true'); b.appendChild(stp); } stp.textContent = look.step; }
+      else if (stp) stp.remove();
+    });
+    $$kept('[data-bind="mute"]').forEach(function (b) {
+      var v = ps.muted ? 0 : ps.volume, u = $('use', b);
+      if (u) u.setAttribute('href', '#i-' + (ps.muted ? 'mute' : v === 0 ? 'volume-0' : v < .5 ? 'volume-1' : 'volume-2'));
+      b.setAttribute('aria-label', ps.muted ? 'Unmute (M)' : 'Mute (M)'); b.setAttribute('data-tip', ps.muted ? 'Unmute (M)' : 'Mute (M)');
+      b.setAttribute('aria-pressed', String(ps.muted));
+    });
+    $$kept('[data-bind="xfade"]').forEach(function (el) { el.hidden = !ps.crossfade; });
+  }
   App.on('player', renderBar);
   App.on('player', function (k) { if (k === 'track' || k === 'queue') ui.warmArt(P.upNext(1)[0]); });
   App.on('save', function (d) { if (d.id === P.currentId()) renderBar(); });
   App.on('like', function (d) { if (d.id === P.currentId()) App.syncRows(); });
+
+  /* ---------- a theme's markup in every region, and lull's parts in every slot (ADR-0101; docs/themes.md section 6) ----------
+     Region slots: slots/before.<region>.html and after.<region>.html, drawn as the region's first or last child in a
+     .region-slot[data-slot] box. lull never draws into a region's own element, only into the hosts inside it (#pbar-now,
+     #ctx-body, #rail-playlists...), so a box stays where it is; it is drawn again only with the shell (a design or theme
+     switch). A design with none adds no element. */
+  var REGIONS = ['rail', 'header', 'content', 'ctx', 'nowcol', 'playerbar', 'mini', 'tabbar'];
+  App.regionSlots = REGIONS;
+  function renderRegionSlots() {
+    REGIONS.forEach(function (r) {
+      var region = $('#app > [data-region="' + r + '"]'); if (!region) return;
+      ['before', 'after'].forEach(function (edge) {
+        var name = edge + '.' + r, box = $(':scope > .region-slot[data-slot="' + name + '"]', region);
+        var markup = Designs.has(name) ? String(App.slot(name, {}, function () { return ''; })) : '';
+        if (!markup) { if (box) box.remove(); return; }
+        if (!box) {
+          box = document.createElement('div'); box.className = 'region-slot'; box.setAttribute('data-slot', name);
+          region.insertBefore(box, edge === 'before' ? region.firstChild : null);
+        }
+        patch(box, markup);
+      });
+    });
+  }
+  /* Screen slots: slots/before.<screen>.html and after.<screen>.html, inside the screen's own top container (the route's
+     `slotsIn`, else the first element it draws: .disc-home, .now__grid, .view__inner...), so the theme's boxes are items
+     of the screen's grid beside lull's parts. Drawn with the screen, into its markup, so a refresh keeps them as it keeps
+     the rest (App.patch, by their data-key). Returns the markup as it was when the theme has none for this screen. */
+  var SCREENS = ['home', 'search', 'now', 'library', 'liked', 'downloads', 'history', 'following', 'album', 'artist', 'tag',
+    'playlists', 'playlist', 'outside', 'stats', 'settings'];
+  App.screenSlots = SCREENS;
+  function withScreenSlots(markup, screen, route) {
+    if (SCREENS.indexOf(screen) < 0) return markup;
+    var names = ['before.' + screen, 'after.' + screen].filter(Designs.has);
+    if (!names.length) return markup;
+    var tpl = document.createElement('template');
+    tpl.innerHTML = String(markup || '');
+    var host = route && route.slotsIn ? tpl.content.querySelector(route.slotsIn) : tpl.content.firstElementChild;
+    if (!host) return markup;
+    names.forEach(function (name) {
+      var inner = String(App.slot(name, {}, function () { return ''; })); if (!inner) return;
+      var box = document.createElement('div');
+      box.className = 'region-slot'; box.setAttribute('data-slot', name); box.setAttribute('data-key', 'slot:' + name);
+      box.innerHTML = inner;
+      host.insertBefore(box, name.indexOf('before.') === 0 ? host.firstChild : null);
+    });
+    return tpl.innerHTML;
+  }
+
+  /* One catalogue of lull's parts: every <lull-part name> a slot of lull's page names that its slot doesn't hand itself
+     (homeLead's and nowHero's own, section 6) is drawn from here into the <lull-part> element, which stays as its box
+     (display: contents). Each is lull's own markup, wired as lull's own copy is, and kept current the same way: the keys,
+     Like, Save, the seek and the volume by their data-bind and data-seek (paintBound, syncRows, updateSeeks find a copy
+     anywhere); a part drawn from the song is drawn again in place (App.patch) at the player's changes its `on` names.
+     Screens add theirs (now.js: facts, state, up-next, lyrics). The desktop app's mini windows have no App, so their
+     slots keep the parts their slot hands (designs.js). make(attr): attr(name) is the <lull-part>'s own attribute. */
+  var partDefs = {};
+  App.parts = {
+    add: function (name, def) { partDefs[name] = def; },
+    has: function (name) { return Object.prototype.hasOwnProperty.call(partDefs, name); },
+    make: function (name, attr) { return String(partDefs[name].make(attr) || ''); },
+    /* the parts drawn from what changed (a player change's kind, or a screen's own: 'lyrics'), drawn again where shown */
+    redraw: function (kind) {
+      if (!Designs.partsDrawn) return;
+      $$kept('lull-part').forEach(function (host) {
+        var def = partDefs[host.getAttribute('name')];
+        if (def && def.on && def.on.indexOf(kind) >= 0) patch(host, Designs.drawPart(host));
+      });
+    }
+  };
+  function partSize(v, dflt) { return !v ? dflt : /^\d+$/.test(v) ? +v : v; }
+  /* the copy playing, or null while nothing does */
+  function copyNow() { var t = P.current(); return t && ps.status !== 'idle' ? P.playingCopy() : null; }
+  var SONG = ['track'], COPY = ['track', 'source', 'status'];
+  [
+    ['play-button', { make: function (a) { var s = +a('size'); return ui.playButton([40, 48, 52, 56, 64].indexOf(s) >= 0 ? s : 56); } }],
+    ['prev', { make: function () { return ui.transportKey('prev'); } }],
+    ['next', { make: function () { return ui.transportKey('next'); } }],
+    ['shuffle', { make: function () { return ui.transportKey('shuffle'); } }],
+    ['repeat', { make: function () { return ui.transportKey('repeat'); } }],
+    ['like-button', { make: likeKey }],
+    /* the player's Save for the playing song (data-bind="save"), disabled until one plays */
+    ['save-button', { make: function () {
+      var t = P.current();
+      return t ? saveButton(t) : html`<button class="btn-icon btn-icon--bare" data-act="save" data-bind="save" aria-pressed="false" aria-label="Save to library (Shift+S)" data-tip="Save to library (Shift+S)" disabled>${icon('save')}</button>`;
+    } }],
+    ['seek', { make: function (a) { return ui.seekBar({ bind: 'player', label: a('label') || 'Seek' }); } }],
+    ['volume', { make: function () { return ui.volume(); } }],
+    ['cover', { on: SONG, make: function (a) { var t = P.current(); return t ? ui.cover(t, partSize(a('size'), 56), { hero: true }) : ''; } }],
+    /* Saved or Soulseek, as the player bar's (a YouTube copy has none there either) */
+    ['source-badge', { on: COPY, make: function () { var t = P.current(), c = copyNow(); return c && c.where !== 'youtube' ? ui.sourceBadge(t, { button: true }) : ''; } }],
+    ['quality-chip', { on: COPY, make: function () {
+      var t = P.current(), c = copyNow();
+      return c && c.format ? ui.qualityChip(c.format, { solid: true, button: true, id: t.id, better: P.switchedCopy() }) : '';
+    } }],
+    ['playing-from', { on: ['track', 'queue'], make: function (a) { return ui.playingFrom('', a('label')); } }]
+  ].forEach(function (p) { App.parts.add(p[0], p[1]); });
+  App.on('player', function (k) { App.parts.redraw(k); });
 
   /* phone mini-player: swipe left/right = next/prev (buttons are the alternative) */
   (function () {
@@ -4112,6 +4246,8 @@
   var actions = {};
   App.action = function (name, fn) { actions[name] = fn; };
   function ids(el) { return (el.getAttribute('data-ids') || el.getAttribute('data-id') || '').split(',').filter(Boolean); }
+  /* the songs a button names, else the one playing: a theme's own Like, Save or Add to playlist names none */
+  function songIds(el) { var l = ids(el), cur = P.currentId(); return l.length ? l : cur ? [cur] : []; }
   function listIds(el) { var l = el.closest('[data-ids]'); return l ? l.getAttribute('data-ids').split(',') : null; }
   /* the Queue panel (phone: Now Playing, Queue tab) */
   function showQueue() { if (App.layout.switch('phone') === 'on') App.go('/now?tab=queue'); else App.openPanel('queue'); }
@@ -4231,8 +4367,8 @@
     'view-cover': function (el) { App.viewCover({ kind: el.getAttribute('data-kind') || 'track', id: el.getAttribute('data-id') }); },
     'queue-next': function (el) { P.playNext(ids(el)); },
     'queue-add': function (el) { P.addToQueue(ids(el)); },
-    'like': function (el) { App.toggleLike(el.getAttribute('data-id')); },
-    'save': function (el) { var id = el.getAttribute('data-id'), s = state.saves[id]; if (s && s.status === 'failed') App.saves.retry(id); else App.saves.start(ids(el)); },
+    'like': function (el) { var id = el.getAttribute('data-id') || P.currentId(); if (id) App.toggleLike(id); },
+    'save': function (el) { var id = el.getAttribute('data-id') || P.currentId(), s = state.saves[id]; if (s && s.status === 'failed') App.saves.retry(id); else if (id || ids(el).length) App.saves.start(songIds(el)); },
     'save-album': function (el) { withAlbum(el.getAttribute('data-id'), App.saves.start); },
     'go-album': function (el) { var t = M.track(el.getAttribute('data-id')); App.go('/album/' + (t ? t.albumId : el.getAttribute('data-id'))); },
     'follow': function (el) { App.toggleFollow(el.getAttribute('data-id')); },
@@ -4242,7 +4378,7 @@
     },
     'start-radio': function (el) { startRadio({ kind: el.getAttribute('data-kind') || 'track', id: el.getAttribute('data-id') }); },
     'start-radio-current': function () { var t = P.current(); if (t) startRadio({ kind: 'track', id: t.id }); },
-    'add-to-playlist': function (el) { App.hooks.addToPlaylist(ids(el), el); },
+    'add-to-playlist': function (el) { var l = songIds(el); if (l.length) App.hooks.addToPlaylist(l, el); },
     'show-sources': function (el) { App.hooks.sourcePicker(el.getAttribute('data-id')); },
     'pick-source': function () { var t = P.current(); if (t) App.hooks.sourcePicker(t.id); },
     /* "Right song?" for a YouTube copy no reference could check (ADR-0016): no plays the next copy */
@@ -4910,7 +5046,7 @@
 
   var booted = false;
   function boot() {
-    renderBrand(); renderRail(); renderTray(); wireHeader(); wireThemeButtons(); layoutCtx(); renderCtx(); wireMediaSession();
+    renderRegionSlots(); renderBrand(); renderRail(); renderTray(); wireHeader(); wireThemeButtons(); layoutCtx(); renderCtx(); wireMediaSession();
     updateActivityBadge(); renderBar();
     window.addEventListener('online', refetchAll);
     var headsQueued = false;                                   // card heads survive any repaint (see ui.cardHeads)

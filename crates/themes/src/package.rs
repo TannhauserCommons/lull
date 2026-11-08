@@ -22,6 +22,37 @@ const SLOTS: &[(&str, &[&str])] = &[
     ("homeLead", &["playing", "idle"]),
     ("nowHero", &["full", "compact"]),
     ("miniPlayer", &["device", "strip"]),
+    ("before", EDGES),
+    ("after", EDGES),
+];
+/// What a theme's markup goes before or after (ADR-0101, docs/themes.md section 6): each shell region, as
+/// `[data-region]` names it (`app.js` REGIONS), and each screen, as `.app[data-screen]` does (`app.js` SCREENS).
+/// `before` and `after` always name one: there is no slot before everything.
+const EDGES: &[&str] = &[
+    "rail",
+    "header",
+    "content",
+    "ctx",
+    "nowcol",
+    "playerbar",
+    "mini",
+    "tabbar",
+    "home",
+    "search",
+    "now",
+    "library",
+    "liked",
+    "downloads",
+    "history",
+    "following",
+    "album",
+    "artist",
+    "tag",
+    "playlists",
+    "playlist",
+    "outside",
+    "stats",
+    "settings",
 ];
 
 const MAX_FILES: usize = 200;
@@ -320,7 +351,7 @@ fn kind(path: &str) -> Result<Kind> {
             let name = file
                 .strip_suffix(".html")
                 .filter(|n| slot_known(n))
-                .ok_or_else(|| bad(format!("{path} is not a slot template ({})", slot_names())))?;
+                .ok_or_else(|| bad(slot_refusal(path, file.strip_suffix(".html").unwrap_or(file))))?;
             Ok(Kind::Slot(name.to_owned()))
         }
         ["assets", .., file] => {
@@ -354,13 +385,33 @@ pub(crate) fn plain_path(path: &str) -> bool {
 
 pub(crate) fn slot_known(name: &str) -> bool {
     let (slot, variant) = name.split_once('.').map_or((name, None), |(s, v)| (s, Some(v)));
-    SLOTS
-        .iter()
-        .any(|(s, variants)| *s == slot && variant.is_none_or(|v| variants.contains(&v)))
+    SLOTS.iter().any(|(s, variants)| {
+        *s == slot
+            && match variant {
+                Some(v) => variants.contains(&v),
+                None => !edge_slot(slot),
+            }
+    })
 }
 
-fn slot_names() -> String {
-    SLOTS.iter().map(|(s, _)| *s).collect::<Vec<_>>().join(", ")
+/// `before` and `after`, which always name what they go before or after.
+fn edge_slot(slot: &str) -> bool {
+    slot == "before" || slot == "after"
+}
+
+/// Why `slots/<name>.html` is no slot template, naming the ones there are.
+fn slot_refusal(path: &str, name: &str) -> String {
+    let slot = name.split_once('.').map_or(name, |(s, _)| s);
+    if edge_slot(slot) {
+        return format!(
+            "{path} is not a slot template: {slot} goes with a region or a screen, slots/{slot}.<name>.html ({})",
+            EDGES.join(", ")
+        );
+    }
+    format!(
+        "{path} is not a slot template ({})",
+        SLOTS.iter().map(|(s, _)| *s).collect::<Vec<_>>().join(", ")
+    )
 }
 
 pub(crate) fn text<'a>(path: &str, bytes: &'a [u8], max: usize) -> Result<&'a str> {
@@ -878,6 +929,70 @@ mod tests {
                 "{key}: names the keys: {err}"
             );
         }
+    }
+
+    #[test]
+    fn a_theme_draws_before_and_after_a_region_or_a_screen_and_never_before_nothing() {
+        let m = validate(
+            &package(
+                "",
+                &[
+                    ("before.header", "<b data-bind=\"song.title\"></b>"),
+                    (
+                        "after.playerbar",
+                        "<lull-part name=\"up-next\" count=\"3\"></lull-part>",
+                    ),
+                    ("before.home", "<div class=\"mine\"></div>"),
+                    (
+                        "after.now",
+                        "<button data-act=\"shuffle\" data-bind=\"shuffle\">SHUF</button>",
+                    ),
+                ],
+            ),
+            Origin::Listener,
+        );
+        assert_eq!(
+            m.map(|m| m.slots).ok(),
+            Some(
+                ["after.now", "after.playerbar", "before.header", "before.home"]
+                    .map(str::to_owned)
+                    .to_vec()
+            )
+        );
+        for name in [
+            "before",
+            "after",
+            "before.everything",
+            "after.topnav",
+            "before.home.playing",
+        ] {
+            let why = refused(&package("", &[(name, "<b></b>")]));
+            assert!(
+                why.starts_with(&format!("slots/{name}.html is not a slot template"))
+                    && why.contains("rail, header, content"),
+                "{name}: {why}"
+            );
+        }
+    }
+
+    /// `web/app.js` draws a region slot for each of its REGIONS and a screen slot for each of its SCREENS: the
+    /// names this crate takes, no more and no fewer.
+    #[test]
+    fn app_js_draws_the_region_and_screen_slots_this_crate_takes() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/app.js");
+        let app = std::fs::read_to_string(&path).unwrap_or_default();
+        let list = |name: &str| -> Vec<String> {
+            let start = format!("var {name} = [");
+            let Some(at) = app.find(&start) else { return Vec::new() };
+            let rest = &app[at + start.len()..];
+            rest[..rest.find(']').unwrap_or(0)]
+                .split(',')
+                .map(|s| s.trim().trim_matches('\'').to_owned())
+                .filter(|s| !s.is_empty())
+                .collect()
+        };
+        let drawn = [list("REGIONS"), list("SCREENS")].concat();
+        assert_eq!(drawn, EDGES.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>());
     }
 
     #[test]
