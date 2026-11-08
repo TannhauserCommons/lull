@@ -3077,7 +3077,11 @@ mod tests {
         async fn youtube_sending_first_plays_and_soulseeks_copy_carries_on_as_the_better_copy() -> Result<()> {
             // Nothing known: Soulseek's copy needs the search (1 s), YouTube's lookup is quick.
             // The owner streams at most 320 kbps: Soulseek's side takes the MP3 320, not the FLAC.
-            const FLAC: &str = "Music\\Artist\\Album\\01 - Song.flac";
+            // The FLAC is on another album: a peer sharing one song twice on one album counts once
+            // in a search (`search::merge` keeps the first file it lists, and a folder's format tag
+            // such as "(Lossless)" names no other album), so both there would leave whichever the
+            // stand-in happened to list first.
+            const FLAC: &str = "Music\\Artist\\Collected\\01 - Song.flac";
             let flac_bytes: Vec<u8> = (0..900_000).map(|i| (i % 251) as u8).collect();
             let mp3_bytes: Vec<u8> = (0..300_000).map(|i| (i % 241) as u8).collect();
             let mut rules = start_fast_rules();
@@ -3097,6 +3101,17 @@ mod tests {
                 .ok_or_else(|| Error::internal("Soulseek's copy stopped"))?;
             let u = ended(&up).await?;
             assert_eq!(u.status, Status::Done, "{:?}", u.error);
+            let found: Vec<String> = fetcher
+                .sources
+                .ordered(&track(), &fetcher.rules.get(), crate::rules::Purpose::Stream)
+                .into_iter()
+                .map(|r| r.source.ext)
+                .collect();
+            assert_eq!(
+                found,
+                ["mp3", "flac"],
+                "the search found both, the one within the cap first"
+            );
             assert_eq!(
                 u.source.map(|s| s.ext).unwrap_or_default(),
                 "mp3",
@@ -3122,6 +3137,36 @@ mod tests {
                 note.starts_with("switched to ") && note.ends_with(" from peer"),
                 "{note}"
             );
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn a_copy_above_the_streaming_cap_is_never_offered_mid_song() -> Result<()> {
+            // Only a FLAC is shared and the cap is 320 kbps: Soulseek's side fetches it, as a
+            // Soulseek play would with nothing within the cap, for later plays and saves; the
+            // player is never offered it while YouTube's copy plays.
+            const FLAC: &str = "Music\\Artist\\Album\\01 - Song.flac";
+            let mut rules = start_fast_rules();
+            rules.stream.max_kbps = 320;
+            let (_fake, fetcher) = racing(
+                HashMap::from([(FLAC.to_owned(), (0..900_000).map(|i| (i % 251) as u8).collect())]),
+                rules,
+                Timed::new(Duration::ZERO, true),
+            )
+            .await?;
+            let yt = fetcher.stream(track(), None).await?;
+            let (chunk, _) = first_bytes(&yt).await?;
+            assert!(chunk.iter().all(|b| *b == 7), "YouTube's copy plays");
+            let up = fetcher
+                .upgrade(&track().id)
+                .ok_or_else(|| Error::internal("Soulseek's copy stopped"))?;
+            let mut rx = up.progress();
+            let _ = tokio::time::timeout(Duration::from_secs(30), rx.wait_for(|p| p.source.is_some())).await;
+            assert_eq!(up.now().source.map(|s| s.ext).unwrap_or_default(), "flac");
+            for _ in 0..20 {
+                assert!(fetcher.event(&yt)["upgrade"].is_null(), "offered a copy above the cap");
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
             Ok(())
         }
 
