@@ -182,3 +182,9 @@ test('a state with nothing to say is no attribute', () => {
   p.Live.feed({ 'app.screen': '' });
   assert.equal(p.root.attrs['data-app-screen'], undefined);
 });
+
+test('no script builds data-* names from a bare "data-" prefix, so the hook check still knows which attributes are lull\'s', () => {
+  const hooks = readFileSync(join(ROOT, 'web', 'designs', 'hooks.js'), 'utf8');
+  const prefixes = JSON.parse(/"prefixes":(\[[^\]]*\])/.exec(hooks)[1]);
+  assert.ok(!prefixes.includes('data-'), 'web/designs/hooks.js lists "data-" as a prefix lull builds names from');
+});

@@ -188,7 +188,8 @@
   }
   function appValues(o) {
     var app = document.getElementById('app'); if (!app) return;
-    ['screen', 'view', 'ctx', 'size'].forEach(function (k) { o['app.' + k] = app.getAttribute('data-' + k) || ''; });
+    /* the attribute names whole, so the hook check (designs/hooks.js) never reads a data-* prefix lull builds names from */
+    [['screen', 'data-screen'], ['view', 'data-view'], ['ctx', 'data-ctx'], ['size', 'data-size']].forEach(function (k) { o['app.' + k[0]] = app.getAttribute(k[1]) || ''; });
   }
   function serviceValues(o) {
     var s = App.store.get('services') || {};
