@@ -378,6 +378,8 @@ pub struct Fetcher {
     /// set to overwrite partial files), legs may start anywhere (ADR-0014).
     resumes: Arc<AtomicBool>,
     next: Arc<AtomicU64>,
+    /// Openings of the player's stream take turns (`stream`).
+    opening: Arc<tokio::sync::Mutex<()>>,
 }
 
 /// Which map a new fetch goes in.
@@ -427,6 +429,7 @@ impl Fetcher {
             ended_fetches: Arc::default(),
             resumes: Arc::new(AtomicBool::new(true)),
             next: Arc::default(),
+            opening: Arc::default(),
         }
     }
 
@@ -458,7 +461,18 @@ impl Fetcher {
     /// The fetch the player reads: the running one, the cached file, or a new transfer.
     /// `pick` (the source picker's choice, mid-song or answering `ask`) replaces a running fetch
     /// from another peer.
+    ///
+    /// One opening at a time: two at once (a browser's audio element asking for another range,
+    /// another device) each found no fetch running and started their own. Start fast's race then
+    /// handed the song to Soulseek's copy as the first one's, and the player, following the
+    /// second, dropped every event of the copy playing: it showed what had arrived frozen and
+    /// kept seeks that never landed (2026-11-08).
     pub async fn stream(&self, track: Track, pick: Option<SourceRef>) -> Result<Arc<Fetch>> {
+        let _turn = self.opening.lock().await;
+        self.open(track, pick).await
+    }
+
+    async fn open(&self, track: Track, pick: Option<SourceRef>) -> Result<Arc<Fetch>> {
         let mode = self.rules.get().youtube.mode;
         // The listener picked the better copy already on its way: that fetch plays.
         if let Some(copy) = &pick
@@ -3070,6 +3084,79 @@ mod tests {
                 0,
                 "YouTube's copy was never downloaded"
             );
+            Ok(())
+        }
+
+        /// The job a player follows through `stream` events, as `LullRules.followEvent` does
+        /// (web/player-rules.js): the first it sees, then that job's, or one that took over from
+        /// it. Panics on an event of `playing` it would drop.
+        fn followed(events: &[serde_json::Value], playing: &str) -> Option<serde_json::Value> {
+            let (mut job, mut last) = (None::<String>, None);
+            for ev in events {
+                let id = ev["jobId"].as_str().map(str::to_owned);
+                let follows = match &job {
+                    None => true,
+                    Some(j) => id.as_ref() == Some(j) || ev["replaces"].as_str() == Some(j.as_str()),
+                };
+                assert!(
+                    follows || id.as_deref() != Some(playing),
+                    "the player drops the copy playing: following {job:?}, it got {ev}"
+                );
+                if follows {
+                    job = id;
+                    last = Some(ev.clone());
+                }
+            }
+            last
+        }
+
+        #[tokio::test]
+        async fn two_openings_at_once_are_one_fetch_and_the_player_follows_the_copy_playing() -> Result<()> {
+            // Live (2026-11-08): Grouper's "Poison Tree" played on from Soulseek while the player
+            // showed what had arrived frozen and kept a seek to 2:29 past 2:32. Two openings at once
+            // had each started a fetch; the race handed the song to Soulseek's copy as the first
+            // one's, and the player, following the second, dropped all of that copy's events.
+            let bytes: Vec<u8> = vec![5u8; 2_000_000];
+            let (_fake, fetcher) = racing(
+                HashMap::from([(REMOTE.to_owned(), bytes.clone())]),
+                start_fast_rules(),
+                Timed::new(Duration::from_secs(15), true),
+            )
+            .await?;
+            let known = shared("peer", REMOTE, bytes.len() as u64, "mp3", Some(320), false);
+            fetcher.sources.add(HashMap::from([(track().id, vec![known])]));
+            fetcher.sources.mark_searched(&track().id);
+            let mut rx = fetcher.bus.subscribe();
+
+            let (a, b) = tokio::join!(fetcher.stream(track(), None), fetcher.stream(track(), None));
+            let (a, b) = (a?, b?);
+            assert!(
+                Arc::ptr_eq(&a, &b),
+                "one song, one fetch: {} and {}",
+                a.job_id,
+                b.job_id
+            );
+            let (chunk, _) = first_bytes(&a).await?;
+            assert!(chunk.iter().all(|x| *x == 5), "Soulseek's copy plays");
+            let playing = last(&a);
+            assert!(!Arc::ptr_eq(&playing, &a), "Soulseek's side won the race");
+            assert_eq!(ended(&playing).await?.status, Status::Done);
+
+            let mut events = Vec::new();
+            while let Ok(ev) = rx.try_recv() {
+                if ev.topic == "stream" {
+                    events.push(ev.data);
+                }
+            }
+            let seen = followed(&events, &playing.job_id)
+                .ok_or_else(|| Error::internal("the player heard nothing of the song"))?;
+            assert_eq!(seen["jobId"], serde_json::json!(playing.job_id), "{seen}");
+            assert_eq!(
+                seen["ranges"],
+                serde_json::json!([[0.0, 1.0]]),
+                "the player saw all of it arrive"
+            );
+            assert!(seen["speed"].as_u64().is_some_and(|s| s > 0), "and how fast: {seen}");
             Ok(())
         }
 
