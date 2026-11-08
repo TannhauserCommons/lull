@@ -492,7 +492,7 @@
     var c = $('[data-now="lyrics"]'); if (c) swap(c, lyricsBlock('page'));
     swap($('[data-nowcol="lyrics"]'), lyricsBlock('col'));
     if (App.store.get('ctxTab') === 'lyrics') App.refreshPanel();
-    App.parts.redraw('lyrics');                           // a theme's lyrics part, wherever its slot is
+    App.emit('lyrics');                                   // a theme's lyrics part, wherever its slot is (designs/parts.js)
     lyMountAll();
   }
 
@@ -977,16 +977,9 @@
   /* synced lyrics follow the position on every engine tick */
   App.on('tick', lyTick);
 
-  /* Now Playing's parts in lull's catalogue (app.js App.parts; docs/themes.md section 6), for any slot of the page: the
-     hero's facts and state words, the next songs as the queue's rows (count, label), and the lyrics as the Lyrics card
-     draws them (their own instance, 'slot': no ids, so as many as a theme places) */
-  var PLAYED = ['track', 'source', 'status', 'play', 'ended'];
-  App.parts.add('facts', { on: PLAYED, make: factsLine });
-  App.parts.add('state', { on: PLAYED, make: function () { return App.esc(stateText()); } });
-  App.parts.add('up-next', { on: ['track', 'queue', 'ended'], make: function (a) {
-    return nextRows(App.clamp(parseInt(a('count'), 10) || 5, 1, 20), a('label') || 'Up next');
-  } });
-  App.parts.add('lyrics', { on: ['track', 'lyrics'], make: function () { return lyricsBlock('slot'); } });
+  /* what lull's catalogue of parts (designs/parts.js; docs/themes.md section 6) draws of Now Playing's, in any slot of
+     the page: the hero's facts and state words, the next songs as the queue's rows, the lyrics as the Lyrics card */
+  App.nowParts = { facts: factsLine, state: stateText, next: nextRows, lyrics: lyricsBlock };
 
   /* =====================================================================
      8. Actions
@@ -1253,7 +1246,6 @@
   });
   App.on('save', function (d) { if (colOpen() && d.id === P.currentId()) swap($('[data-nowcol="src"]'), sourceCard()); });
 
-  /* a theme's before.now and after.now slots are items of the page's grid, beside the hero and the cards (slotsIn) */
   App.route('/now', { render: render, mount: mount, title: function () { var t = cur(); return t ? t.title + ', Now Playing' : 'Now Playing'; }, view: 'now', nav: null,
-    meta: function () { return App.fmt.formatLine(cur()); }, slotsIn: '.now__grid' });
+    meta: function () { return App.fmt.formatLine(cur()); } });
 })();

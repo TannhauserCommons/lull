@@ -2,8 +2,9 @@
 // real page: a listener's theme puts an LCD after the player bar (the copy's quality by the live model, and a shuffle
 // key of its own), an LED before the header (the song's title, and lull's Like), a box before Home and the queue's next
 // songs after the side panel. Each is drawn where the theme said, stays through what lull draws again (another song,
-// the panel, another screen), keeps current, and the key works; a built-in design gets none of it. On a fixture hub of
-// the gate's own, serving the theme as the hub would.
+// the panel, another screen), keeps current, and the key works; a built-in design gets none of it, nor the script that
+// draws it (designs/parts.js), which loads only for a theme whose slots use it. On a fixture hub of the gate's own,
+// serving the themes as the hub would.
 
 import { expect, test } from '@playwright/test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,13 +23,20 @@ const SLOTS = {
   'after.ctx': '<section class="ts-next" aria-label="Next songs"><lull-part name="up-next" count="3"></lull-part></section>',
 };
 
+/* two themes without a region or screen slot: one whose hero takes only the parts Now Playing hands it, and one whose
+   Home lead takes a part only the catalogue draws there (Home hands no state) and one it never hands (next) */
+const HANDED = { 'nowHero.full': '<div class="th-hero"><lull-part name="play-button" size="56"></lull-part><lull-part name="facts"></lull-part><lull-part name="state"></lull-part></div>' };
+const PARTED = { homeLead: '<div class="tp-lead"><b class="tp-state"><lull-part name="state"></lull-part></b><lull-part name="next"></lull-part></div>' };
+
 let hub, dir;
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'lull-slots-'));
-  mkdirSync(join(dir, 'slotted', 'slots'), { recursive: true });
-  writeFileSync(join(dir, 'slotted', 'theme.json'), JSON.stringify(MANIFEST));
-  writeFileSync(join(dir, 'slotted', 'theme.css'), CSS);
-  for (const [name, html] of Object.entries(SLOTS)) writeFileSync(join(dir, 'slotted', 'slots', `${name}.html`), html);
+  for (const [id, slots, css] of [['slotted', SLOTS, CSS], ['handed', HANDED, ''], ['parted', PARTED, '']]) {
+    mkdirSync(join(dir, id, 'slots'), { recursive: true });
+    writeFileSync(join(dir, id, 'theme.json'), JSON.stringify({ ...MANIFEST, id, name: id }));
+    writeFileSync(join(dir, id, 'theme.css'), css);
+    for (const [name, html] of Object.entries(slots)) writeFileSync(join(dir, id, 'slots', `${name}.html`), html);
+  }
   hub = await ownHub({ FIXTURE_THEMES: dir });
 });
 test.afterAll(() => { hub?.close(); rmSync(dir, { recursive: true, force: true }); });
@@ -124,14 +132,52 @@ test('the theme\'s markup follows the player, stays through what lull draws agai
   await ctx.close();
 });
 
+/* the requests for designs/parts.js a page makes */
+function partsAsked(page) {
+  const asked = [];
+  page.on('request', (r) => { if (/\/parts\.js(\?|$)/.test(r.url())) asked.push(r.url()); });
+  return asked;
+}
+
 for (const design of designs) {
-  test(`${design}, which has no region or screen slot, gets no box and no part's box`, async ({ browser }) => {
+  test(`${design}, which has no region or screen slot, gets no box and no part's box, and loads none of it`, async ({ browser }) => {
     const ctx = await context(browser), page = await ctx.newPage();
+    const asked = partsAsked(page);
     for (const route of ['/home', '/now', `/album/${ids.album}`]) {
       await openScreen(page, route, { design });
       expect(await page.evaluate(() => [document.querySelectorAll('.region-slot').length, document.querySelectorAll('lull-part').length]), route)
         .toEqual([0, 0]);
     }
+    expect(asked, 'parts.js fetched').toEqual([]);
+    expect(await page.evaluate(() => [typeof App.parts, typeof App.edges])).toEqual(['undefined', 'undefined']);
     await ctx.close();
   });
 }
+
+test('a theme whose slots take only the parts lull hands them loads no catalogue; one that takes another part does', async ({ browser }) => {
+  const ctx = await context(browser), page = await ctx.newPage();
+  let asked = partsAsked(page);
+  await openScreen(page, '/now', { design: 'handed' });
+  await expect(page.locator('.th-hero .btn-gloss[data-act="play"]')).toHaveCount(1);
+  expect(asked, 'parts.js fetched for parts the hero hands').toEqual([]);
+  expect(await page.evaluate(() => typeof App.parts)).toBe('undefined');
+  await ctx.close();
+
+  const ctx2 = await context(browser), page2 = await ctx2.newPage();
+  asked = partsAsked(page2);
+  await openScreen(page2, '/home', { design: 'parted' });
+  expect(asked.length, 'parts.js fetched once').toBe(1);
+  await expect(page2.locator('.tp-lead lull-part[name="next"] [data-act="next"]')).toHaveCount(1);
+  await expect(page2.locator('.tp-state')).toHaveText('nothing playing');
+  await ctx2.close();
+});
+
+test('back on a built-in, the theme\'s boxes go', async ({ browser }) => {
+  const ctx = await context(browser), page = await ctx.newPage();
+  await openScreen(page, '/home', { design: 'slotted' });
+  await expect(page.locator('.region-slot')).toHaveCount(4);
+  await page.evaluate(() => new Promise((ok) => { App.on('design', ok); App.setDesign('lull', true); }));
+  await settle(page);
+  expect(await page.evaluate(() => [document.querySelectorAll('.region-slot').length, document.querySelectorAll('lull-part').length])).toEqual([0, 0]);
+  await ctx.close();
+});

@@ -234,10 +234,11 @@ docs/themes.md section 14 ([ADR-0101](../docs/adr/0101-one-live-model-for-themes
 
 Markup in every region, parts in every slot (the same ADR): a theme may also write `slots/before.<name>.html` and
 `after.<name>.html` for each shell region and screen, drawn in a `.region-slot[data-slot]` box as the region's or the
-screen's first or last child (`App.regionSlots`, `App.screenSlots`), and every slot of lull's page takes any part of one
-catalogue (`App.parts`: app.js, and Now Playing's in now.js), drawn into its `<lull-part>` box, kept current by the same
-`data-bind` and `data-seek` updates as lull's own copies, and drawn again in place when the song changes.
-The built-in designs use neither, so their pages gain nothing. docs/themes.md section 6 lists the slots and parts, and
+screen's first or last child (`App.edges`), and every slot of lull's page takes any part of one catalogue (`App.parts`,
+with Now Playing's own builders, `App.nowParts`), drawn into its `<lull-part>` box, kept current by the same `data-bind`
+and `data-seek` updates as lull's own copies, and drawn again in place when the song changes. Both are
+`designs/parts.js`, which loads only for a theme that uses them. The built-in designs use neither, so their pages gain
+nothing and fetch nothing more. docs/themes.md section 6 lists the slots and parts, and
 section 15 builds a theme from a mockup with them and lists the actions (`data-act`) a theme's own buttons can name.
 
 ### 3.6 Adding a design

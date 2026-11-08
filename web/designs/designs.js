@@ -306,8 +306,6 @@
     try { return renderSlot(name, tpl.text, ctx, tpl.trusted); } catch (e) { console.error('[theme slot ' + name + ']', e); }
     return fallback(ctx);
   };
-  /* whether the theme in use (or what it extends) has a template for a slot: a region or screen slot is drawn only then */
-  D.has = function (name) { return template(name, '') != null; };
   var VARIANT = {
     nowHero: function (c) { return c.variant || 'full'; },
     homeLead: function (c) { return c.track ? 'playing' : 'idle'; },
@@ -379,32 +377,32 @@
     var body = isTrusted ? parsed(filled) : D.sanitize(filled);
     var parts = body.querySelectorAll('lull-part'), made = {};
     for (var i = 0; i < parts.length; i++) {
-      var p = parts[i];
-      if (catalogued(name, p.getAttribute('name'), ctx)) { p.innerHTML = D.drawPart(p); D.partsDrawn++; }
+      var p = parts[i], n = p.getAttribute('name');
+      if (catalogued(name, n) && window.App && App.parts && App.parts.has(n)) p.innerHTML = App.parts.draw(p);
       else p.outerHTML = part(name, p, ctx, made);
     }
-    if (!isTrusted && body.querySelector('[data-bind]')) D.partsDrawn++;   // a theme's own bound keys, for app.js to set
+    /* the catalogue's parts drew (each keeps its <lull-part>), or a theme's own bound keys: for app.js to set */
+    if (body.querySelector(isTrusted ? 'lull-part' : 'lull-part, [data-bind]')) D.partsDrawn++;
     if (window.Live) Live.fill(body);                // its bindings and live hosts as they are now (live.js)
     return body.innerHTML;
   }
-  /* lull's catalogue of parts (app.js App.parts, docs/themes.md section 6): every part in every slot of lull's page. The
-     slots that hand parts of their own (homeLead, nowHero, miniPlayer) keep drawing those as they always have, each where
-     it hands what the part needs; anything else comes from the catalogue, drawn into the <lull-part> element, which stays
-     as its box and which lull draws again when what it shows changes. The desktop app's mini windows have no App: there
-     a slot keeps what it hands. D.partsDrawn counts what slots drew of it since the theme was set (app.js looks for
-     parts to draw again only then). */
+  /* lull's catalogue of parts (parts.js, App.parts; docs/themes.md section 6): every part in every slot of lull's page.
+     The slots that hand parts of their own (homeLead, nowHero) keep drawing those as they always have; anything else
+     comes from the catalogue, drawn into the <lull-part> element, which stays as its box and which lull draws again when
+     what it shows changes. catalogued(slot, name): whether a part there is the catalogue's, if it has one by that name,
+     so a theme's templates tell before it renders whether it needs parts.js (wantsParts): in a slot that hands none,
+     any part but an icon (the others PARTS draws are Home's or the hero's, for the slots that list them); in one that
+     does, one PARTS doesn't draw, or one it draws from what the slot hands that this slot doesn't (HANDS: homeLead
+     hands no facts or state, discover.js). The desktop app's mini windows have no App:
+     there a slot (miniPlayer) keeps what it hands. D.partsDrawn counts the slots that drew its parts, or a theme's own
+     bound keys (data-bind), since the theme was set: app.js brings them to the player's state after a screen is drawn,
+     and parts.js looks for parts to draw again, only then. */
   D.partsDrawn = 0;
-  var HANDS = { homeLead: 1, nowHero: 1, miniPlayer: 1 };
-  var NEEDS = { device: 'device', compact: 'compact', strip: 'strip', screen: 'screen', facts: 'facts', state: 'state', wave: 'wave',
-    'play-button': 'playButton', 'like-button': 'likeButton', 'track-list': 'trackList' };
-  function catalogued(slot, name, ctx) {
-    if (!window.App || !App.parts || !App.parts.has(name)) return false;
-    return !(HANDS[slot] && PARTS[name] && (!NEEDS[name] || hasPart(ctx, NEEDS[name])));
+  var HANDS = { homeLead: ' facts state ', nowHero: ' ', miniPlayer: 0 };
+  function catalogued(slot, name) {
+    var h = HANDS[slot];
+    return h == null ? name !== 'icon' : h !== 0 && (!PARTS[name] || h.indexOf(' ' + name + ' ') >= 0);
   }
-  /* a catalogue part's markup for its <lull-part> box, with its pick and cls */
-  D.drawPart = function (el) {
-    return finish(el, App.parts.make(el.getAttribute('name'), function (a) { return el.getAttribute(a); }));
-  };
   /* made: what this render already built, so ten picks from one device build it once */
   function part(slot, el, ctx, made) {
     var name = el.getAttribute('name'), make = PARTS[name];
@@ -412,6 +410,8 @@
     var key = [name, el.getAttribute('size'), el.getAttribute('bars'), el.getAttribute('icon'), el.getAttribute('label')].join('|');
     return finish(el, made[key] != null ? made[key] : (made[key] = String(make(ctx, el, slot) || '')));
   }
+  /* a part's markup as its <lull-part> asks: its pick and its cls (parts.js draws the catalogue's with it) */
+  D.finish = finish;
   function finish(el, out) {
     var pick = el.getAttribute('pick');
     if (pick) {
@@ -610,23 +610,24 @@
     looked();
   }
   /* everything a theme needs before the app renders with it: its manifest (and its design's), DOMPurify, slot templates */
-  var purify = null;
-  D.purify = loadPurify;                         // eggs.js sanitizes an egg's slot with it
-  function loadPurify() {
-    if (window.DOMPurify) return Promise.resolve();
-    return purify || (purify = new Promise(function (ok, fail) {
+  var scripts = {};
+  /* one of designs/'s own scripts, loaded once (a failed load is tried again next time) */
+  function load(file) {
+    return scripts[file] || (scripts[file] = new Promise(function (ok, fail) {
       var s = document.createElement('script');
-      s.src = D.base + 'purify.min.js';
-      s.onload = ok; s.onerror = function () { fail(new Error('purify.min.js failed to load')); };
+      s.src = D.base + file; s.onload = ok;
+      s.onerror = function () { scripts[file] = null; fail(new Error(file + ' failed to load')); };
       document.head.appendChild(s);
     }));
   }
+  D.purify = loadPurify;                         // eggs.js sanitizes an egg's slot with it
+  function loadPurify() { return window.DOMPurify ? Promise.resolve() : load('purify.min.js'); }
   function prepare(id) {
     return manifest(id).then(function (m) {
       return (m.extends && D.list[m.extends] ? manifest(m.extends) : Promise.resolve()).then(function () {
         var ids = chain(id), untrusted = ids.some(function (x) { return !trusted[x] && D.list[x].slots.length; });
         return (untrusted ? loadPurify() : Promise.resolve()).then(function () { return Promise.all(ids.map(loadTemplates)); })
-          .then(function () { return loadLive(id); });
+          .then(function () { return Promise.all([loadLive(id), wantsParts(ids) && load('parts.js').catch(console.error)]); });
       });
     });
   }
@@ -637,17 +638,20 @@
     chain(id).forEach(function (x) { (D.list[x].live || []).forEach(function (p) { if (out.indexOf(p) < 0) out.push(p); }); });
     return out;
   }
-  var liveLoad = null;
-  function loadLive(id) {
-    if (window.Live || !liveOf(id).length) return Promise.resolve();
-    return liveLoad || (liveLoad = new Promise(function (ok) {
-      var s = document.createElement('script');
-      s.src = D.base + 'live.js';
-      s.onload = ok;
-      /* without it the theme still loads; its live values stay empty */
-      s.onerror = function () { liveLoad = null; console.error('live.js failed to load'); ok(); };
-      document.head.appendChild(s);
-    }));
+  /* without it the theme still loads; its live values stay empty */
+  function loadLive(id) { return window.Live || !liveOf(id).length ? Promise.resolve() : load('live.js').catch(console.error); }
+  /* a theme's region and screen slots and lull's catalogue of parts (parts.js): loaded only for a design or theme whose
+     templates (or those of the design it extends) have a region or screen slot, or name a part only the catalogue draws
+     there (catalogued). Without it the theme still loads; those slots and parts stay empty. */
+  function wantsParts(ids) {
+    return ids.some(function (x) {
+      var t = templates[x];
+      return Object.keys(t).some(function (k) {
+        var slot = k.split('.')[0], re = /<lull-part\b[^>]*?\sname=["']?([\w-]+)/g, m;
+        if (slot === 'before' || slot === 'after') return true;
+        while ((m = re.exec(t[k]))) if (catalogued(slot, m[1])) return true;
+      });
+    });
   }
   function useLive(id) { if (window.Live) Live.use(liveOf(id)); }
 

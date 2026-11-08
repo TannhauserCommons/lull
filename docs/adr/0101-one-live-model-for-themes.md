@@ -262,6 +262,7 @@ Only for a design or theme that names a value; for one that names none, nothing 
 |---|---|---|
 | Reading what a theme names | one pass over its CSS and slots, on the hub | when the hub reads the package |
 | `web/designs/live.js` | one more script to download | only for a design or theme that names a value |
+| `web/designs/parts.js` | one more script to download: the region and screen slots and the catalogue of parts | only for a design or theme with a region or screen slot or a part only the catalogue draws where it is placed |
 | Clock | one timer; the named minute values written on the live hosts and `:root` | once a minute (once a second only where asked); none while hidden |
 | Song, next, player | the named values written where they changed: bound text, live hosts, `:root` | once a song, a press or a state; `song.pos` a hundredth at a time, as today |
 | Parts in slots | that part's own markup | as lull draws that part today |

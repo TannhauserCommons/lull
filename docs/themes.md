@@ -411,7 +411,9 @@ item of whatever holds it (a grid, a row), and a `display` of yours makes the bo
 A part drawn again is redrawn in place, only where it changed, so focus and what didn't change stay. In `homeLead` and
 `nowHero` a part the slot hands itself is drawn as it always was (`cover`, `play-button`, `like-button`, `seek`,
 `playing-from`, and the hero's `facts` and `state`); every other part comes from the catalogue. The desktop app's mini
-player windows have no catalogue: `miniPlayer` takes the parts its row lists.
+player windows have no catalogue: `miniPlayer` takes the parts its row lists. A theme pays only for what it uses: lull
+loads the catalogue, and what draws the region and screen slots (`designs/parts.js`), only for a theme (or the design it
+extends) with a region or screen slot or a part only the catalogue draws where it is placed, before the page draws.
 
 **Or no part at all.** Your own markup reaches the same features: `<button data-act="shuffle" data-bind="shuffle">SHUF</button>`
 is a shuffle key lull keeps pressed (`aria-pressed`), and `<b data-bind="song.quality"></b>` the copy's quality (section

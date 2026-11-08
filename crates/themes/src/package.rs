@@ -26,7 +26,8 @@ const SLOTS: &[(&str, &[&str])] = &[
     ("after", EDGES),
 ];
 /// What a theme's markup goes before or after (ADR-0101, docs/themes.md section 6): each shell region, as
-/// `[data-region]` names it (`app.js` REGIONS), and each screen, as `.app[data-screen]` does (`app.js` SCREENS).
+/// `[data-region]` names it (`web/designs/parts.js` REGIONS), and each screen, as `.app[data-screen]` does (its
+/// SCREENS).
 /// `before` and `after` always name one: there is no slot before everything.
 const EDGES: &[&str] = &[
     "rail",
@@ -975,16 +976,18 @@ mod tests {
         }
     }
 
-    /// `web/app.js` draws a region slot for each of its REGIONS and a screen slot for each of its SCREENS: the
+    /// `web/designs/parts.js` draws a region slot for each of its REGIONS and a screen slot for each of its SCREENS: the
     /// names this crate takes, no more and no fewer.
     #[test]
-    fn app_js_draws_the_region_and_screen_slots_this_crate_takes() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/app.js");
-        let app = std::fs::read_to_string(&path).unwrap_or_default();
+    fn parts_js_draws_the_region_and_screen_slots_this_crate_takes() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/designs/parts.js");
+        let parts = std::fs::read_to_string(&path).unwrap_or_default();
         let list = |name: &str| -> Vec<String> {
             let start = format!("var {name} = [");
-            let Some(at) = app.find(&start) else { return Vec::new() };
-            let rest = &app[at + start.len()..];
+            let Some(at) = parts.find(&start) else {
+                return Vec::new();
+            };
+            let rest = &parts[at + start.len()..];
             rest[..rest.find(']').unwrap_or(0)]
                 .split(',')
                 .map(|s| s.trim().trim_matches('\'').to_owned())
