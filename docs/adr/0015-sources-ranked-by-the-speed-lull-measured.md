@@ -73,6 +73,8 @@ Starting the top two candidates for a few seconds and keeping the faster would f
 
 If measured ranking proves insufficient, racing could come back narrowly: only when the top two are both unmeasured, both have free slots, and the song is lossless.
 
+Start fast's race (ADR-0012's update of 2026-11-08) is not this. It races YouTube against one Soulseek request, the one start fast always made, and that request is never cancelled for losing. So it costs no peer anything.
+
 ## Before and after
 
 The test: a 2 MB, 20 s song (it needs 100 KB/s). Peer "liar" reports 8.6 MB/s and sends 50 KB/s. Peer "honest" reports 4.7 MB/s and sends about 1 MB/s. It runs against a stand-in slskd, and a listener is simulated from the fetch's progress: it starts at 256 KB, plays at 1x, stalls when it reaches what has arrived, and resumes 2 s later. To rerun it: `cargo test -p lull-soulseek before_and_after -- --ignored --nocapture`.

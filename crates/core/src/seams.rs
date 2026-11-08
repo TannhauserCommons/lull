@@ -151,6 +151,13 @@ pub trait Youtube: Send + Sync {
     /// `Unavailable` while YouTube is backed off (a sign-in check, too many requests).
     async fn find(&self, track: &Track, want: Want) -> Result<Option<Found>>;
 
+    /// `find` behind the listener's own lookups: for a song that isn't playing yet (a preload,
+    /// warming a queued song's match). It never takes a yt-dlp turn the playing song's lookup is
+    /// waiting for, and a `find` of the same song meanwhile raises it.
+    async fn find_later(&self, track: &Track, want: Want) -> Result<Option<Found>> {
+        self.find(track, want).await
+    }
+
     /// Whether an upload is the song by the listener's match rules, for a shelf's availability
     /// mark: a remembered answer at once, else one flat video search judged by playback's rule
     /// (no extraction), behind anything the listener waits on. `None` when YouTube is off or

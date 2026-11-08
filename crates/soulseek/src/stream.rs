@@ -22,12 +22,20 @@ const CHUNK: usize = 64 * 1024;
 /// Re-checks the file this often while waiting for slskd to write more.
 const TICK: Duration = Duration::from_millis(250);
 
-pub async fn serve(fetch: Arc<Fetch>, headers: &HeaderMap) -> Result<Response> {
-    let mut rx = fetch.progress();
+pub async fn serve(mut fetch: Arc<Fetch>, headers: &HeaderMap) -> Result<Response> {
     let requested = headers.get(header::RANGE).and_then(|v| v.to_str().ok());
-    let (ask, span, p) = match ready(&mut rx, requested, |byte| fetch.ask_for(byte)).await? {
-        Ready::Serve(ask, span, p) => (ask, span, *p),
-        Ready::Unsatisfiable(size) => return Ok(unsatisfiable(size)),
+    // Start fast's race: another fetch may become the song's before this one sends a byte; the
+    // response serves that one (its successor), as the player's next request would.
+    let (rx, ask, span, p) = loop {
+        let mut rx = fetch.progress();
+        match ready(&mut rx, requested, |byte| fetch.ask_for(byte)).await {
+            Ok(Ready::Serve(ask, span, p)) => break (rx, ask, span, *p),
+            Ok(Ready::Unsatisfiable(size)) => return Ok(unsatisfiable(size)),
+            Err(e) => match fetch.successor() {
+                Some(next) => fetch = next,
+                None => return Err(e),
+            },
+        }
     };
     let source = p
         .source
@@ -278,6 +286,7 @@ mod tests {
             ahead: None,
             unverified: false,
             unplayable: None,
+            note: None,
         }
     }
 

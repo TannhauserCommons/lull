@@ -52,3 +52,20 @@ Until then:
   - an AAC copy was left 0.0005 ms apart;
   - another part of the song never switched;
   - the timeline moved 16.94 s in 16.95 s of wall time across the switch.
+
+## Update 2026-11-08: better means better, and the switch shows
+
+The owner on 2026-11-07, about a song that switched: "the source on the bottom left didn't update to let me know".
+- **The switch was invisible.** The player dropped every event of the new copy's job until the crossfade ended. A copy that had all arrived sent no more, so the player bar's chips kept naming YouTube.
+- **"Better" meant "passes the streaming minimum".** With a 320 kbps minimum, a 256 kbps or V0 copy never replaced YouTube's Opus.
+- **A copy below the minimum was only ever upgraded to a copy already known,** so with none known it never upgraded.
+- **The next song's offer was lost at a gapless change-over.** Its stream opens up to 90 s before it plays, and the player ignored its offer until then.
+
+**Decision.**
+- **Better means better in quality:** a copy that clearly beats the one playing (lossless over lossy, or at least a fifth more bitrate), or that passes the streaming minimum the one playing fails, within the streaming cap.
+- **With none known,** the song is searched again once per play.
+- **The switch answers with the new copy's stream,** and its events name the job they replace, so every surface shows the copy the moment the fade starts.
+- **A quiet mark:** a small arrow in the quality chip, with a tip saying from what and when, instead of a toast.
+- **Activity records the outcome:** "switched to <format> from <peer>", or why the player couldn't.
+- **The next song's latest event is kept** and applied when it hands over.
+- **Where the switch picks up is unchanged:** at the point the song has reached, lined up to the sample, never from the copy's start. Copies that can't be lined up wait for the next play, which plays the better copy from its start.

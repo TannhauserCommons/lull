@@ -37,6 +37,7 @@ fn routes() -> Router<Arc<Service>> {
         .route("/api/stream/{id}", get(stream).delete(stop))
         .route("/api/stream/{id}/copy", get(copy))
         .route("/api/stream/{id}/switch", post(switch))
+        .route("/api/stream/{id}/not-switched", post(not_switched))
         .route("/api/soulseek/diagnostics", get(diagnostics))
         .route("/api/transfers", get(transfers))
         .route("/api/transfers/{job}", delete(cancel))
@@ -202,14 +203,41 @@ async fn copy(
 }
 
 /// The player switched to the better copy on its way: it becomes the song's stream, and the
-/// copy before it stops once its response ends. 409 when that copy is no longer on its way.
+/// copy before it stops once its response ends. Answers the song's `stream` event as it is now
+/// (its new job, naming the one it replaces), which the player follows from then on. 409 when
+/// that copy is no longer on its way.
 async fn switch(
     State(svc): State<Arc<Service>>,
     Path(id): Path<String>,
     body: std::result::Result<Json<Copy>, JsonRejection>,
-) -> Result<StatusCode> {
+) -> Result<Json<Value>> {
     let Json(copy) = body.map_err(|e| Error::BadRequest(e.body_text()))?;
-    svc.fetcher.adopt(&TrackId(id), &copy.source_ref(), false)?;
+    let f = svc.fetcher.adopt(&TrackId(id), &copy.source_ref(), false)?;
+    Ok(Json(svc.fetcher.event(&f)))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NotSwitched {
+    peer: String,
+    path: String,
+    why: crate::fetch::NotSwitched,
+}
+
+/// The player couldn't switch to the better copy on its way mid-song: the copy's job says why,
+/// for Activity. 409 when that copy is no longer on its way.
+async fn not_switched(
+    State(svc): State<Arc<Service>>,
+    Path(id): Path<String>,
+    body: std::result::Result<Json<NotSwitched>, JsonRejection>,
+) -> Result<StatusCode> {
+    let Json(b) = body.map_err(|e| Error::BadRequest(e.body_text()))?;
+    let copy = SourceRef {
+        user: b.peer,
+        path: b.path,
+        size: 0,
+    };
+    svc.fetcher.not_switched(&TrackId(id), &copy, b.why)?;
     Ok(StatusCode::NO_CONTENT)
 }
 

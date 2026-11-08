@@ -48,3 +48,29 @@ With "Switch to a better copy" on, start fast's upgrade is the better copy by th
 ## Update 2026-11-05: a copy is checked by its sound
 
 Matching by words now has a second check: each upload's sound against the catalog's 30 s preview of the song. Fan uploads are checked before they play, official ones while they play; a re-recording or another song under the right title is refused, and a right upload titled oddly is taken: [ADR-0016](0016-checking-a-copy-by-its-sound.md).
+
+## Update 2026-11-08: start fast is a race
+
+The owner: start fast "doesn't mean YouTube first, it's if YouTube finds it first". On 2026-11-07 Beach House's "Baseball Diamond" took about 16 s to start. Its Soulseek copies (40 peers, 320 kbps) were known from an earlier search, but the hub waited about 15 s for YouTube's lookup before it asked a peer. Nothing bounded that lookup in start fast, and the next queued songs' warm-ups were taking yt-dlp's two lookup turns at the same moment.
+
+**Decision.**
+- **Both sides start at once:** YouTube's lookup and download, and Soulseek's copy by the streaming profile (one that passes the minimum: known, or from the search beside YouTube's lookup as soon as it answers).
+- **Whichever sends the song's first bytes first plays.**
+  - **Soulseek first,** or YouTube has no copy before it sent a byte: Soulseek's fetch becomes the player's (the response already waiting serves it, and its events name the job they replace), and YouTube's download stops.
+  - **YouTube first:** Soulseek's copy carries on beside it, the better copy the player switches to when it is better (ADR-0013's update of 2026-11-08), and the copy later plays and saves take.
+- **Soulseek's side runs on after a skip,** as start fast always promised its copy for later plays and saves.
+- **The playing song's YouTube lookup goes first.** Warm-ups and preloads look up behind it, one at a time.
+
+**Alternatives.**
+- **A time limit on YouTube's lookup** (as `fallback`'s `waitS`): it bounds the wait but still makes a known Soulseek copy wait for it, and picking the limit is a guess.
+- **Soulseek first whenever a copy is known:** it trades one fixed order for another; a busy peer can be slower than YouTube.
+
+**Consequences.**
+- **No extra cost to Soulseek peers:** Soulseek's side is the one request start fast always made. It is just made at once, and it is never cancelled for losing. This is not the racing of two peers that ADR-0015 decided against.
+- **YouTube is downloaded only when it is the first to send** or Soulseek has no copy that passes. A song Soulseek starts first costs YouTube only its lookup, which is stopped.
+- **Measured** with the stand-in slskd: a known Soulseek copy and a 15 s YouTube lookup, the first byte of the player's response (`cargo test -p lull-soulseek start_fast_start_time -- --ignored --nocapture`, three runs each):
+
+  | | first byte | from |
+  |---|---|---|
+  | before | 15.02 s | YouTube |
+  | after | 0.27-0.28 s | Soulseek |

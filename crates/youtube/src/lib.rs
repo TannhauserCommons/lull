@@ -8,6 +8,7 @@ mod api;
 mod check;
 mod cut;
 mod formats;
+mod lanes;
 mod matching;
 mod playlist;
 mod search;
@@ -130,6 +131,8 @@ pub struct Service {
     backoff: Mutex<Option<Backoff>>,
     lookups: Semaphore,
     downloads: Semaphore,
+    /// Who goes first for a lookup: the listener's own, then lookups for later (`find_later`).
+    lanes: lanes::Lanes,
     /// One search per song at a time: a preload and the player asking together search once.
     finding: Mutex<std::collections::HashMap<TrackId, Arc<tokio::sync::Mutex<()>>>>,
     /// Availability checks (`available`): one at a time, so a lookup is always free for what
@@ -187,6 +190,7 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
         backoff: Mutex::default(),
         lookups: Semaphore::new(LOOKUPS_AT_ONCE),
         downloads: Semaphore::new(DOWNLOADS_AT_ONCE),
+        lanes: lanes::Lanes::default(),
         finding: Mutex::default(),
         availability: Semaphore::new(1),
         running: Default::default(),
@@ -228,7 +232,12 @@ pub fn router(svc: Arc<Service>) -> Router {
 
 #[async_trait]
 impl Youtube for Service {
+    async fn find_later(&self, track: &Track, want: Want) -> Result<Option<Found>> {
+        self.lanes.later(&track.id, self.find(track, want)).await
+    }
+
     async fn find(&self, track: &Track, want: Want) -> Result<Option<Found>> {
+        self.lanes.wanted_now(&track.id);
         let settings = self.settings();
         if settings.mode == Mode::Off {
             return Ok(None);
@@ -490,6 +499,7 @@ impl Service {
 
     /// `run`, keeping what a `-i` run printed before it failed (`Ytdlp::output`).
     async fn run_with(&self, args: &[&str], limit: Duration, partial: bool) -> Result<Vec<u8>, Problem> {
+        let _lane = self.lanes.lane().await;
         let _turn = self
             .lookups
             .acquire()
