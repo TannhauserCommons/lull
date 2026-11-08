@@ -790,9 +790,25 @@ function themeItem(id) {
   try {
     const m = JSON.parse(readFileSync(join(dir, 'theme.json'), 'utf8'));
     const slots = existsSync(join(dir, 'slots')) ? readdirSync(join(dir, 'slots')).filter((f) => f.endsWith('.html')).map((f) => f.slice(0, -5)) : [];
-    const rev = themeRev(id);
-    return { ...m, slots, builtIn: false, rev, pictures: ['day', 'night'].filter((mode) => themePictures.has(`${id}/${rev}-${mode}`)) };
+    const rev = themeRev(id), live = liveNames(dir, slots);
+    return { ...m, slots, ...(live.length ? { live } : {}), builtIn: false, rev, pictures: ['day', 'night'].filter((mode) => themePictures.has(`${id}/${rev}-${mode}`)) };
   } catch { return null; }
+}
+/* the live model's values a theme names, as the hub lists them (crates/themes live.rs, ADR-0101): a binding or a field
+   in a slot, a custom property its CSS reads and doesn't set, a root state its CSS tests */
+const LIVE = JSON.parse(readFileSync(join(WEB, 'designs', 'live.json'), 'utf8')).values;
+function liveNames(dir, slots) {
+  const read = (f) => { try { return readFileSync(join(dir, f), 'utf8'); } catch { return ''; } };
+  const css = read('theme.css') + '\n' + read('pack.css'), html = slots.map((s) => read(`slots/${s}.html`)).join('\n');
+  const text = css + '\n' + html;
+  const reads = new Set([...text.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]));
+  const sets = new Set([...text.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
+  const attrs = new Set([...text.matchAll(/\[(data-[\w-]+)/g)].map((m) => m[1]));
+  const binds = new Set([...html.matchAll(/data-bind\s*=\s*["']?([^"'\s>]+)/g), ...html.matchAll(/\{\{\s*([^}\s]+)\s*\}\}/g)].map((m) => m[1]));
+  return Object.keys(LIVE).sort().filter((p) => {
+    const d = p.replace(/\./g, '-'), state = LIVE[p].type === 'state' || LIVE[p].type === 'flag';
+    return binds.has(p) || (reads.has('--' + d) && !sets.has('--' + d)) || (state && attrs.has('data-' + d));
+  });
 }
 /* the hub's rev: the theme's files' names, sizes and modification times (crates/themes, watch.rs and pictures.rs) */
 function themeRev(id) {

@@ -1,0 +1,14 @@
+{
+  "note": "lull's live model for themes (ADR-0101, docs/themes.md section 14). Each value is a dotted path; its type gives its forms: text and number are words in data-bind and a custom property (--path-with-dashes) on the live hosts, a state also an attribute on :root (data-path-with-dashes), a flag only that attribute (true, false) and a number 1 or 0. pace is how often it can change. The hub lists in a theme's manifest the values its CSS and slots name, and the page publishes only those. Adding a value keeps the theme api; renaming or removing one breaks it. After editing, LULL_WRITE_PACKAGES=1 cargo test -p lull-themes writes web/designs/live.js's copy.",
+  "values": {
+    "clock.time": { "type": "text", "pace": "minute", "about": "the time as the device writes it: 14:12, or 2:12 PM" },
+    "clock.hour": { "type": "number", "pace": "minute", "about": "0 to 23; as words two digits, 07" },
+    "clock.minute": { "type": "number", "pace": "minute", "about": "0 to 59; as words two digits, 05" },
+    "clock.second": { "type": "number", "pace": "second", "about": "0 to 59; as words two digits. The only clock value that changes every second, so name it only to show seconds" },
+    "clock.weekday": { "type": "state", "states": ["sun", "mon", "tue", "wed", "thu", "fri", "sat"], "pace": "minute", "about": "as words, the day's name in the device's language: Sunday" },
+    "clock.date": { "type": "number", "pace": "minute", "about": "the day of the month, 1 to 31" },
+    "clock.month": { "type": "number", "pace": "minute", "about": "1 to 12; as words, the month's name in the device's language: November" },
+    "clock.year": { "type": "number", "pace": "minute", "about": "2026" },
+    "clock.daypart": { "type": "state", "states": ["morning", "afternoon", "evening", "night"], "pace": "minute", "about": "morning from 5:00, afternoon from 12:00, evening from 18:00, night from 22:00, as Home's greeting has them" }
+  }
+}

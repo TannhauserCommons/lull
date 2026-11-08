@@ -82,6 +82,8 @@
     m.modes = Array.isArray(raw.modes) && raw.modes.length ? raw.modes : ['day', 'night'];
     m.preview = !!raw.preview; m.slots = Array.isArray(raw.slots) ? raw.slots : [];
     m.coverVariety = !!raw.coverVariety;
+    /* the live model's values its CSS and slots name, as the hub read them (ADR-0101, live.js) */
+    m.live = Array.isArray(raw.live) ? raw.live.filter(function (p) { return typeof p === 'string'; }) : [];
     m.window = raw.window || null;          // as written; windowSpec reads it, and ignores what it doesn't know
     m.rev = typeof raw.rev === 'string' ? raw.rev : null;
     m.pictures = Array.isArray(raw.pictures) ? raw.pictures : [];
@@ -98,12 +100,14 @@
     store('themes', mine);
   }
   function raw(m) {
-    return { id: m.id, name: m.label, description: m.description, author: m.author, api: m.api, extends: m.extends,
+    var o = { id: m.id, name: m.label, description: m.description, author: m.author, api: m.api, extends: m.extends,
       shell: m.shell, swatches: m.swatches, modes: m.modes, preview: m.preview, slots: m.slots, coverVariety: m.coverVariety,
       window: m.window, rev: m.rev, pictures: m.pictures };
+    if (m.live && m.live.length) o.live = m.live;
+    return o;
   }
   /* the built-ins are always known by name (each manifest arrives with its designs/<id>.js) */
-  D.builtIn.forEach(function (id) { D.list[id] = { id: id, builtIn: true, label: id, swatches: [], slots: [] }; });
+  D.builtIn.forEach(function (id) { D.list[id] = { id: id, builtIn: true, label: id, swatches: [], slots: [], live: [] }; });
   var cached = store('themes') || {};
   Object.keys(cached).forEach(function (id) { absorb(cached[id], false); });
   sortOrder();
@@ -363,13 +367,17 @@
     if (!tpl) return '';
     var f = FIELDS[name] ? FIELDS[name](ctx) : {};
     f.product = D.product;
-    var filled = tpl.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9]*)\s*\}\}/g, function (all, k) {
+    /* a dotted field is a value of the live model as the slot is drawn ({{clock.time}}, live.js); a dotted name outside
+       it stays as written, as it always did */
+    var filled = tpl.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9]*(?:\.[a-zA-Z0-9-]+)*)\s*\}\}/g, function (all, k) {
+      if (k.indexOf('.') > 0) return window.Live && Live.known(k) ? esc(Live.text(k)) : all;
       if (!Object.prototype.hasOwnProperty.call(f, k)) { console.warn('[theme slot ' + name + '] unknown field', k); return ''; }
       return esc(f[k]);
     });
     var body = isTrusted ? parsed(filled) : D.sanitize(filled);
     var parts = body.querySelectorAll('lull-part'), made = {};
     for (var i = 0; i < parts.length; i++) parts[i].outerHTML = part(name, parts[i], ctx, made);
+    if (window.Live) Live.fill(body);                // its bindings and live hosts as they are now (live.js)
     return body.innerHTML;
   }
   /* made: what this render already built, so ten picks from one device build it once */
@@ -571,6 +579,7 @@
     root.setAttribute('data-design', designOf(id) || id);
     root.setAttribute('data-shell', m.shell || 'rail');
     if (m.modes && m.modes.length === 1) D.applyTheme(themePref);
+    useLive(id);
     looked();
   }
   /* everything a theme needs before the app renders with it: its manifest (and its design's), DOMPurify, slot templates */
@@ -589,10 +598,31 @@
     return manifest(id).then(function (m) {
       return (m.extends && D.list[m.extends] ? manifest(m.extends) : Promise.resolve()).then(function () {
         var ids = chain(id), untrusted = ids.some(function (x) { return !trusted[x] && D.list[x].slots.length; });
-        return (untrusted ? loadPurify() : Promise.resolve()).then(function () { return Promise.all(ids.map(loadTemplates)); });
+        return (untrusted ? loadPurify() : Promise.resolve()).then(function () { return Promise.all(ids.map(loadTemplates)); })
+          .then(function () { return loadLive(id); });
       });
     });
   }
+  /* the live model (live.js, ADR-0101): loaded only for a design or theme that names one of its values, and handed
+     the names (with those of the design it extends) once that design is the one in use */
+  function liveOf(id) {
+    var out = [];
+    chain(id).forEach(function (x) { (D.list[x].live || []).forEach(function (p) { if (out.indexOf(p) < 0) out.push(p); }); });
+    return out;
+  }
+  var liveLoad = null;
+  function loadLive(id) {
+    if (window.Live || !liveOf(id).length) return Promise.resolve();
+    return liveLoad || (liveLoad = new Promise(function (ok) {
+      var s = document.createElement('script');
+      s.src = D.base + 'live.js';
+      s.onload = ok;
+      /* without it the theme still loads; its live values stay empty */
+      s.onerror = function () { liveLoad = null; console.error('live.js failed to load'); ok(); };
+      document.head.appendChild(s);
+    }));
+  }
+  function useLive(id) { if (window.Live) Live.use(liveOf(id)); }
 
   /* before first paint (inline script in <head>): the design's stylesheet and its designs/<id>.js start loading side by
      side (the script blocks rendering like the stylesheet, so the shell is right on the first frame). A listener's theme
