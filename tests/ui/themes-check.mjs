@@ -186,9 +186,6 @@ async function shootMini(job) {
       document.querySelector('[data-dk-player]'), job.design, { timeout: 10000 });
     const snap = { ...main.snap, playing: true, pos: Math.floor((main.snap.duration || 0) / 3) };
     await page.evaluate(({ s, art }) => { window.__bridge.fire('player', s); window.__bridge.fire('player-art', { art }); }, { s: snap, art: main.art });
-    // the window as it stays: the first snapshot shows a note of what differs from the page's defaults (the volume, as
-    // if a key had changed it) for a moment, as in the app
-    await page.waitForFunction(() => !document.querySelector('.dk-mini__note.is-on'), null, { timeout: 4000 });
     await page.evaluate(() => document.fonts.ready);
     // the window fits its height to the player (desktop.js, fitWindow), as the app's does
     const fit = await page.evaluate(() => window.__bridge.last.setSize);
