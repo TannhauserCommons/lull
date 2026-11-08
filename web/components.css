@@ -1002,6 +1002,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .skel { position: relative; overflow: hidden; background: var(--skel); border-radius: var(--r-thumb); animation: skel-in 1ms 150ms both; }
 .skel::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, var(--skel-hi), transparent); transform: translateX(-100%); animation: sheen 1.4s var(--loop-ease-in-out-42) infinite; }
 .skel--text { height: 12px; border-radius: 6px; }
+.skel-group > .skel--text { margin: 8px 0; }   /* the lines of ui.skeleton('text'): a screen may space them its own way */
 .skel--title { height: 16px; border-radius: 8px; }
 .skel--chip { height: 24px; width: 96px; border-radius: var(--r-pill); }
 .skel--cover { aspect-ratio: 1; border-radius: var(--r-art); }

@@ -1061,7 +1061,8 @@
     grid-template-columns: minmax(360px, 42%) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
     grid-template-areas: "dev head" "dev ly" "src ly"; column-gap: 34px; row-gap: 16px; align-items: start;
   }
-  :root[data-design="petal"] .now__dev { display: flex; }
+  /* a short landscape window shows the compact device only, as lull does (screens/now.css) */
+  @media (min-height: 600px), (orientation: portrait) { :root[data-design="petal"] .now__dev { display: flex; } }
   /* the title: written on the page, its actions under it */
   :root[data-design="petal"] .now__intro { grid-area: head; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding: 4px 0 0; }
   :root[data-design="petal"] .now-head { flex: none; width: 100%; min-width: 0; gap: 2px; }

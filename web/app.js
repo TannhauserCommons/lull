@@ -1568,7 +1568,7 @@
       else if (kind === 'tile') out.push('<div class="skel-tile"><div class="skel skel--cover"></div><div class="skel skel--title" style="width:80%"></div><div class="skel skel--text" style="width:55%"></div></div>');
       else if (kind === 'chip') out.push('<span class="skel skel--chip" style="display:inline-block;width:' + (70 + (i * 23) % 50) + 'px"></span>');
       else if (kind === 'card') out.push('<div class="card" aria-hidden="true"><div class="skel skel--title" style="width:30%;margin-bottom:16px"></div>' + ui.skeleton('row', 3) + '</div>');
-      else out.push('<div class="skel skel--text" style="width:' + (60 + (i * 13) % 35) + '%;margin:8px 0"></div>');
+      else out.push('<div class="skel skel--text" style="width:' + (60 + (i * 13) % 35) + '%"></div>');
     }
     /* a loading placeholder is an indeterminate progress bar: its name needs that role (a labelled div has none) */
     return raw('<div class="skel-group" role="progressbar" aria-busy="true" aria-label="Loading">' + out.join('') + '</div>');

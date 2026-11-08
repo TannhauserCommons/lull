@@ -202,7 +202,7 @@
 .now-ly__back[hidden] { display: none; }
 .now-ly__state { flex: 1 1 auto; display: grid; align-content: center; min-height: 280px; }
 .now-ly__state .skel-group { padding: var(--sp-4) 0; }
-.now-ly__state .skel--text { height: 18px; margin: 14px 0 !important; }   /* beats the inline margin ui.skeleton writes */
+.now-ly__state .skel--text { height: 18px; margin: 14px 0; }
 .now-ly__foot {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 40px; padding-top: 8px;
   border-top: 1px solid var(--divider); font: var(--t-micro); letter-spacing: var(--t-micro-track); color: var(--fg-2);
@@ -355,7 +355,7 @@
 }
 /* short landscape: compact device only */
 @media (max-height: 599px) and (orientation: landscape) {
-  .now__dev { display: none !important; }   /* must beat a design's own display for the full device */
+  .now__dev { display: none; }
   .now .now__devc { display: block; }
   .now__keys { display: none; }
 }

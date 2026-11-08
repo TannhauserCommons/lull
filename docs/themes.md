@@ -110,8 +110,6 @@ An `!important` in your theme can't beat one of lull's: an important declaration
 | `components.css` | `.pbar__acts[data-fit-out]` | `display` | Like and Save that gave way leave the row; both are in the "…" menu. |
 | `components.css` | `.mini__chip[data-fit-out]` | `display` | The mini player's state chip that gave way leaves, never over a button. |
 | `components.css` | `:root.is-hidden *` | `animation-play-state` | Loops pause while the page is hidden: nothing is drawn for a page nobody sees. |
-| `screens/now.css` | `.now-ly__state .skel--text` | `margin` | The lyrics' loading lines keep their spacing against the inline margin `ui.skeleton` writes on them. |
-| `screens/now.css` | `.now__dev` | `display` | In a short landscape window (under 600 px tall) Now Playing shows the compact device; the full one doesn't fit there. |
 | `desktop/desktop.css` | `:root[data-titlebar="win"] .header` | `padding-right` | The desktop app on Windows draws its minimise, maximise and close buttons over the page's top right corner (138 × 32 px): no header key goes under them. |
 | `desktop/desktop.css` | `:root[data-titlebar="win"][data-shell="topnav"] .header, :root[data-titlebar="win"][data-shell="dock"] .header` | `padding-right`, `margin-right` | The same, for a header drawn as a strip: the strip stops short of the buttons. |
 | `desktop/desktop.css` | `:root[data-titlebar="win"] #app` | `padding-top` | The same, from 640 to 819 px, where a header can't spare the room: the buttons get a strip of their own above the shell. |
