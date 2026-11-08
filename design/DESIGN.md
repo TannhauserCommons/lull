@@ -25,6 +25,12 @@ Contents: 1 Principles · 2 The five designs · 3 Architecture · 4 Tokens · 5 
 - **Motion is the design's own, within its cost.** How much moves, and how, is each design's choice. The bound is
   cost: it stays smooth on a cheap device, which the perf gates measure (section 9), and all of it stops under
   reduced motion and while lull is hidden.
+- **Layout is the design's own, within what lull must do.** Where each part sits, its shape and size, and what the
+  player bar, a list or a card is follow the design's idea. Neither lull's usual layout nor a far-out one is the
+  default: a design keeps the usual where that fits its idea and leaves it where its idea asks. The gates check
+  function, never form ([ADR-0083](../docs/adr/0083-gates-check-what-works-not-the-shape.md)): every control can be
+  clicked and every text read, at every width. Where a check can't tell a deliberate shape from a bug, the design
+  frees it with `--gate-free` and a reason ([docs/themes.md](../docs/themes.md), section 5).
 - **Accessible in every design and theme:** text 4.5:1, large text and UI parts 3:1, visible focus, full keyboard use.
 
 ## 2. The five designs
@@ -601,11 +607,14 @@ and petal's `.pv-flip` mirrors the whole `.cover` (limit it to covers without ar
 
 ## 11. Responsive
 
+The base layout at each width. A design keeps or reshapes it as its idea asks (section 1); what every design keeps at
+every width is in section 10 and the gates.
+
 | Width | Layout |
 |---|---|
 | Phone < 640 | header (brand, compact tray, Activity, theme), content with 16 px gutters, mini player above a 4-tab bar (Home, Search, Library, More; More holds Playlists, Liked, History, Following, Stats, Settings, Classic, Activity, Shortcuts). Now Playing is a full sheet with Art / Lyrics / Queue / Details tabs (compact hero on the last three). Row actions live behind each row's more button. Safe-area insets respected. Two or more banners collapse to the most severe plus "more notices". |
 | Tablet 640-1099 | `rail` shell: 72 px icon rail; `topnav`: icon-only pills and a compact tray; `dock`: floating icon dock under the player bar. Context panel = right overlay drawer. |
-| Desktop >= 1100 | the design's shell; context panel overlay from 1100, docked from 1360. Player bar full width. |
+| Desktop >= 1100 | the design's shell; context panel overlay from 1100, docked from 1360. The base player bar spans the window. |
 | Short landscape (height < 600, width < 1100) | compact Now Playing hero; the tab bar hides while Now Playing is open. |
 
 Track lists use a container query (`.tlist`), so they adapt to their column, not the viewport. Shelves scroll-snap
