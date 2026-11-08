@@ -262,6 +262,8 @@ Line breaks between tags are dropped and comments are removed, so indent freely;
 
 Booleans render as `true` or `false`, so CSS can follow them: `[data-playing="true"]`.
 
+Every slot also takes the live model's values, by path, as fields (`{{clock.time}}`, as the slot is drawn) and as bindings that stay current (`<b data-bind="clock.time"></b>`): section 14. A field is the value when the slot was drawn; a binding is the value now.
+
 Keep the live hooks when you rebuild a hero: `data-now="title|artist|album|format|screen|c-screen|c-art|led|head|state|facts|osd"` and `data-act` / `data-bind` on transport buttons (`design/DESIGN.md` 3.5 lists them all). A custom mini player keeps `data-dk-player`, the `data-dk="..."` keys and `data-dk-pos`, `data-dk-dur`, `data-dk-now`. The keys are `play-pause`, `previous`, `next`, `like`, `shuffle`, `repeat`, `vol-up`, `vol-down`, `seek` (on the wave), `full` and `mini-close`, the names `web/desktop/mini-keys.json` lists. The hub refuses a slot that names any other key, and says which keys there are, so a theme never ships a button that does nothing.
 
 ## 7. A full example: CSS and a slot
@@ -311,7 +313,7 @@ In the browser every template is also sanitized (DOMPurify), and the page's Cont
 ## 9. Versioning
 
 - `api` is the theme API version a theme is written for. lull speaks one version (now `1`) and refuses a theme that asks for a newer one, so update lull to use it.
-- The API is: the tokens in section 4, the hooks in sections 5 and 11 (the stable ones), the slots, fields and parts in section 6, and the package format. Adding a token, hook, field, part or slot keeps the version. Section 11's internal hooks may change in any release.
+- The API is: the tokens in section 4, the hooks in sections 5 and 11 (the stable ones), the slots, fields and parts in section 6, the live model's values (section 14, `web/designs/live.json`), and the package format. Adding a token, hook, field, part or slot keeps the version. Section 11's internal hooks may change in any release.
 - Renaming or removing any of them, or changing what one means, is a breaking change: it raises `api`, and the release notes say what moved. A theme written for an older `api` keeps loading; whatever it relied on that moved is ignored, never an error.
 - Built-in designs' own classes (`.lull-*`, `.sd-*`, `.sl-*`, `.pt-*`, `.gh-*`) are not part of the API; extend a design for its look, but target the hooks above in your own rules.
 
@@ -414,12 +416,14 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   - `data-graphics` (`light`: the desktop app's lighter look, where the processor draws the page: no movement, no blur behind glass);
   - `.is-hidden` on `:root` (the page is hidden: loops pause);
   - `.is-still` on `:root` (decorative loops hold still: the listener's "Pause animations when lull isn't the active window", section 5, Drawing cheaply);
+  - the live model's states and flags a theme names, by path with dashes (section 14): `data-clock-*`;
   - `--loop-<curve>-<n>` stepped easings and `--loop-play` (`paused` while `:root.is-still`) for a loop's timing and play-state; `--loop-fps` (a loop's changes a second, lull steps it) and `--loop-holds: no` (it shows progress) on a loop that names its rate instead (section 5, Drawing cheaply).
 - **The app:**
   - `.app` with `data-screen`, `data-route`, `data-view`, `data-ctx`, `data-size`, `data-height`;
   - `data-panel` (`strip`), `data-panel-split` and `data-two` (Queue and Lyrics as two panes), `data-nowcol` (`open` `strip`), `data-nowcol-ok`;
   - `.is-resizing` (a resize handle is being dragged).
 - **Regions:** `data-region` (section 5), `.region-title`, `.region-meta`.
+- **Live hosts:** `data-live` on an element of a theme's slot markup: it carries the live model's custom properties, as lull's own hosts do (section 14).
 - **Shell parts:** `.rail`, `.header`, `.main`, `.view` (with `--view-h` once Settings has opened: its height below its top padding, where something sticky at its top ends), `.ctx` (with `data-ctx-tab` on its tab buttons), `.ctx-scrim`, `.nowcol`, `.pbar`, `.mini`, `.tabbar`, `.tab`, `.nav-item`, `.nav-pill`, `.wordmark`, `.brand` (the default brand slot), `.skip-link`, `.sky-specks`, `.col-resize` (a resize handle, `data-resize`).
 - **Links:** `data-nav` on every nav link, `data-brand` on brand links.
 - **Rows that fit themselves** (section 5, Wide screens): `data-fit-row` on a row (the header, the player bar, its tools,
@@ -438,7 +442,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
 ### Components
 
 - **Buttons:** `.btn`, `.btn-icon`, `.btn-gloss`, `.btn-save` (`data-state`), `.kbd`, `.switch`, `.switch-row`.
-- **Every control:** `data-act` names its action, `data-tip` its tooltip (with `data-tip-cut`, words that show it only while they are cut off, and on a tap: the state tab's line, the mini player's; a tooltip a tap showed is `.tooltip--asked`, which a theme that hides tooltips on phones should still show), `data-bind` the player state it shows. `data-answer` (`yes`, `no`) is the player bar's "Right song?" answer (`.pbar__ask`, internal).
+- **Every control:** `data-act` names its action, `data-tip` its tooltip (with `data-tip-cut`, words that show it only while they are cut off, and on a tap: the state tab's line, the mini player's; a tooltip a tap showed is `.tooltip--asked`, which a theme that hides tooltips on phones should still show), `data-bind` the player state it shows, or the live model's value it holds (section 14). `data-answer` (`yes`, `no`) is the player bar's "Right song?" answer (`.pbar__ask`, internal).
 - **Chips and badges:** `.chip`, `.chip-reason`, `.chip-more`, `.pill-filter`, `.badge`, `.badge-saved`, `.badge-slsk`, `.badge-new`, `.badge-count`, `.badge-below`, `.q-chip`, `.src-badge` (`data-was`: `saved` `slsk`), `.dup-note`, `.dup-better`, `.resolve`, `.scrobble`, `.sg`, `.spin-ring`.
 - **Cards:** `.card` (`data-head`: `rule` `hidden`; `data-meta`), `.card-head`, `.label-rule`, `.inset`, `.source-card`, `.disc-pick` (a Home pick).
 - **Covers:** `.cover`, `.c1`, `.c2`, `.c3`, `.c4`, `.c5`, `.c6`, `.c7`, `.c8`, `.has-art`, `data-look` (cover variety), `.mosaic`, `.bezel-thumb`, `.cover-zoom`, `.cover-view`.
@@ -753,3 +757,59 @@ reduced motion; a loop in an egg's look takes `animation-play-state: var(--loop-
 a name with no file, an event, condition, parameter or field lull doesn't know (the message lists those it does), a
 value out of its range, a sound too long or too large, more than 32 eggs, an egg slot for an egg the pack doesn't
 declare, and `pack.css` or a slot under section 8's rules.
+
+## 14. The live model: lull's values, anywhere
+
+Everything that changes while lull runs, the clock, the song, what plays next, the player's state, reaches a theme
+the same way: as one model of named values, listed in `web/designs/live.json` (the decision is ADR-0101). A theme names
+the values it wants, where it wants them, and lull keeps them current there. A value lull adds later reaches every
+theme the same way, with no new hook.
+
+**A value's path** is dotted, `clock.minute`. Its type gives the forms it takes:
+
+| Type | Words, in a slot | Custom property, on the live hosts | On `:root` |
+|---|---|---|---|
+| `text` | `<b data-bind="clock.time"></b>` | `--clock-time`, a CSS string (for `content:`) | |
+| `number` | `data-bind`, as the value's words (`clock.hour` reads `07`) | `--clock-hour`, a number (for `calc()`, `rotate`, `counter()`) | |
+| `state` | `data-bind`, as its words (`clock.weekday` reads `Sunday`) | `--clock-weekday`, the state's name as a CSS string | `data-clock-weekday="sun"` |
+| `flag` | | `1` or `0` | `true` or `false` |
+
+- **Words** go in any slot (section 6): `<span data-bind="clock.hour"></span>:<span data-bind="clock.minute"></span>`,
+  and are kept current in place, in lull's page and in the desktop app's mini player windows alike. A slot's field takes
+  the same path, `{{clock.time}}`, as the slot is drawn.
+- **Custom properties** are written on the *live hosts*: `#pbar`, `#mini`, the mini player windows' `[data-dk-player]`,
+  Now Playing's hero (`.now__dev`, `.now__devc`), Home's lead (`.disc-lead`), `.sky-specks`, every `[data-region]`, and
+  any element of your slot markup you mark `data-live`. Like `--song-pos`, they don't inherit, so a change restyles the
+  host alone: a part inside that draws with one says `--clock-minute: inherit` (and each level between). A clock hand:
+  ```css
+  .my-clock { --clock-minute: inherit; --clock-hour: inherit; }
+  .my-clock__min { rotate: calc(var(--clock-minute) * 6deg); }
+  .my-clock__hour { rotate: calc(var(--clock-hour) * 30deg + var(--clock-minute) * .5deg); }
+  ```
+  A number shows as words from CSS alone with a counter: `counter-reset: m var(--clock-minute)` then
+  `content: counter(m, decimal-leading-zero)`.
+- **States and flags** are attributes on the root of every window, so one rule follows them anywhere:
+  `:root[data-clock-daypart="night"] .sky-specks { ... }`.
+
+**The values:**
+
+| Path | Type | What |
+|---|---|---|
+| `clock.time` | text | the time as the device writes it: `14:12`, or `2:12 PM` |
+| `clock.hour`, `clock.minute` | number | 0 to 23, 0 to 59; as words two digits (`07`, `05`) |
+| `clock.second` | number | 0 to 59; the only clock value that changes each second, so name it only to show seconds |
+| `clock.weekday` | state | `sun` `mon` `tue` `wed` `thu` `fri` `sat`; as words the day's name in the device's language |
+| `clock.date` | number | the day of the month |
+| `clock.month` | number | 1 to 12; as words the month's name in the device's language |
+| `clock.year` | number | `2026` |
+| `clock.daypart` | state | `morning` from 5:00, `afternoon` from 12:00, `evening` from 18:00, `night` from 22:00 |
+
+**You pay for what you name.** The hub reads which values your CSS and slots name (a `data-bind` or `{{field}}` in a
+slot, a `var(--clock-minute)` your CSS reads, a `[data-clock-daypart]` it tests) and lists them in your theme's
+manifest, as `live`; lull loads the model's script (`designs/live.js`) only for a theme that names one, and computes
+and writes only those. The clock is one timer to the next minute's edge (to the next second only when you name
+`clock.second`), and stops while lull is hidden. A custom property your theme sets itself (`--clock-hour: 3`) is your
+own: lull leaves it alone.
+
+**What the hub refuses:** a slot that binds or fields a path in one of the model's branches that the model doesn't
+have (`data-bind="clock.hours"`), naming the ones it has. Names outside the model are your own, as always.

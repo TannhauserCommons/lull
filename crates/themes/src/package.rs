@@ -64,6 +64,10 @@ pub struct Manifest {
     /// The slot templates in `slots/`, without `.html`. Derived from the files on import.
     #[serde(default)]
     pub slots: Vec<String>,
+    /// The live model's values its CSS and slots name (ADR-0101, `live::named`), which the page publishes.
+    /// Derived from the files, as `slots` is; left out while empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub live: Vec<String>,
     /// Every cover gets the per-item `data-look` and `--cover-*` hooks.
     #[serde(default)]
     pub cover_variety: bool,
@@ -149,7 +153,9 @@ pub fn validate(files: &Files, origin: Origin) -> Result<Manifest> {
             Kind::Manifest | Kind::Pack => {}
             Kind::Css => check_css(path, text(path, bytes, MAX_CSS_BYTES)?, files)?,
             Kind::Slot(name) => {
-                check_slot(path, text(path, bytes, MAX_SLOT_BYTES)?)?;
+                let html = text(path, bytes, MAX_SLOT_BYTES)?;
+                check_slot(path, html)?;
+                crate::live::check_slot(path, html)?;
                 slots.push(name);
             }
             Kind::Asset { svg } => {
@@ -172,6 +178,7 @@ pub fn validate(files: &Files, origin: Origin) -> Result<Manifest> {
     }
     pack::validate(files, Home::Theme)?;
     manifest.slots = slots;
+    manifest.live = crate::live::named(files);
     Ok(manifest)
 }
 
@@ -707,12 +714,25 @@ mod tests {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/designs");
         for id in BUILT_IN {
             let dir = root.join(id);
-            let manifest: serde_json::Value =
+            let mut manifest: serde_json::Value =
                 serde_json::from_slice(&std::fs::read(dir.join("theme.json")).unwrap_or_default()).unwrap_or_default();
             let mut slots = BTreeMap::new();
+            let mut texts = Files::new();
             for e in std::fs::read_dir(dir.join("slots")).into_iter().flatten().flatten() {
                 let name = e.file_name().to_string_lossy().trim_end_matches(".html").to_owned();
-                slots.insert(name, compact(&std::fs::read_to_string(e.path()).unwrap_or_default()));
+                let html = std::fs::read_to_string(e.path()).unwrap_or_default();
+                texts.insert(format!("slots/{name}.html"), html.clone().into_bytes());
+                slots.insert(name, compact(&html));
+            }
+            // the live model's values it names, as the hub lists them for a listener's theme (ADR-0101)
+            for css in ["theme.css", "pack.css"] {
+                texts.insert(css.to_owned(), std::fs::read(dir.join(css)).unwrap_or_default());
+            }
+            let live = crate::live::named(&texts);
+            if !live.is_empty()
+                && let Some(m) = manifest.as_object_mut()
+            {
+                m.insert("live".to_owned(), serde_json::json!(live));
             }
             let want = format!(
                 "/* {id}: theme.json and slots/ in one script (designs.js loads it). Generated: edit those files, then\n   LULL_WRITE_PACKAGES=1 cargo test -p lull-themes */\nDesigns.add({}, {});\n",

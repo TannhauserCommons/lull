@@ -5,6 +5,7 @@
 //! theme or on their own under `<data_dir>/packs/` (`.lullpack`), handled the same way.
 
 mod archive;
+mod live;
 mod ogg;
 mod pack;
 mod package;

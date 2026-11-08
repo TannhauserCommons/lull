@@ -63,7 +63,29 @@ impl Store {
             )));
         }
         m.slots = self.slots(id);
+        m.live = self.live(id);
         Ok(m)
+    }
+
+    /// The live model's values a theme's CSS and slots name, read from its folder as `slots` is: a theme
+    /// edited in place publishes what it names now (ADR-0101).
+    fn live(&self, id: &str) -> Vec<String> {
+        let dir = self.dir.join(id);
+        let mut texts = Files::new();
+        for css in ["theme.css", "pack.css"] {
+            if let Ok(b) = fs::read(dir.join(css)) {
+                texts.insert(css.to_owned(), b);
+            }
+        }
+        for e in fs::read_dir(dir.join("slots")).into_iter().flatten().flatten() {
+            let file = e.file_name().to_string_lossy().into_owned();
+            if file.ends_with(".html")
+                && let Ok(b) = fs::read(e.path())
+            {
+                texts.insert(format!("slots/{file}"), b);
+            }
+        }
+        crate::live::named(&texts)
     }
 
     /// The slot templates in a theme's folder (`slots/<slot>[.<variant>].html`), by name, as `package::validate` lists them.

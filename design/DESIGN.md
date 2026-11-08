@@ -226,6 +226,12 @@ A custom mini player keeps `data-dk-player` on its root, `data-dk="play-pause|pr
 (the keys `web/desktop/mini-keys.json` lists; the hub refuses a slot naming any other, and `data-act`'s `play` and `prev` are not among them),
 `data-dk-now`, `data-dk-pos`, `data-dk-dur`, and `data-tauri-drag-region` on the body (never on the seek strip).
 
+Live values: every slot, a built-in design's as a listener's theme's, takes the live model's values by path, as
+bindings that stay current (`<b data-bind="clock.time"></b>`), as fields drawn with the slot (`{{clock.time}}`), as
+custom properties on the live hosts (`--clock-minute`) and, for a state, on `:root` (`data-clock-daypart`). A design
+pays only for the values it names: `designs/live.js` loads only then. The model, its forms and its costs are
+docs/themes.md section 14 ([ADR-0101](../docs/adr/0101-one-live-model-for-themes.md)).
+
 ### 3.6 Adding a design
 
 1. Create `designs/<name>/design.css` (and optionally `design.js`, `fonts/` with an OFL file per family, art).
