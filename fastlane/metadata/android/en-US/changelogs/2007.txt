@@ -1,0 +1,6 @@
+* Songs start on whichever of YouTube and Soulseek answers first, then switch to a better copy mid-song, and the player shows it
+* New releases are playable, by artists you really listen to
+* The queue always has a radio switch, and turning it on keeps your queue
+* Source details say where a song really comes from
+* lull's discs spin while a song plays
+* lull uses this computer's yt-dlp, Deno and slskd when they're new enough
