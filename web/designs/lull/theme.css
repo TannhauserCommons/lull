@@ -1543,7 +1543,7 @@
 :root[data-design="lull"] .lull-hand__foot { display: flex; align-items: center; gap: 8px; padding: 0 2px; }
 :root[data-design="lull"] .lull-hand .lull-key--sm { width: 30px; height: 30px; }
 :root[data-design="lull"] .lull-hand__model { color: var(--v-clear-ink); font: 400 .75rem/1 var(--f-disp); letter-spacing: .08em; opacity: .7; }
-:root[data-design="lull"] .dk-mini__note { position: absolute; z-index: 4; inset: 118px auto auto 50%; translate: -50% 0; padding: 4px 12px; border-radius: 999px; background: var(--v-lcd); color: var(--v-lcd-ink); box-shadow: var(--v-lcd-sh); font: 900 .75rem/1 var(--f-ui); opacity: 0; transition: opacity .3s; pointer-events: none; }
+:root[data-design="lull"] .dk-mini__note { position: absolute; z-index: 4; inset: 118px auto auto 50%; translate: -50% 0; padding: 4px 12px; border-radius: 999px; background: var(--v-lcd); color: var(--v-lcd-ink); box-shadow: var(--v-lcd-sh); font: 900 .75rem/1 var(--f-ui); opacity: 0; transition: opacity .3s; }
 :root[data-design="lull"] .dk-mini__note.is-on { opacity: 1; }
 :root[data-design="lull"] .dk-mini { padding: 0; }
 :root[data-design="lull"] .dk-mini--opaque .lull-hand { background: var(--v-screws), var(--v-desk); }
