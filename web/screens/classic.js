@@ -158,7 +158,7 @@
   }
   function createWebamp(Webamp, favs) {
     if (!Webamp.browserIsSupported()) throw new Error('this browser lacks Web Audio or canvas, which Webamp needs.');
-    var phone = window.innerWidth < 640;                       // the equalizer closes so 275 px fits a phone
+    var phone = App.layout.switch('phone') === 'on';           // the equalizer closes so 275 px fits a phone
     var w = new Webamp({
       availableSkins: favs.map(function (s) { return { url: skinFileUrl(s.md5), name: s.name }; }),
       windowLayout: {

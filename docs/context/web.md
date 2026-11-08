@@ -39,7 +39,7 @@ sounds.js    App.sounds: the UI sounds, loaded with sound-rules.js after the fir
 egg-rules.js, eggs.js  window.LullEggRules (pure, tests/web/egg-rules.test.mjs) and App.eggs: the easter eggs the packs
              declare, loaded once the page is idle (App.needEggs); the hidden #/credits page
 screens/sounds-settings.js  Settings > Sounds, loaded as it opens: the switches, each sound, the packs, the surprises
-layout.js    ADR-0007: size classes, App.layout (lull:layout), resize handles, the Now Playing column host
+layout.js    ADR-0007: size classes, App.layout (lull:layout), resize handles, the Now Playing column host; the layout switches (ADR-0101)
 sw.js        service worker (app shell for offline start); manifest.webmanifest
 hub.js       the hub's own settings: library source (folder / Jellyfin), Soulseek account, Settings > Devices (App.hubKit);
              with hub.css, loaded on use (App.needHub)
@@ -379,23 +379,34 @@ the background.
 
 A bigger window reveals more; nothing is stretched. Layout is CSS: container queries plus custom properties.
 
+- **Layout switches (ADR-0101).** Every layout choice lull's script makes is a custom property on `.app` that
+  components.css sets to lull's choice at lull's widths (`--layout-ctx`, `--layout-phone`, `--layout-size-wide`...;
+  the table is docs/themes.md, section 5, Layout switches) and a theme may set. layout.js reads them all from one
+  computed style where it already lays out (a window resize, a route, a design or stylesheet, a size class that
+  switched; never per frame) and fires `layout:switch` when one changed; the rest of lull's script asks
+  `App.layout.switch(name)` (`'phone'`, `'ctx'`...), never the window. `tests/web/layout-switches.test.mjs` fails a
+  width, a height or a breakpoint compared in `web/` script outside an allow-list of measurements that decide no layout.
 - **Size classes.** `.main` is the `main` container. layout.js mirrors its width class onto `.app[data-size]`:
-  `compact` below 640, `regular` to 1099, `wide` to 1599, `xwide` to 2199, `ultra` above. It also sets
-  `.app[data-height]` (`short` under 760 px). A ResizeObserver feeds both; nothing is measured in a resize loop.
-  `App.layout.size()` and `App.layout.at(name)` read the class, and `layout:size` fires when it changes.
+  `compact` below 640, `regular` to 1099, `wide` to 1599, `xwide` to 2199, `ultra` above (the `--layout-size-*`
+  switches). It also sets `.app[data-height]` (`short` under 760 px, `--layout-height-short`). A ResizeObserver feeds
+  both; nothing is measured in a resize loop. `App.layout.size()` and `App.layout.at(name)` read the class, and
+  `layout:size` fires when it changes.
 - **Containers.** `main` (`.main`), `panel` (`.ctx`), `nowcol` (`.nowcol`), `section` (a Home module) and `tlist`
   (a song list; the playlist table is `libpl`). A container is the containing block of `position: fixed`
   descendants, so a design's fixed widget inside `.main` is placed against `.main`, not the window.
 - **Stored choices.** `App.layout.get()` / `set(patch)` (emits `layout`) / `reset()`. They're kept in
-  `localStorage['lull:layout']` as `{ panelWidth, panelCollapsed, nowColumn, nowWidth, searchSplit, panelSplit }`,
+  `localStorage['lull:layout']` as `{ panelWidth, panelHeight, panelCollapsed, nowColumn, nowWidth, searchSplit, panelSplit }`,
   per device. Unknown or out-of-range values fall back to defaults. `reset()` is the hook
   for "Reset layout" in Settings > Appearance.
 - **Side panel.**
-  - At 1360 px and wider it's docked. Closing it there collapses it to an icon strip (`.app[data-panel="strip"]`),
-    one button per tab. Below 1360 px it opens over the page.
-  - Its left edge is a resize handle (`[data-resize="panel"]`, 280 to 560 px, on `--ctx`).
-  - From `xwide`, a switch shows Queue and Lyrics as two panes (`.app[data-panel-split]`, `.ctx[data-two]`): stacked
-    in a narrow panel, side by side once the panel is 600 px wide.
+  - At 1360 px and wider it's docked (`--layout-ctx`). Closing it there collapses it to an icon strip
+    (`.app[data-panel="strip"]`), one button per tab. Below 1360 px it opens over the page; from 1100 px a click
+    outside closes it, below that its scrim does (`--layout-ctx-dismiss`).
+  - Its left edge is a resize handle (`[data-resize="panel"]`, 280 to 560 px, on `--ctx`). A theme that docks it by
+    its height (`--layout-ctx-axis: block`) gets the handle on its top edge, dragging `--ctx-h` (200 to 600 px,
+    `panelHeight`); such a panel takes no width from the main area, so it never closes the Now column.
+  - From `xwide` (`--layout-ctx-split`), a switch shows Queue and Lyrics as two panes (`.app[data-panel-split]`,
+    `.ctx[data-two]`): stacked in a narrow panel, side by side once the panel is 600 px wide.
 - **Now Playing column.**
   - It's `.nowcol`, in the main grid cell; `.main` gives it room with a right margin. Contents: art, where it plays
     from, title, artist and album, transfer state and synced lyrics (`App.nowColumn`, now.js).
@@ -406,7 +417,9 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     one closes the other: opening the column collapses the panel to its strip; opening the panel closes the column
     and forgets it, so closing the panel brings nothing back (`App.layout.makeRoom`). A window narrowed until both
     no longer fit hides the column until it is wide enough again. Below 1360 px the panel opens over the page and
-    takes nothing from the column. Checked in all five designs at 1280, 1440 and 1920 px.
+    takes nothing from the column. Checked in all five designs at 1280, 1440 and 1920 px. That is
+    `--layout-nowcol: room`; a theme's `kept` offers it at every width with neither closing the other, and `open`
+    keeps it open on every screen but `/now` with no button.
   - `.app[data-nowcol="open|strip"]` shows it; it's hidden on `/now`. Resizable from 300 to 560 px (`--now-w`) and
     collapsible to a strip.
 - **One place shows the lyrics.** Now Playing's page when it is the page, else the Now column while it is open, else
@@ -421,7 +434,7 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
   bar (its padding is even): both sides are as wide as the tools need, and no wider than leaves the middle
   `--fit-centre-min`, so the middle takes every pixel left and nothing stands empty beside the tools. They widen only
   as far as keeps the song's chips that the most room would show (layout.js sets `--fit-side` on `[data-fit-sides]`
-  from its `[data-fit-side]` row; the song's side keeps `--fit-side-min`). Every control has a fixed slot (toggles
+  from its `[data-fit-side]` row; the song's side keeps `--fit-side-min`; a theme's `--fit-sides: none` ends it). Every control has a fixed slot (toggles
   show pressed or not, the crossfade tag floats above the tools); only the room the bar has moves tools into the "…"
   menu, which lists every one of them, and the volume slider into a popover over its button. The seek
   keeps one length: the time cells are as wide as the song's duration reads (`--time-ch`) and a design's status
@@ -429,7 +442,7 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
 - **Rows that fit themselves** (layout.js). The header, the player bar, its tools and the song's chips lay themselves
   out from the room they have, not from the window's width, so a docked panel, the Now column, the text size or a
   long title count as much as the window, and no design needs a width band to patch them.
-  - A row is `[data-fit-row]`; a part that can give way is `[data-fit="<order>"]`, 1 first, parts of one order
+  - A row is `[data-fit-row]`; a part that can give way is `[data-fit="<order>"]` (a theme's `--fit-order` replaces it), 1 first, parts of one order
     together. When a row's content needs more than its width, parts give way in order (`[data-fit-out]`) until it
     fits; with room again they come back. A row and the rows inside it (the bar, its tools, the song's chips) fit as
     one, from all shown, outer first and again until none moves, so however the room was reached they end as a fresh

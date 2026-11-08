@@ -100,7 +100,7 @@ Set any of these in `:root` (both modes) or `:root[data-theme="day"]` / `[data-t
 | Shadow stacks | `--stack`, `--stack-sm`, `--stack-off-1`, `--stack-off-2` |
 | Motion | `--dur-press`, `--dur-1` ... `--dur-4`, `--ease-out`, `--ease-in-out`, `--ease-spring` |
 | Layers | `--z-bar`, `--z-panel`, `--z-sheet`, `--z-popover`, `--z-toast`, `--z-overlay` |
-| Sizes | `--rail`, `--rail-icons`, `--ctx`, `--bar-h`, `--mini-h`, `--tab-h`, `--hit`, `--tag-h`, `--tag-ic`, `--tag-gap` (every tag's height, icon size, and gap between icon and words) |
+| Sizes | `--rail`, `--rail-icons`, `--ctx`, `--ctx-h` (the side panel's height where a theme docks it by its height, section 5), `--bar-h`, `--mini-h`, `--tab-h`, `--hit`, `--tag-h`, `--tag-ic`, `--tag-gap` (every tag's height, icon size, and gap between icon and words) |
 | Window (section 12) | `--window-tint`, `--window-opacity` (from theme.json's `window`), `--window-backdrop` (what lies over the desktop where the wallpaper was) |
 
 Components read semantic tokens (`--bg`, `--fg`, `--fg-2`, `--link`, `--edge`, `--focus`...) that the surfaces `.s-sky`, `.s-panel`, `.s-card` and `.s-screen` map from the ones above, so a surface's text always pairs with its own background.
@@ -135,22 +135,89 @@ Go beyond tokens with any selector. These hooks are the theme API: they stay put
 
 | Hook | Values |
 |---|---|
-| `.app[data-size]` | the main area's width class: `compact` (under 640 px), `regular` (to 1099), `wide` (to 1599), `xwide` (to 2199), `ultra` |
-| `.app[data-height]` | `short` (under 760 px) or `tall` |
+| `.app[data-size]` | the main area's width class: `compact` (under 640 px), `regular` (to 1099), `wide` (to 1599), `xwide` (to 2199), `ultra` (lull's widths: the `--layout-size-*` switches, below) |
+| `.app[data-height]` | `short` (under 760 px, `--layout-height-short`) or `tall` |
 | Containers | `main` (`.main`), `panel` (`.ctx`), `nowcol` (the Now Playing column), `section` (a Home module), `tlist` (a song list), `libpl` (the playlist table): `@container main (min-width: 1600px) { ... }` |
 | `.app[data-panel="strip"]`, `.ctx__strip` | the side panel collapsed to an icon strip |
 | `.nowcol`, `.nowcol__head`, `.nowcol__title`, `.nowcol__body`, `.app[data-nowcol="open\|strip"]` | the Now Playing column beside the main area |
 | `.disc-modules > .disc-mod[data-module] > .card[data-region]` | Home's modules (`new`, `radio`, `picks`, `jump`, `tags`), in a fixed order. Each module's box names it, so `.disc-mod[data-module="new"]` places or groups one without a `:has()` |
 
+**Layout switches (ADR-0101).** Layout is yours. Every choice about layout that lull's script makes is a switch: a
+custom property on `.app` (or, for a row that fits itself, on the part or the row) that lull's CSS sets to what lull
+does, at lull's widths, and that lull's script reads instead of deciding. Set any of them with any rule (a media query,
+a screen, a size class, a state) and lull lays out by it; the gates still check that every control can be clicked and
+every text read. They are registered: a value lull doesn't know is the switch's initial value (the first one in the
+table). They aren't inherited, so set them on `.app` itself (`.app`, `.app[data-screen="home"]`, `@media (...) { .app
+{ ... } }`), never on `:root`. lull reads them when the window resizes, the route or the design changes, a stylesheet
+changes and a size class switches, never per frame; don't set one by a state it decides (`[data-ctx]`, `[data-nowcol]`),
+which would flip it back and forth.
+
+| Switch | Values | What lull does by it |
+|---|---|---|
+| `--layout-ctx` | `overlay` (lull: under 1360 px), `docked` (from 1360 px) | `docked`: the side panel (queue, lyrics, activity) docks in the shell's grid (`.app[data-ctx="docked"]`), and closing it folds it to its icon strip (`.app[data-panel="strip"]`); `overlay`: it opens over the page (`open`, `closed`). Where a docked panel sits is your grid's; lull's puts it on the right |
+| `--layout-ctx-axis` | `inline`, `block` | what the docked panel's handle drags: its width (`--ctx`, from its left edge) or its height (`--ctx-h`, 200 to 600 px, from its top edge, where lull's CSS lays the handle, `aria-orientation="horizontal"`; up and down arrows). A panel docked by its height takes no width from the main area, so it never closes the Now column. Its strip is then `--ctx-h` tall: lay `.ctx__strip` out as a row |
+| `--layout-ctx-dismiss` | `scrim` (lull: under 1100 px), `outside` (from 1100 px) | how the panel open over the page closes: its scrim (`.ctx-scrim`) takes the click, or a click anywhere outside it |
+| `--layout-ctx-split` | `xwide`, or `compact`, `regular`, `wide`, `ultra`, `none` | the size class from which Queue and Lyrics can show as two panes (`.app[data-panel-split]`). Its button (`.ctx__split`) shows by `.app[data-size]` in lull's CSS: show it where you move this |
+| `--layout-search-split` | `wide`, or `compact`, `regular`, `xwide`, `ultra`, `none` | the size class from which Search can show its lists side by side; its button is `.disc-split`, likewise |
+| `--layout-nowcol` | `room`, `kept`, `open` | the Now column. `room`: offered (`.app[data-nowcol-ok]`, its button) while the main area stays `wide` beside it, and opening it or the docked panel closes the other when both don't fit. `kept`: offered at every width, and neither closes the other. `open`: open on every screen but Now Playing (or at the listener's strip), with no button to close it |
+| `--layout-phone` | `off`, `on` (lull: under 640 px) | lull's phone behaviour: the queue opens on Now Playing's Queue tab and asking for the lyrics there goes to its Lyrics tab, the equaliser and Play on another device open as sheets, Esc on Now Playing goes back, Classic starts with its equaliser closed. Your CSS draws the phone's layout itself (lull's, under 640 px: the mini player and the tab bar); set this where it does |
+| `--layout-size-regular`, `--layout-size-wide`, `--layout-size-xwide`, `--layout-size-ultra` | any length: `640px`, `1100px`, `1600px`, `2200px` | the main area's width from which each size class starts (`.app[data-size]`); `wide` is also the room the Now column needs |
+| `--layout-height-short` | any length: `760px` | the window's height under which `.app[data-height]` is `short` |
+| `--fit-order` | `auto` (the part's `data-fit`), or a whole number | on a part that gives way: its order in its row, 1 first. Parts of one order give way together, and the row's `data-fit-gave` lists these orders |
+| `--fit-sides` | `mirror`, `none` | on a row in three columns (`#pbar`): `mirror` sizes both sides alike (`--fit-side`, as wide as the tools need), so the transport stays centred; `none` leaves the sides to your grid, and lull sets no `--fit-side` |
+
+The queue along the bottom, docked at every width from 1000 px and dragged by its height, a Now column that never
+folds, and Like and Save the last to give way, after the song's chips (`display: contents` on a wrapper hands its parts
+to the row around it, which the fit follows, so the chips and Like and Save give way in one order):
+
+```css
+@media (min-width: 1000px) {
+  .app { --layout-ctx: docked; --layout-ctx-axis: block; }
+  .app[data-ctx="docked"] {
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) var(--ctx-h-drag, var(--ctx-h)) auto;
+    grid-template-areas: "rail head" "rail banner" "rail main" "rail ctx" "bar bar";
+  }
+  .app[data-ctx="docked"] .ctx { width: auto; }
+}
+.app { --layout-nowcol: open; }
+.pbar__badges { display: contents; }
+.pbar__acts { --fit-order: 9; }
+```
+
+Where lull's script decided each one before (the audit for ADR-0101; `mise run check` now fails a width, a height or a
+breakpoint compared in `web/` script, `tests/web/layout-switches.test.mjs`, which lists the few measurements that
+decide no layout: keeping a popover or tooltip inside the window, a list scrolled while a row is dragged, the desktop
+mini player's window sized to what it draws):
+
+| Where | What it decided | lull's rule | Switch |
+|---|---|---|---|
+| `app.js` `App.openPanel`, `layoutCtx` (on resize) | whether the side panel docks or opens over the page | window from 1360 px | `--layout-ctx` |
+| `app.js`, a click outside the open panel | whether it closes the panel | window from 1100 px | `--layout-ctx-dismiss` |
+| `screens/now.js` `now-go-search`, `now-job-review` | close the panel before leaving | window under 1360 px | `--layout-ctx` |
+| `layout.js` resize handles | the panel's handle drags its width | always | `--layout-ctx-axis` |
+| `layout.js` `apply` | Queue and Lyrics as two panes | main area `xwide` | `--layout-ctx-split` |
+| `screens/discover.js` `splitView` | Search side by side | main area `wide` | `--layout-search-split` |
+| `layout.js` `apply`, `makeRoom` | the Now column offered, shown, closed for the panel | main area stays `wide` beside it | `--layout-nowcol` |
+| `layout.js` size classes | `.app[data-size]`, `.app[data-height]` | 640, 1100, 1600, 2200 px wide; under 760 px tall | `--layout-size-*`, `--layout-height-short` |
+| `app.js` `showQueue`, Esc; `screens/discover.js` `isPhone`; `screens/now.js` (`?tab=queue`, a card scrolled into view, `now-open-queue`, the lyrics asked for) | the phone's way: Now Playing's tabs, Esc goes back | window under 640 px | `--layout-phone` |
+| `connect.js` Play on another device; `screens/eq.js` the equaliser | a sheet or a popover | window under 640 px | `--layout-phone` |
+| `screens/classic.js` `createWebamp` | Classic starts with its equaliser closed | window under 640 px | `--layout-phone` |
+| `layout.js` `fit` | the order parts give way in | `data-fit` | `--fit-order` |
+| `layout.js` `settle` | the player bar's sides mirrored | `[data-fit-sides]` | `--fit-sides` |
+
 **Never patch a width band.** The header, the player bar, its tools and the song's chips fit the room they actually
 have (a docked panel, the Now column, the text size and a long title count as much as the window): each part that can
-give way has an order (`data-fit`), and when a row runs out of room its parts give way in that order and come back with
-room. So a theme never writes `@media (min-width: 1100px) and (max-width: 1359px)` to hide a tool or shrink a pill: style
-`[data-fit-out]` for how a part looks once it gave way, and, while the bar keeps lull's three columns, leave them to lull (both sides are
-`var(--fit-side)`, as wide as the tools need, so the transport stays centred; a design may set `--fit-centre-min` and
-`--fit-side-min` on `.pbar`) and let a part's track be `auto`, so a part that gives way takes its room with it. Width rules are for genuine layout changes: the
-shell breakpoints (640, 1100 and 1360 px) and content that rearranges by its container's room (`@container`).
-`mise run check:ui` sweeps every width from 360 to 2560 px for the built-in designs (docs/context/quality.md#ui-gates).
+give way has an order (`data-fit`, or your `--fit-order`), and when a row runs out of room its parts give way in that
+order and come back with room. So a theme never writes `@media (min-width: 1100px) and (max-width: 1359px)` to hide a
+tool or shrink a pill: style `[data-fit-out]` for how a part looks once it gave way, give the parts your own order with
+`--fit-order`, and, while the bar keeps lull's three columns, leave them to lull (both sides are `var(--fit-side)`, as
+wide as the tools need, so the transport stays centred; a design may set `--fit-centre-min` and `--fit-side-min` on
+`.pbar`) or end them with `--fit-sides: none` and lay the bar out your way; let a part's track be `auto`, so a part that
+gives way takes its room with it. To move a choice lull makes at a width (where the panel docks, when the phone's
+behaviour starts, the size classes), set its switch rather than patching around it; other width rules are for your own
+layout and for content that rearranges by its container's room (`@container`). `mise run check:ui` sweeps every width
+from 360 to 2560 px for the built-in designs (docs/context/quality.md#ui-gates).
 
 **The shape is yours; the gates check what works (ADR-0083).** Where a part sits, whether it rises out of its bar,
 whether a bar is full width or a rectangle at all (a capsule narrower than the window, standing on a floor), whether one
@@ -183,7 +250,7 @@ words; without one the check still runs, and says so). Several go in one string,
 | `seg-indicator` | a segmented control's indicator lies on (or just under) the picked choice (**Measured parts**, below) |
 
 
-Prefer `@container main` to `@media`: it follows the main area, so it stays right when a panel opens. Layout states that must hold whatever a theme draws (the strips, the room the column takes) are `!important` in lull's own CSS: style them, don't fight them. The widths the listener drags are custom properties (`--ctx`, `--now-w`); read them, don't set them. While a drag runs the column's width is `--ctx-drag` / `--now-drag` instead, so a theme's own shell grid that places the panel writes its track as `var(--ctx-drag, var(--ctx))`.
+Prefer `@container main` to `@media`: it follows the main area, so it stays right when a panel opens. Layout states that must hold whatever a theme draws (the strips, the room the column takes) are `!important` in lull's own CSS: style them, don't fight them. The widths the listener drags are custom properties (`--ctx`, `--now-w`, and `--ctx-h` for a panel docked by its height); read them, don't set them (`--ctx` and `--ctx-h` are tokens too: a design's own starting size). While a drag runs the column's width is `--ctx-drag` / `--now-drag` instead (`--ctx-h-drag` for the height), so a theme's own shell grid that places the panel writes its track as `var(--ctx-drag, var(--ctx))`.
 
 `design/DESIGN.md` section 3.4 lists more state hooks (tray pills, track row file facts). Pseudo-elements are free for ornaments; keep them decorative.
 
@@ -434,13 +501,15 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
 - **The app:**
   - `.app` with `data-screen`, `data-route`, `data-view`, `data-ctx`, `data-size`, `data-height`;
   - `data-panel` (`strip`), `data-panel-split` and `data-two` (Queue and Lyrics as two panes), `data-nowcol` (`open` `strip`), `data-nowcol-ok`;
-  - `.is-resizing` (a resize handle is being dragged).
+  - `.is-resizing` (a resize handle is being dragged);
+  - the layout switches, `--layout-*` (section 5, Layout switches): custom properties a theme sets on `.app`, which lull's script reads.
 - **Regions:** `data-region` (section 5), `.region-title`, `.region-meta`.
 - **Live hosts:** `data-live` on an element of a theme's slot markup: it carries the live model's custom properties, as lull's own hosts do (section 14).
 - **Shell parts:** `.rail`, `.header`, `.main`, `.view` (with `--view-h` once Settings has opened: its height below its top padding, where something sticky at its top ends), `.ctx` (with `data-ctx-tab` on its tab buttons), `.ctx-scrim`, `.nowcol`, `.pbar`, `.mini`, `.tabbar`, `.tab`, `.nav-item`, `.nav-pill`, `.wordmark`, `.brand` (the default brand slot), `.skip-link`, `.sky-specks`, `.col-resize` (a resize handle, `data-resize`).
 - **Links:** `data-nav` on every nav link, `data-brand` on brand links.
 - **Rows that fit themselves** (section 5, Wide screens): `data-fit-row` on a row (the header, the player bar, its tools,
-  the song's chips), `data-fit` on a part that can give way (its value is its order, 1 first), `data-fit-out` on a part
+  the song's chips), `data-fit` on a part that can give way (its value is its order, 1 first; a theme's `--fit-order`
+  replaces it, and `--fit-sides: none` on a row ends its mirrored sides: section 5, Layout switches), `data-fit-out` on a part
   that gave way, `data-fit-gave` on the row (the orders that gave way, and `all` once every one did); `data-fit-sides`
   on a row in three columns whose sides lull sizes alike (the player bar, `--fit-side`), from its `data-fit-side` row
   (the tools); `data-fit-keep` on words that keep a readable width (the song's title and artist, at least `--fit-keep`

@@ -117,7 +117,7 @@
 
   function open(anchor) {
     var body = panel();
-    if (window.innerWidth < 640) App.openSheet({ label: 'Equaliser', className: 'eq-sheet', body: body });
+    if (App.layout.switch('phone') === 'on') App.openSheet({ label: 'Equaliser', className: 'eq-sheet', body: body });
     else App.popover(anchor, body, { label: 'Equaliser', className: 'eq-pop' });
   }
 

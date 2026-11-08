@@ -31,7 +31,7 @@
   function quality(label) { var f = fmt(label); return f.lossless ? 1e4 + (f.bits || 16) * (f.khz || 44.1) : f.kbps || 0; }
   var mbps = App.fmt.rate;
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
-  function isPhone() { return window.innerWidth < 640; }
+  function isPhone() { return App.layout.switch('phone') === 'on'; }
   function thousands(n) { return n >= 1e6 ? (Math.round(n / 1e5) / 10) + 'M' : n >= 1000 ? (Math.round(n / 100) / 10) + 'k' : String(n); }
   function unique(list) { return list.filter(function (x, i) { return list.indexOf(x) === i; }); }
   /* unix seconds -> "just now", "6 min ago", "3 h ago", "Oct 29" */
@@ -778,15 +778,17 @@
     </section>`;
   }
 
-  /* side by side (ADR-0007, from wide): the catalogs on the left, Soulseek on the right */
-  function splitView() { return App.layout.get().searchSplit && App.layout.at('wide'); }
+  /* side by side (ADR-0007, from the size class the layout switch --layout-search-split names: lull's CSS says wide):
+     the catalogs on the left, Soulseek on the right */
+  function splitView() { return App.layout.get().searchSplit && App.layout.at(App.layout.switch('search-split')); }
   App.action('disc-split', function () {
     App.layout.set({ searchSplit: !App.layout.get().searchSplit });
     App.refresh();
     var b = $('[data-act="disc-split"]'); if (b) b.focus();
   });
-  /* crossing the wide line turns side by side on or off */
+  /* crossing the wide line turns side by side on or off, and so does a theme's switch that moves the line */
   App.on('layout:size', function () { if (App.current.path === '/search' && App.layout.get().searchSplit) App.refresh(); });
+  App.on('layout:switch', function () { if (App.current.path === '/search' && splitView() !== !!$('.disc-splitview')) App.refresh(); });
   App.action('disc-tab', function (el) {
     S.tab = el.getAttribute('data-id');
     paint('results', resultsBody());

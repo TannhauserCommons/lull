@@ -197,7 +197,7 @@
     picked = null;
     var body = html`<div class="cx-body">${pickerBody()}</div>`;
     var onClose = function () { open = null; };
-    open = window.innerWidth < 640
+    open = App.layout.switch('phone') === 'on'
       ? App.openSheet({ title: 'play on', className: 'cx-sheet', body: body, onClose: onClose })
       : App.popover(anchor, html`<div class="popover__head"><h2 class="cx-title">play on</h2></div>${body}`, { label: 'Devices', className: 'cx-pop', onClose: onClose });
   };

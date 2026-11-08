@@ -1080,10 +1080,32 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
   grid-template-areas: "rail head" "rail banner" "rail main" "bar bar";
   column-gap: 24px; padding: 16px 16px 0;
 }
+/* layout switches (ADR-0101; docs/themes.md, section 5, Layout switches): every layout choice lull's script makes is one
+   of these on .app, which layout.js reads (where it already lays out: a window resize, a route, a design or stylesheet,
+   a size class that switched) instead of deciding. Each is set here to what lull does, at lull's widths; a theme sets
+   any of them with any rule. Registered, so each holds one of its values (one it doesn't know is its initial value),
+   and not inherited: they are .app's own */
+@property --layout-ctx { syntax: "docked | overlay"; inherits: false; initial-value: overlay; }
+@property --layout-ctx-axis { syntax: "inline | block"; inherits: false; initial-value: inline; }
+@property --layout-ctx-dismiss { syntax: "scrim | outside"; inherits: false; initial-value: scrim; }
+@property --layout-ctx-split { syntax: "compact | regular | wide | xwide | ultra | none"; inherits: false; initial-value: xwide; }
+@property --layout-search-split { syntax: "compact | regular | wide | xwide | ultra | none"; inherits: false; initial-value: wide; }
+@property --layout-nowcol { syntax: "room | kept | open"; inherits: false; initial-value: room; }
+@property --layout-phone { syntax: "on | off"; inherits: false; initial-value: off; }
+@property --layout-size-regular { syntax: "<length>"; inherits: false; initial-value: 640px; }
+@property --layout-size-wide { syntax: "<length>"; inherits: false; initial-value: 1100px; }
+@property --layout-size-xwide { syntax: "<length>"; inherits: false; initial-value: 1600px; }
+@property --layout-size-ultra { syntax: "<length>"; inherits: false; initial-value: 2200px; }
+@property --layout-height-short { syntax: "<length>"; inherits: false; initial-value: 760px; }
+@media (max-width: 639px) { .app { --layout-phone: on; } }
+@media (min-width: 1100px) { .app { --layout-ctx-dismiss: outside; } }
+@media (min-width: 1360px) { .app { --layout-ctx: docked; } }
 /* a column being dragged (layout.js) shows its width through --ctx-drag / --now-drag, set only on the elements that
    read it. They don't inherit, so a drag frame restyles those few elements; a change to the inherited --ctx or
-   --now-w restyles every element on the page (20-30 ms a frame on a long list). Release saves --ctx / --now-w */
+   --now-w restyles every element on the page (20-30 ms a frame on a long list). Release saves --ctx / --now-w. A panel
+   docked by its height (--layout-ctx-axis: block) drags --ctx-h the same way, through --ctx-h-drag */
 @property --ctx-drag { syntax: "*"; inherits: false; }
+@property --ctx-h-drag { syntax: "*"; inherits: false; }
 /* the song's place (app.js paintSongPos, docs/themes.md: --song-pos): not inherited, so a step restyles the few parts it
    is written on and the ones a design opts in with `--song-pos: inherit`, never everything inside them (a Now Playing
    hero holds hundreds of elements) */
@@ -1195,6 +1217,9 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 }
 .col-resize:hover::after, .col-resize:focus-visible::after, .app.is-resizing .col-resize::after { opacity: .7; }
 .col-resize:focus-visible { outline-offset: 0; }
+/* the panel docked by its height (--layout-ctx-axis: block): its handle lies along its top edge */
+.col-resize[aria-orientation="horizontal"] { left: 16px; right: 16px; top: 0; bottom: auto; width: auto; height: 12px; cursor: row-resize; }
+.col-resize[aria-orientation="horizontal"]::after { left: 50%; top: 4px; width: 44px; height: 4px; margin: 0 0 0 -22px; }
 .app:not([data-ctx="docked"]) .ctx > .col-resize { display: none; }
 .app.is-resizing { cursor: col-resize; user-select: none; }
 .app.is-resizing :is(.main, .ctx, .nowcol) { transition: none; }
@@ -1288,6 +1313,10 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 /* the song's words keep a readable width (layout.js): the song side's parts ("Playing from", then Like and Save) give
    way before the title or artist would show less than this, or less than all of it when it is shorter */
 @property --fit-keep { syntax: "<length>"; inherits: false; initial-value: 0px; }
+/* a theme's own order for a part that gives way (in place of its data-fit), and a row in three columns whose sides lull
+   doesn't mirror (layout.js; docs/themes.md, section 5, Layout switches): read where the fit reads the part's style */
+@property --fit-order { syntax: "<integer> | auto"; inherits: false; initial-value: auto; }
+@property --fit-sides { syntax: "mirror | none"; inherits: false; initial-value: mirror; }
 [data-fit-keep] { --fit-keep: 10ch; }
 .pbar__private[data-fit-out] { padding-inline: 7px; }   /* the eye alone sits in the middle of its pill, as wide as before */
 .pbar__centre { display: grid; justify-items: center; gap: 2px; min-width: 0; }

@@ -3746,8 +3746,9 @@
   App.activeJobs = activeJobs;
 
   /* context panel: App.panel(id, { label, render(el) -> markup, mount(el) }) registers a tab (queue, lyrics, activity).
-     From 1360 px it is docked: closing it collapses it to an icon strip (layout.js, ADR-0007), which stays. Below, it
-     opens over the page. From `xwide`, Queue and Lyrics can show as two panes at once (layout panelSplit). */
+     Docked where the layout switch --layout-ctx says (lull's CSS: from 1360 px; layout.js, ADR-0101): closing it then
+     collapses it to an icon strip (layout.js, ADR-0007), which stays. Otherwise it opens over the page. From
+     --layout-ctx-split (`xwide`), Queue and Lyrics can show as two panes at once (layout panelSplit). */
   var panels = {}, panelOrder = ['queue', 'lyrics', 'activity'], SPLIT = ['queue', 'lyrics'];
   App.panel = function (id, def) { panels[id] = def; if (panelOrder.indexOf(id) < 0) panelOrder.push(id); renderCtx(); };
   /* a panel def's hidden() takes its tab away for now (Lyrics for a song with no words, or shown by the page or the Now
@@ -3766,7 +3767,7 @@
   App.openPanel = function (tab) {
     if (tab) state.ctxTab = state.ctxWant = tab;
     var app = $('#app');
-    if (window.innerWidth >= 1360) { app.setAttribute('data-ctx', 'docked'); App.layout.makeRoom('panel'); App.layout.set({ panelCollapsed: false }); }
+    if (App.layout.switch('ctx') === 'docked') { app.setAttribute('data-ctx', 'docked'); App.layout.makeRoom('panel'); App.layout.set({ panelCollapsed: false }); }
     else app.setAttribute('data-ctx', 'open');
     renderCtx();
     var body = $('#ctx-body'); if (body && app.getAttribute('data-ctx') === 'open') setTimeout(function () { var t = $('.seg__btn[aria-selected="true"]', $('#ctx')); if (t) t.focus(); }, 60);
@@ -3838,21 +3839,23 @@
     });
   }
   App.on('layout', function () { if (split() !== $('#ctx').hasAttribute('data-two') && state.ctxTab !== 'activity') renderCtx(); else updatePanelButtons(); });
-  App.on('layout:size', function () { if (split() !== $('#ctx').hasAttribute('data-two') && state.ctxTab !== 'activity') renderCtx(); });
+  function followSplit() { if (split() !== $('#ctx').hasAttribute('data-two') && state.ctxTab !== 'activity') renderCtx(); }
+  App.on('layout:size', followSplit);
   document.addEventListener('click', function (e) {
     var t = e.target.closest('[data-ctx-tab]'); if (!t) return;
     state.ctxTab = state.ctxWant = t.getAttribute('data-ctx-tab'); renderCtx();
     var nb = $('[data-ctx-tab="' + state.ctxTab + '"]'); if (nb) nb.focus();
   });
   App.on('player', function (k) { if (k === 'queue' || k === 'track') { if (state.ctxTab === 'queue' || state.ctxTab === 'lyrics') renderCtx(); } });
+  /* the panel docks or undocks as the layout switch --layout-ctx says (layout.js reads it on a resize, a route, a design) */
   function layoutCtx() {
-    var app = $('#app'), mode = app.getAttribute('data-ctx'), w = window.innerWidth;
-    if (w >= 1360 && mode !== 'docked') app.setAttribute('data-ctx', 'docked');
-    else if (w < 1360 && mode === 'docked') app.setAttribute('data-ctx', 'closed');
+    var app = $('#app'), mode = app.getAttribute('data-ctx'), dock = App.layout.switch('ctx') === 'docked';
+    if (dock && mode !== 'docked') app.setAttribute('data-ctx', 'docked');
+    else if (!dock && mode === 'docked') app.setAttribute('data-ctx', 'closed');
     if (!app.getAttribute('data-ctx')) app.setAttribute('data-ctx', 'closed');
     updatePanelButtons();
   }
-  window.addEventListener('resize', layoutCtx);
+  App.on('layout:switch', function () { layoutCtx(); followSplit(); });
 
   /* ---------- player bar + mini-player ---------- */
   function renderBar() {
@@ -4111,7 +4114,7 @@
   function ids(el) { return (el.getAttribute('data-ids') || el.getAttribute('data-id') || '').split(',').filter(Boolean); }
   function listIds(el) { var l = el.closest('[data-ids]'); return l ? l.getAttribute('data-ids').split(',') : null; }
   /* the Queue panel (phone: Now Playing, Queue tab) */
-  function showQueue() { if (window.innerWidth < 640) App.go('/now?tab=queue'); else App.openPanel('queue'); }
+  function showQueue() { if (App.layout.switch('phone') === 'on') App.go('/now?tab=queue'); else App.openPanel('queue'); }
   /* start radio, then show where it landed */
   function startRadio(seed) {
     P.startRadio(seed).then(function (ok) { if (ok) showQueue(); });
@@ -4465,7 +4468,7 @@
       var mode = $('#app').getAttribute('data-ctx');
       if (mode === 'open') { App.closePanel(); return; }
       if (App.current.path === '/search') { leaveSearch(); return; }
-      if (App.current.route && App.current.route.view === 'now' && window.innerWidth < 640) { App.back(); return; }
+      if (App.current.route && App.current.route.view === 'now' && App.layout.switch('phone') === 'on') { App.back(); return; }
       return;
     }
     if (mod && (k === 'k' || k === 'K')) { e.preventDefault(); App.hooks.palette(); return; }
@@ -4917,8 +4920,10 @@
     });
     ['#view', '#ctx-body', '#overlay-host'].forEach(function (s) { mo.observe($(s), { childList: true, subtree: true, attributes: true, attributeFilter: ['data-meta'] }); });
     $('#ctx-scrim').addEventListener('click', function () { App.closePanel(); });
-    document.addEventListener('pointerdown', function (e) {    // 1100-1359 overlay closes on outside click
-      var app = $('#app'); if (app.getAttribute('data-ctx') !== 'open' || window.innerWidth < 1100) return;
+    /* the panel open over the page closes on a click anywhere outside it where --layout-ctx-dismiss says `outside` (lull's
+       CSS: from 1100 px, where it has no scrim); otherwise its scrim takes the click */
+    document.addEventListener('pointerdown', function (e) {
+      var app = $('#app'); if (app.getAttribute('data-ctx') !== 'open' || App.layout.switch('ctx-dismiss') !== 'outside') return;
       if (!e.target.closest('#ctx, [data-act="toggle-panel"], [data-act="open-activity"], .popover, .menu, .sheet, .dialog, .toast')) App.closePanel();
     });
     window.addEventListener('hashchange', function () { renderRoute(); });

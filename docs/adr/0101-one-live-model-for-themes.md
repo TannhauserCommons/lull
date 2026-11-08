@@ -185,6 +185,17 @@ switches in the pass where it already lays out (a resize, a design switch, a fit
 Parts that give way keep `data-fit` as their default order, and `--fit-order` replaces it. `display: contents` on a
 wrapper hands its parts to the grid around it, which the fit already follows; the docs show it.
 
+The audit (slice 4) found these, each now a switch with lull's widths as its default: the panel docked or over the
+page (`--layout-ctx`, also read where Now Playing closes it before leaving), the way its handle drags
+(`--layout-ctx-axis`), how the panel over the page closes (`--layout-ctx-dismiss`: its scrim, or a click outside from
+1100 px), the size classes from which Queue and Lyrics show as two panes and Search side by side
+(`--layout-ctx-split`, `--layout-search-split`), the Now column's room rule (`--layout-nowcol`; lull never folds it to
+its strip by itself, only the listener does), the size classes' widths and the short height (`--layout-size-*`,
+`--layout-height-short`), the phone's way in ten places (`--layout-phone`: the queue and the lyrics on Now Playing's
+tabs, sheets for the equaliser and Play on another device, Esc going back, Classic's equaliser closed), and the fit's
+order and mirrored sides (`--fit-order`, `--fit-sides`). docs/themes.md, section 5, Layout switches, lists each with
+where it was decided.
+
 A new layout choice in lull's script is a switch from the start: a check in `mise run check` fails a width, a height or
 a breakpoint compared in `web/` script outside the switches' reader. lull's own `!important` rules stay limited to what
 must hold whatever a design draws (a part that gave way leaves its row, a strip hides its panel's contents, reduced

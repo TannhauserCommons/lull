@@ -614,7 +614,10 @@ and petal's `.pv-flip` mirrors the whole `.cover` (limit it to covers without ar
 ## 11. Responsive
 
 The base layout at each width. A design keeps or reshapes it as its idea asks (section 1); what every design keeps at
-every width is in section 10 and the gates.
+every width is in section 10 and the gates. Each width below that lull's script acts on (where the panel docks, the
+phone's way, the size classes, the Now column's room) is the default of a layout switch, a custom property a design or
+theme sets on `.app` to move it ([ADR-0101](../docs/adr/0101-one-live-model-for-themes.md); docs/themes.md, section 5,
+Layout switches): lull's script reads the switch, never the window.
 
 | Width | Layout |
 |---|---|

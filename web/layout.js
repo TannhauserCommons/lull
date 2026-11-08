@@ -1,40 +1,75 @@
 /* Layout (ADR-0007): layouts reveal more as the window grows, and the listener can adjust them.
+   - Every layout choice made here is a layout switch (ADR-0101): a custom property on .app that lull's CSS sets to
+     lull's own choice (components.css) and a theme may set to anything else, read here instead of decided. App.layout.
+     switch(name) gives one to the rest of lull's script. They are read where layout already happens (a window resize,
+     a route, a design or stylesheet, a size class that switched), all from one computed style, before anything is
+     written, never per frame; `layout:switch` fires when one changed.
    - Size classes come from the main area's own width: .main is the `main` container for CSS (@container main).
-     A ResizeObserver mirrors the class onto .app[data-size] (compact | regular | wide | xwide | ultra) and the window's
-     height onto .app[data-height] (short below 760 px), for scripts and designs. No layout is read in a resize loop.
-   - App.layout holds the listener's choices, per device: localStorage 'lull:layout' = { panelWidth, panelCollapsed,
-     nowColumn, nowWidth, searchSplit, panelSplit }. get(), set(patch) (emits 'layout'), reset(),
-     size(). Widths ride on custom properties of .app (--ctx, --now-w), so the columns resize with CSS alone.
+     A ResizeObserver mirrors the class onto .app[data-size] (compact | regular | wide | xwide | ultra, from the
+     --layout-size-* widths) and the window's height onto .app[data-height] (short below --layout-height-short), for
+     scripts and designs. No layout is read in a resize loop.
+   - App.layout holds the listener's choices, per device: localStorage 'lull:layout' = { panelWidth, panelHeight,
+     panelCollapsed, nowColumn, nowWidth, searchSplit, panelSplit }. get(), set(patch) (emits 'layout'), reset(),
+     size(). Sizes ride on custom properties of .app (--ctx, --ctx-h, --now-w), so the columns resize with CSS alone.
    - Resize handles [data-resize="panel|now"] (role separator): a pointer drag throttled to animation frames, arrow
      keys (Shift for bigger steps), Home / End for the limits, double-click for the default. While a drag runs, its
-     width (`live`) is the one shown, through --ctx-drag / --now-drag on the elements that read it (components.css
-     says why), so the column follows the pointer each frame; it is saved when the drag ends.
+     size (`live`) is the one shown, through --ctx-drag / --ctx-h-drag / --now-drag on the elements that read it
+     (components.css says why), so the column follows the pointer each frame; it is saved when the drag ends. The panel
+     docked by its height (--layout-ctx-axis: block) drags its height from its top edge, by the same code.
    - The Now Playing column (.nowcol, from `wide`): beside the main area in the same grid cell, so no design's shell
      grid changes. App.nowColumn (now.js) fills it. Closed on /now, which shows all of it already.
      It and the docked side panel follow one rule (docs/context/web.md, Layout):
      - the column is offered when the main area stays `wide` beside it with the panel at its strip: the window's width
        alone decides, so its button never comes and goes as the panel opens or closes;
      - both are open when the main area stays `wide` beside both; otherwise opening one closes the other (the column's
-       choice is forgotten, the panel collapses to its strip), and closing it brings nothing back. */
+       choice is forgotten, the panel collapses to its strip), and closing it brings nothing back.
+     That is --layout-nowcol: room. `kept` offers the column at every width and neither closes the other; `open` keeps
+     it open (or at the listener's strip) on every screen but Now Playing, with no button to close it. A panel docked
+     by its height takes no width from the main area, so it never closes the column. */
 (function () {
   'use strict';
   var $ = App.$, $$ = App.$$, clamp = App.clamp;
-  var SIZES = [['ultra', 2200], ['xwide', 1600], ['wide', 1100], ['regular', 640], ['compact', 0]];
-  var SHORT = 760;
-  var DEFAULTS = { panelWidth: null, panelCollapsed: false, nowColumn: false, nowWidth: null, searchSplit: false, panelSplit: false };
-  var LIMITS = { panel: [280, 560], now: [300, 560] };
+  var CLASSES = ['compact', 'regular', 'wide', 'xwide', 'ultra'];   // narrowest first
+  var FROM = { regular: 'size-regular', wide: 'size-wide', xwide: 'size-xwide', ultra: 'size-ultra' };   // each from its --layout-size-* width
+  var DEFAULTS = { panelWidth: null, panelHeight: null, panelCollapsed: false, nowColumn: false, nowWidth: null, searchSplit: false, panelSplit: false };
+  /* the bounds of what the listener drags, by dimension: the panel's width, its height (docked by its height), the
+     column's width. The listener's own choice, kept per device whatever the theme, so it stays valid in every theme */
+  var LIMITS = { panel: [280, 560], 'panel-h': [200, 600], now: [300, 560] };
+  var STORED = { panel: 'panelWidth', 'panel-h': 'panelHeight', now: 'nowWidth' };
   var NOW_DEFAULT = 360, STRIP = 60, GAP = 16, KEY_STEP = 16;
   var app = $('#app'), main = $('.main');
-  var live = { panel: null, now: null };          // a width being dragged: shown at once, saved when the drag ends
-  var DRAG = { panel: '--ctx-drag', now: '--now-drag' };
-  function readers(kind) { return kind === 'panel' ? [app, $('#ctx')] : [main, $('#nowcol')]; }
+  var live = { panel: null, 'panel-h': null, now: null };   // a size being dragged: shown at once, saved when the drag ends
+  var DRAG = { panel: '--ctx-drag', 'panel-h': '--ctx-h-drag', now: '--now-drag' };
+  function readers(dim) { return dim === 'now' ? [main, $('#nowcol')] : [app, $('#ctx')]; }
+
+  /* ---------- layout switches (ADR-0101; docs/themes.md, section 5, Layout switches) ----------
+     Their values are registered in components.css, so each read is one of them. Read all at once from one computed
+     style, before this pass writes anything */
+  var SWITCHES = ['--layout-ctx', '--layout-ctx-axis', '--layout-ctx-dismiss', '--layout-ctx-split', '--layout-search-split',
+    '--layout-nowcol', '--layout-phone', '--layout-size-regular', '--layout-size-wide', '--layout-size-xwide',
+    '--layout-size-ultra', '--layout-height-short'];
+  var S = {};   // by name without --layout-: S.ctx, S['size-wide']
+  function readSwitches() {
+    var cs = getComputedStyle(app), changed = false;
+    SWITCHES.forEach(function (p) {
+      var n = p.slice(9), v = cs.getPropertyValue(p).trim();
+      if (S[n] !== v) { S[n] = v; changed = true; }
+    });
+    return changed;
+  }
+  /* a switch changed: lay out by it, and tell the rest of lull's script (app.js docks the panel, Search redraws) */
+  function switched() { apply(); App.emit('layout:switch'); }
+  readSwitches();
+  /* the panel's resize handle drags its height when a theme docks it by its height */
+  function dimOf(kind) { return kind === 'panel' && S['ctx-axis'] === 'block' ? 'panel-h' : kind; }
+  function byWidth() { return S['ctx-axis'] !== 'block'; }
 
   /* ---------- the stored choices: anything unknown or out of range falls back to the default ---------- */
-  function width(v, kind) { return typeof v === 'number' && isFinite(v) ? clamp(Math.round(v), LIMITS[kind][0], LIMITS[kind][1]) : null; }
+  function width(v, dim) { return typeof v === 'number' && isFinite(v) ? clamp(Math.round(v), LIMITS[dim][0], LIMITS[dim][1]) : null; }
   function sanitize(s) {
     s = s && typeof s === 'object' ? s : {};
     return {
-      panelWidth: width(s.panelWidth, 'panel'), panelCollapsed: s.panelCollapsed === true,
+      panelWidth: width(s.panelWidth, 'panel'), panelHeight: width(s.panelHeight, 'panel-h'), panelCollapsed: s.panelCollapsed === true,
       nowColumn: s.nowColumn === 'open' || s.nowColumn === 'strip' ? s.nowColumn : false, nowWidth: width(s.nowWidth, 'now'),
       searchSplit: s.searchSplit === true, panelSplit: s.panelSplit === true
     };
@@ -58,13 +93,19 @@
       try { localStorage.removeItem('lull:layout'); } catch (e) { /* private mode */ }
       apply(); App.emit('layout', App.layout.get()); App.refresh();
     },
-    /* the main area's size class; at least(name) compares against it */
+    /* the main area's size class; at(name), whether it is at least that one (never for `none`) */
     size: function () { return size || 'compact'; },
-    at: function (name) { return rank(App.layout.size()) >= rank(name); },
+    at: function (name) { return rank(name) > 0 && rank(App.layout.size()) >= rank(name); },
+    /* a layout switch's value, as the last pass read it: lull's script asks this, never the window */
+    switch: function (name) { return S[name]; },
     limits: LIMITS, defaults: { now: NOW_DEFAULT }
   };
-  function rank(name) { for (var i = 0; i < SIZES.length; i++) if (SIZES[i][0] === name) return SIZES.length - i; return 0; }
-  function classOf(w) { for (var i = 0; i < SIZES.length; i++) if (w >= SIZES[i][1]) return SIZES[i][0]; return 'compact'; }
+  function rank(name) { return CLASSES.indexOf(name) + 1; }
+  /* the widest class whose width the main area reaches */
+  function classOf(w) {
+    for (var i = CLASSES.length - 1; i > 0; i--) if (w >= parseFloat(S[FROM[CLASSES[i]]])) return CLASSES[i];
+    return CLASSES[0];
+  }
 
   /* ---------- applying: attributes and custom properties on .app, nothing measured ---------- */
   function docked() { return app.getAttribute('data-ctx') === 'docked'; }
@@ -72,36 +113,41 @@
   function nowOpen() { return live.now || L.nowWidth || NOW_DEFAULT; }
   function nowWidth() { return L.nowColumn === 'strip' ? STRIP : L.nowWidth || NOW_DEFAULT; }
   function panelExpanded() { return docked() && !L.panelCollapsed; }
+  /* what the expanded panel takes from the main area's width beside its strip: nothing when docked by its height */
+  function panelCost() { return byWidth() ? current('panel') - STRIP : 0; }
   /* the main area's width with the Now column closed and the panel at its strip (no feedback loop: it doesn't change
      as either opens), and what the expanded panel takes from it */
   function freeWidth() {
     var shownW = nowShown() ? (app.getAttribute('data-nowcol') === 'strip' ? STRIP : nowOpen()) + GAP : 0;
-    return mainW + shownW + (panelExpanded() ? current('panel') - STRIP : 0);
+    return mainW + shownW + (panelExpanded() ? panelCost() : 0);
   }
   function wideAt(w) { return rank(classOf(w)) >= rank('wide'); }
-  function bothFit() { return wideAt(freeWidth() - (current('panel') - STRIP)); }
+  /* the column and the expanded panel side by side: by the room (--layout-nowcol: room), or always (kept, open) */
+  function bothFit() { return S.nowcol !== 'room' || wideAt(freeWidth() - panelCost()); }
   function apply() {
-    var offered = wideAt(freeWidth());
-    var show = offered && L.nowColumn && app.getAttribute('data-screen') !== 'now' && (!panelExpanded() || bothFit());
+    var always = S.nowcol === 'open', offered = !always && (S.nowcol === 'kept' || wideAt(freeWidth()));
+    var show = app.getAttribute('data-screen') !== 'now' && (always || offered && L.nowColumn && (!panelExpanded() || bothFit()));
     toggleAttr('data-nowcol-ok', offered ? '' : null);
-    toggleAttr('data-nowcol', show ? L.nowColumn : null);
+    toggleAttr('data-nowcol', show ? L.nowColumn || 'open' : null);
     prop(app, '--now-w', nowWidth() + 'px');
-    /* the panel: its stored width, or the icon strip while docked and collapsed */
-    var ctx = docked() && L.panelCollapsed ? STRIP : L.panelWidth;
-    prop(app, '--ctx', ctx ? ctx + 'px' : '');
-    toggleAttr('data-panel', docked() && L.panelCollapsed ? 'strip' : null);
-    toggleAttr('data-panel-split', L.panelSplit && App.layout.at('xwide') ? '' : null);
-    showLive('panel'); showLive('now');
+    /* the panel: its stored width (or height), or the icon strip while docked and collapsed */
+    var strip = docked() && L.panelCollapsed;
+    prop(app, '--ctx', strip && byWidth() ? STRIP + 'px' : L.panelWidth ? L.panelWidth + 'px' : '');
+    prop(app, '--ctx-h', strip && !byWidth() ? STRIP + 'px' : L.panelHeight ? L.panelHeight + 'px' : '');
+    toggleAttr('data-panel', strip ? 'strip' : null);
+    toggleAttr('data-panel-split', L.panelSplit && App.layout.at(S['ctx-split']) ? '' : null);
+    showLive('panel'); showLive('panel-h'); showLive('now');
     $$('[data-resize]').forEach(function (h) {
-      var kind = h.getAttribute('data-resize');
-      h.setAttribute('aria-valuemin', LIMITS[kind][0]); h.setAttribute('aria-valuemax', LIMITS[kind][1]);
-      h.setAttribute('aria-valuenow', current(kind));
+      var d = dimOf(h.getAttribute('data-resize'));
+      h.setAttribute('aria-orientation', d === 'panel-h' ? 'horizontal' : 'vertical');
+      h.setAttribute('aria-valuemin', LIMITS[d][0]); h.setAttribute('aria-valuemax', LIMITS[d][1]);
+      h.setAttribute('aria-valuenow', current(d));
     });
     $$('[data-act="now-column"]').forEach(function (b) { b.setAttribute('aria-pressed', String(!!show)); });
     $$('[data-act="panel-split"]').forEach(function (b) { b.setAttribute('aria-pressed', String(L.panelSplit)); });
   }
-  function showLive(kind) {
-    readers(kind).forEach(function (el) { if (el) prop(el, DRAG[kind], live[kind] == null ? '' : live[kind] + 'px'); });
+  function showLive(dim) {
+    readers(dim).forEach(function (el) { if (el) prop(el, DRAG[dim], live[dim] == null ? '' : live[dim] + 'px'); });
   }
   /* custom properties written only when they change: apply() runs on every frame of a drag (the main area resizes),
      and rewriting --ctx or --now-w, even unchanged, could restyle the whole page */
@@ -113,77 +159,92 @@
     if (value == null) { if (app.hasAttribute(name)) app.removeAttribute(name); }
     else if (app.getAttribute(name) !== value) app.setAttribute(name, value);
   }
-  /* a column's width as shown: the stored one, or the design's own (--ctx, read once per design) until one is set */
-  var designCtx = null;
-  function current(kind) {
-    if (kind === 'now') return nowOpen();
-    if (live.panel || L.panelWidth) return live.panel || L.panelWidth;
-    if (designCtx == null) designCtx = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--ctx'), 10) || LIMITS.panel[0];
-    return designCtx;
+  /* a column's size as shown: the stored one, or the design's own (--ctx, --ctx-h, read once per design) until one is set */
+  var designSize = {}, TOKEN = { panel: '--ctx', 'panel-h': '--ctx-h' };
+  function current(dim) {
+    if (dim === 'now') return nowOpen();
+    var own = live[dim] || L[STORED[dim]];
+    if (own) return own;
+    if (designSize[dim] == null) designSize[dim] = parseInt(getComputedStyle(document.documentElement).getPropertyValue(TOKEN[dim]), 10) || LIMITS[dim][0];
+    return designSize[dim];
   }
-  /* read again once the design's stylesheet is in (boot), and whenever the design changes */
-  App.on('ready', function () { designCtx = null; apply(); });
-  App.on('design', function () { designCtx = null; apply(); });
+  /* read again once the design's stylesheet is in (boot), and whenever the design changes: its sizes and its switches */
+  function restyled() { designSize = {}; if (readSwitches()) switched(); else apply(); }
+  App.on('ready', restyled);
+  App.on('design', restyled);
+  /* the window resized: the switches lull's CSS sets by its width (the panel docking, the phone's layout) follow it here,
+     where lull laid out by the window before, so they switch in the same frame */
+  window.addEventListener('resize', function () { if (readSwitches()) switched(); });
 
   /* ---------- size classes: the main area's width and the window's height, as ResizeObserver reports them ---------- */
   /* the states a resize can switch, which change how the rows are laid out */
   function states() { return ['data-size', 'data-height', 'data-nowcol', 'data-nowcol-ok', 'data-panel', 'data-panel-split'].map(function (n) { return app.getAttribute(n); }).join('|'); }
   var ro = new ResizeObserver(function (entries) {
-    var was = states();
+    var was = states(), classes = app.getAttribute('data-size') + app.getAttribute('data-height');
     entries.forEach(function (e) {
       if (e.target === main) mainW = e.contentRect.width;
-      else short = e.contentRect.height < SHORT;
+      else short = e.contentRect.height < parseFloat(S['height-short']);
     });
     var next = classOf(mainW);
     toggleAttr('data-height', short ? 'short' : 'tall');
     apply();
     if (next !== size) { size = next; toggleAttr('data-size', size); apply(); App.emit('layout:size', size); }
+    /* a switch a theme sets by size class (.app[data-size="wide"]) follows the class: read once more when one switched */
+    if (app.getAttribute('data-size') + app.getAttribute('data-height') !== classes && readSwitches()) switched();
     /* a state switched lays the rows out anew: fit them now, in this frame. Left to the rows' own observer, the change
        reaches it a round later, which a frame can end before, and the header stuck out for a frame (CI, Skydeck, 900 px) */
     if (states() !== was && App.layout.refit) App.layout.refit();
   });
   ro.observe(main); ro.observe(document.documentElement);
-  /* the panel docking (app.js) and the route (/now hides the column) change what applies */
-  new MutationObserver(apply).observe(app, { attributes: true, attributeFilter: ['data-ctx', 'data-screen'] });
+  /* the panel docking (app.js) and the route (/now hides the column) change what applies; a switch may follow the
+     screen (.app[data-screen="home"]), so a route reads them again. Never on data-ctx, which follows the switches */
+  new MutationObserver(function (records) {
+    if (records.some(function (r) { return r.attributeName === 'data-screen'; }) && readSwitches()) switched();
+    else apply();
+  }).observe(app, { attributes: true, attributeFilter: ['data-ctx', 'data-screen'] });
 
   /* ---------- resize handles ---------- */
-  function save(kind, w) { App.layout.set(kind === 'panel' ? { panelWidth: w } : { nowWidth: w }); }
+  function save(dim, w) { var patch = {}; patch[STORED[dim]] = w; App.layout.set(patch); }
   document.addEventListener('pointerdown', function (e) {
     var h = e.target.closest && e.target.closest('[data-resize]'); if (!h || e.button !== 0) return;
     e.preventDefault();
-    var kind = h.getAttribute('data-resize'), x0 = e.clientX, w0 = current(kind), w = w0, frame = 0;
+    var d = dimOf(h.getAttribute('data-resize')), along = d === 'panel-h' ? 'clientY' : 'clientX';
+    var p0 = e[along], w0 = current(d), w = w0, frame = 0;
     h.setPointerCapture(e.pointerId); app.classList.add('is-resizing');
-    /* the handle sits on the column's left edge: dragging left widens it */
+    /* the handle sits on the column's left edge (the panel's top edge, docked by its height): dragging away from the
+       column, left (or up), makes it bigger */
     function move(ev) {
-      w = clamp(w0 - (ev.clientX - x0), LIMITS[kind][0], LIMITS[kind][1]);
-      if (!frame) frame = requestAnimationFrame(function () { frame = 0; live[kind] = w; apply(); });
+      w = clamp(w0 - (ev[along] - p0), LIMITS[d][0], LIMITS[d][1]);
+      if (!frame) frame = requestAnimationFrame(function () { frame = 0; live[d] = w; apply(); });
     }
     function end() {
       h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', end); h.removeEventListener('pointercancel', end);
       cancelAnimationFrame(frame); app.classList.remove('is-resizing');
-      live[kind] = null;
-      if (w !== w0) save(kind, w); else apply();
+      live[d] = null;
+      if (w !== w0) save(d, w); else apply();
     }
     h.addEventListener('pointermove', move); h.addEventListener('pointerup', end); h.addEventListener('pointercancel', end);
   });
   document.addEventListener('dblclick', function (e) {
     var h = e.target.closest && e.target.closest('[data-resize]'); if (!h) return;
-    App.layout.set(h.getAttribute('data-resize') === 'panel' ? { panelWidth: null } : { nowWidth: null });
+    save(dimOf(h.getAttribute('data-resize')), null);
   });
   document.addEventListener('keydown', function (e) {
     var h = e.target.closest && e.target.closest('[data-resize]'); if (!h) return;
-    var kind = h.getAttribute('data-resize'), w = current(kind), step = KEY_STEP * (e.shiftKey ? 4 : 1), lim = LIMITS[kind];
-    var next = { ArrowLeft: w + step, ArrowRight: w - step, Home: lim[0], End: lim[1] }[e.key];
+    var kind = h.getAttribute('data-resize'), d = dimOf(kind), w = current(d), step = KEY_STEP * (e.shiftKey ? 4 : 1), lim = LIMITS[d];
+    var keys = d === 'panel-h' ? { ArrowUp: w + step, ArrowDown: w - step } : { ArrowLeft: w + step, ArrowRight: w - step };
+    keys.Home = lim[0]; keys.End = lim[1];
+    var next = keys[e.key];
     if (next == null) return;
     e.preventDefault();
-    save(kind, clamp(next, lim[0], lim[1]));
-    App.announce((kind === 'panel' ? 'Panel' : 'Now Playing column') + ' ' + current(kind) + ' pixels wide');
+    save(d, clamp(next, lim[0], lim[1]));
+    App.announce((kind === 'panel' ? 'Panel' : 'Now Playing column') + ' ' + current(d) + ' pixels ' + (d === 'panel-h' ? 'tall' : 'wide'));
   });
 
   /* ---------- the Now Playing column ---------- */
   function setNow(v) { App.layout.set({ nowColumn: v }); }
-  /* opening one of the two closes the other when the main area wouldn't stay wide beside both (the rule above);
-     app.js calls this as the panel opens docked */
+  /* opening one of the two closes the other when the main area wouldn't stay wide beside both (the rule above; never
+     while --layout-nowcol is kept or open, bothFit); app.js calls this as the panel opens docked */
   App.layout.makeRoom = function (opening) {
     if (opening === 'panel' && L.nowColumn && !bothFit()) setNow(false);
     if (opening === 'now' && panelExpanded() && !bothFit()) App.closePanel();
@@ -291,23 +352,28 @@
      the row overflows, back while it fits with one order more shown. Returns whether k moved */
   function fit(row) {
     if (!row.getClientRects().length || getComputedStyle(row).display === 'contents') return false;
-    /* a part a design placed outside the row's flow (glasshouse floats the tray into the rail) takes no room in it */
+    /* a part a design placed outside the row's flow (glasshouse floats the tray into the rail) takes no room in it. Its
+       order is its data-fit, or a theme's --fit-order (a layout switch), read from the style read here already */
+    var order = new Map();
     var parts = $$('[data-fit]', row).filter(function (p) {
-      var pos = getComputedStyle(p).position; return fitRowOf(p) === row && pos !== 'fixed' && pos !== 'absolute';
+      var s = getComputedStyle(p), own = s.getPropertyValue('--fit-order').trim();
+      order.set(p, own && own !== 'auto' ? +own : +p.getAttribute('data-fit'));
+      return fitRowOf(p) === row && s.position !== 'fixed' && s.position !== 'absolute';
     });
-    var orders = parts.map(function (p) { return +p.getAttribute('data-fit'); })
+    function orderOf(p) { return order.get(p); }
+    var orders = parts.map(orderOf)
       .filter(function (o, i, all) { return all.indexOf(o) === i; }).sort(function (a, b) { return a - b; });
     /* the row says what gave way in it (the orders, and "all" once every one did), at each step, for a style that
        follows a part out (lull's cache meter, the search's padding) and so takes its room with it as the row is measured:
        a :has([data-fit-out]) would restyle the whole page at every step in a design with a :has() on the shell */
     function give(i, out) {
-      parts.forEach(function (p) { if (+p.getAttribute('data-fit') === orders[i]) p.toggleAttribute('data-fit-out', out); });
-      var off = orders.filter(function (o) { return parts.some(function (p) { return +p.getAttribute('data-fit') === o && p.hasAttribute('data-fit-out'); }); }),
+      parts.forEach(function (p) { if (orderOf(p) === orders[i]) p.toggleAttribute('data-fit-out', out); });
+      var off = orders.filter(function (o) { return parts.some(function (p) { return orderOf(p) === o && p.hasAttribute('data-fit-out'); }); }),
         gave = off.join(' ') + (off.length && off.length === orders.length ? ' all' : '');
       if (row.getAttribute('data-fit-gave') !== gave) row.setAttribute('data-fit-gave', gave);
     }
     var k = 0, was;
-    while (k < orders.length && parts.every(function (p) { return +p.getAttribute('data-fit') !== orders[k] || p.hasAttribute('data-fit-out'); })) k++;
+    while (k < orders.length && parts.every(function (p) { return orderOf(p) !== orders[k] || p.hasAttribute('data-fit-out'); })) k++;
     for (var i = 0; i < orders.length; i++) give(i, i < k);
     was = k;
     var keep = $$('[data-fit-keep]', row).filter(function (k) { return fitRowOf(k) === row; });
@@ -328,9 +394,13 @@
         rows.forEach(function (r) { if (fit(r)) moved = true; });
       }
     }
-    /* in whole pixels, as every width the sides are tried at: the search below halves between whole widths */
-    var side = root.hasAttribute('data-fit-sides') && $('[data-fit-side]', root), most = side ? Math.floor(sideMost(root)) : 0;
+    /* in whole pixels, as every width the sides are tried at: the search below halves between whole widths. A theme
+       that lays the row out its own way ends the mirroring with --fit-sides: none (a layout switch), and lull's
+       --fit-side goes */
+    var mirror = root.hasAttribute('data-fit-sides') && getComputedStyle(root).getPropertyValue('--fit-sides').trim() !== 'none',
+      side = mirror && $('[data-fit-side]', root), most = side ? Math.floor(sideMost(root)) : 0;
     if (side) root.style.setProperty('--fit-side', most + 'px');
+    else if (root.style.getPropertyValue('--fit-side')) root.style.removeProperty('--fit-side');
     rows.forEach(function (r) { $$('[data-fit-out]', r).forEach(function (p) { p.removeAttribute('data-fit-out'); }); });
     passes();
     if (side) {
@@ -394,12 +464,14 @@
   /* a stylesheet that changes (a theme reloaded or edited live, Theme Studio's draft, a screen's sheet arriving) can
      widen the words inside boxes that keep their size: a cut part's or a kept line's, beside sides the fitter sized
      itself. No box the observer watches resizes, so every row fits again once the sheet is in: at once for a sheet's
-     text, on load for what it imports. Only <head> holds the sheets, so nothing else on the page pays */
+     text, on load for what it imports. Only <head> holds the sheets, so nothing else on the page pays. The sheet may set
+     the layout switches too (a theme edited live), so they are read again first */
   function sheet(n) { return n && (n.nodeName === 'STYLE' || n.nodeName === 'LINK'); }
+  function sheetIn() { if (readSwitches()) switched(); App.layout.refit(); }
   if (window.MutationObserver && document.head) new MutationObserver(function (records) {
-    if (records.some(function (r) { return sheet(r.target) || sheet(r.target.parentNode) || [].some.call(r.addedNodes, sheet) || [].some.call(r.removedNodes, sheet); })) App.layout.refit();
+    if (records.some(function (r) { return sheet(r.target) || sheet(r.target.parentNode) || [].some.call(r.addedNodes, sheet) || [].some.call(r.removedNodes, sheet); })) sheetIn();
   }).observe(document.head, { childList: true, subtree: true, characterData: true });
-  document.addEventListener('load', function (e) { if (sheet(e.target)) App.layout.refit(); }, true);
+  document.addEventListener('load', function (e) { if (sheet(e.target)) sheetIn(); }, true);
   App.layout.refit();
 
   apply();

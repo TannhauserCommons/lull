@@ -887,10 +887,10 @@
     lastRender = Date.now();
     lyMountAll();
     App.syncRows();
-    if (!ctx.refresh && ctx.query.tab === 'queue' && window.innerWidth >= 640) App.openPanel('queue');
+    if (!ctx.refresh && ctx.query.tab === 'queue' && App.layout.switch('phone') !== 'on') App.openPanel('queue');
     if (!ctx.refresh && (ctx.query.tab === 'details' || ctx.query.tab === 'lyrics')) {
       var target = $(ctx.query.tab === 'details' ? '.now-srccard' : '.now-lycard', root);
-      if (target && window.innerWidth >= 640) setTimeout(function () { target.scrollIntoView({ block: 'start', behavior: App.reducedMotion() ? 'auto' : 'smooth' }); }, 650);
+      if (target && App.layout.switch('phone') !== 'on') setTimeout(function () { target.scrollIntoView({ block: 'start', behavior: App.reducedMotion() ? 'auto' : 'smooth' }); }, 650);
     }
     var offs = [
       App.on('player', onPlayer),
@@ -1022,10 +1022,10 @@
     App.toast('Now from ' + s.peer + (s.format ? ', ' + s.format : ''), { icon: 'soulseek' });
   });
   App.action('now-open-queue', function () {
-    if (window.innerWidth < 640 && onRoute()) { setTab('queue', true); return; }
+    if (App.layout.switch('phone') === 'on' && onRoute()) { setTab('queue', true); return; }
     App.openPanel('queue');
   });
-  App.action('now-go-search', function () { if (window.innerWidth < 1360) App.closePanel(); App.go('/search'); });
+  App.action('now-go-search', function () { if (App.layout.switch('ctx') !== 'docked') App.closePanel(); App.go('/search'); });
 
   // lyrics
   App.action('now-ly-size', function (el) {
@@ -1165,7 +1165,7 @@
     adoptSave(j);
     App.discover.openSaveSheet(j.trackId);
   });
-  App.action('now-job-review', function () { if (window.innerWidth < 1360) App.closePanel(); App.go('/playlists'); });
+  App.action('now-job-review', function () { if (App.layout.switch('ctx') !== 'docked') App.closePanel(); App.go('/playlists'); });
 
   /* =====================================================================
      9. Context panel tabs (Queue / Lyrics / Activity)
@@ -1191,7 +1191,7 @@
   }
   function revealLyrics() {
     var on = lyricsAvailable() && lyricsOnScreen(); if (!on || !on.el) return false;
-    if (on.el.classList.contains('now-lycard') && window.innerWidth < 640) { setTab('lyrics', true); return true; }
+    if (on.el.classList.contains('now-lycard') && App.layout.switch('phone') === 'on') { setTab('lyrics', true); return true; }
     on.el.scrollIntoView({ block: 'nearest', behavior: App.reducedMotion() ? 'auto' : 'smooth' });
     App.announce('The lyrics are ' + on.where);
     return true;

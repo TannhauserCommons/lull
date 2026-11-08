@@ -126,6 +126,7 @@
 
     /* sizes */
     --rail: 232px; --rail-icons: 72px; --ctx: 320px; --bar-h: 88px; --mini-h: 64px; --tab-h: 60px; --hit: 44px;
+    --ctx-h: 320px;            /* the side panel's height where a theme docks it by its height (--layout-ctx-axis: block) */
     --tag-h: 24px;             /* every tag (components.css, Tags): tags side by side are one height, */
     --tag-ic: 14px; --tag-gap: 5px;   /* with one icon size and one gap between icon and words */
   }
