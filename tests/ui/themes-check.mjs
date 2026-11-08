@@ -8,24 +8,26 @@
 // other, text cut off, an essential missing; anything sticking out sideways; a clamp that doesn't clip; a squeezed
 // title; console errors) and a contrast check against what is drawn behind each line of text (checks.mjs, contrast;
 // only reported for the built-in designs, which some screens fall short of), and one contact sheet shows them all:
-// tests/ui/themes-check/index.html. It exits 1 when a check finds something. Flags (themes-check-args.mjs):
+// tests/ui/themes-check/index.html (or in --out's folder). It exits 1 when a check finds something. Flags
+// (themes-check-args.mjs):
 //   --only <id>[,<id>...]  those looks only (built in or in LULL_THEMES_DIR); --mine: LULL_THEMES_DIR's and no built-in
 //   --sizes WxH[,WxH...]   the desktop at each of these sizes instead (--size: one); a laptop at 125% is 1536x864
 //   --mockup <file-or-url> the mockup beside each picture, at its size; {mode}, {route} and {size} in it are filled in
+//   --out <dir>            the folder the sheet and pictures go in, from the current folder; what an earlier run wrote
+//                          there is replaced, and a folder holding anything else is refused
 // On the fixture hub, with a copy of the theme folder, so nothing is written to it. A few minutes at most; the gates
 // are the full matrix.
 
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from '@playwright/test';
 import { chrome, contrast, overflow, squeezed, unclippedClamps } from './checks.mjs';
 import { designs as BUILT_IN, ids, openScreen, ownHub, screens } from './gates/lib.mjs';
-import { mockupUrl, parseArgs, USAGE, UsageError } from './themes-check-args.mjs';
+import { mockupUrl, outDir, parseArgs, USAGE, UsageError } from './themes-check-args.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const OUT = join(here, 'themes-check');
 const BRIDGE = join(here, 'gates', 'desktop-bridge.js');
 const PARALLEL = 4;
 const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
@@ -38,6 +40,16 @@ const CONTRAST_REPORT_ONLY_FOR_BUILT_INS = true;
 const fail = (message) => { console.error(`${message}\n${USAGE}`); process.exit(2); };
 let opts;
 try { opts = parseArgs(process.argv.slice(2)); } catch (e) { if (e instanceof UsageError) fail(e.message); throw e; }
+
+// where the sheet goes: the run empties it first, so a folder named with --out must be empty or hold an earlier sheet
+const OUT = outDir(opts.out, join(here, 'themes-check'));
+if (opts.out && existsSync(OUT)) {
+  const sheet = join(OUT, 'index.html');
+  if (!statSync(OUT).isDirectory()) fail(`--out ${OUT} is a file, not a folder`);
+  if (readdirSync(OUT).length && !(existsSync(sheet) && readFileSync(sheet, 'utf8').includes('<title>Themes check</title>'))) {
+    fail(`--out ${OUT} holds other files: name an empty or new folder, or one an earlier run wrote its sheet in`);
+  }
+}
 
 const desktops = opts.sizes || [{ width: 1440, height: 900 }];
 const PAGE_SIZES = Object.fromEntries([
@@ -84,7 +96,7 @@ const jobs = routes.flatMap((route) => looks.flatMap((d) => Object.keys(route.si
   d.modes.map((mode) => ({ route, design: d.id, builtIn: d.builtIn, size, mode })))));
 const slug = (j) => `${j.route.mini ? 'mini' : slugOf(j.route.path)}--${j.design}--${j.size}--${j.mode}`;
 
-rmSync(OUT, { recursive: true, force: true });
+if (existsSync(OUT)) for (const entry of readdirSync(OUT)) rmSync(join(OUT, entry), { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
 const started = Date.now();
 const hub = await ownHub({ FIXTURE_THEMES: copy });

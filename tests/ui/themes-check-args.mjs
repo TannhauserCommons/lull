@@ -6,17 +6,19 @@ import { pathToFileURL } from 'node:url';
 
 export class UsageError extends Error {}
 
-export const USAGE = `usage: mise run themes:check -- [--only <id>[,<id>...] | --mine] [--sizes WxH[,WxH...]] [--mockup <file-or-url>] <route> [<route>...]
+export const USAGE = `usage: mise run themes:check -- [--only <id>[,<id>...] | --mine] [--sizes WxH[,WxH...]] [--mockup <file-or-url>] [--out <dir>] <route> [<route>...]
   a route: home, search, playlist, album, now, settings, mini (the desktop app's mini player), or a path (/settings/appearance)
   --only    these looks only: built-in designs or themes in LULL_THEMES_DIR, by id
   --mine    every theme in LULL_THEMES_DIR, and none of the built-ins
   --sizes   the desktop at each of these sizes (--size: one), instead of 1440x900
-  --mockup  a mockup page drawn beside each picture at its size; {mode}, {route} and {size} in it are filled in`;
+  --mockup  a mockup page drawn beside each picture at its size; {mode}, {route} and {size} in it are filled in
+  --out     the folder the contact sheet and pictures go in, from the current folder (default tests/ui/themes-check)`;
 
-// { routes, only, mine, sizes, mockup }: routes as given, only a list of ids or null, sizes a list of { width, height }
-// or null (the default desktop). Throws UsageError on anything it doesn't know.
+// { routes, only, mine, sizes, mockup, out }: routes as given, only a list of ids or null, sizes a list of { width, height }
+// or null (the default desktop), out the folder as given or null (outDir resolves it). Throws UsageError on anything it
+// doesn't know.
 export function parseArgs(argv) {
-  const o = { routes: [], only: null, mine: false, sizes: null, mockup: null };
+  const o = { routes: [], only: null, mine: false, sizes: null, mockup: null, out: null };
   for (let i = 0; i < argv.length; i++) {
     let flag = argv[i], given;
     const eq = flag.startsWith('--') ? flag.indexOf('=') : -1;
@@ -34,6 +36,10 @@ export function parseArgs(argv) {
         o.mine = true; break;
       case '--size': case '--sizes': o.sizes = [...(o.sizes || []), ...value().split(',').map(size)]; break;
       case '--mockup': o.mockup = value(); break;
+      case '--out':
+        o.out = value();
+        if (!o.out.trim()) throw new UsageError('--out needs a folder');
+        break;
       default:
         if (flag.startsWith('-')) throw new UsageError(`unknown flag ${flag}`);
         o.routes.push(flag);
@@ -64,3 +70,7 @@ export function mockupUrl(template, { mode, route, size: sized }, cwd = process.
   const at = filled.search(/[?#]/), path = at < 0 ? filled : filled.slice(0, at);
   return pathToFileURL(resolve(cwd, path)).href + (at < 0 ? '' : filled.slice(at));
 }
+
+// Where the contact sheet and pictures go: --out's folder, from the current folder or absolute, else the default. Under
+// `mise run` the task runs in the checkout's root, so the current folder is the one mise was run from.
+export const outDir = (given, fallback, cwd = process.env.MISE_ORIGINAL_CWD || process.cwd()) => (given ? resolve(cwd, given) : fallback);

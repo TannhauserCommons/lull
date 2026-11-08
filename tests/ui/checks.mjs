@@ -233,9 +233,17 @@ export const chromeNow = (only) => {
   const mine = (e, hit) => !!hit && (hit === e || e.contains(hit) || hit.contains(e));
   const ownControl = (e, hit) => { const c = e.closest(CONTROL); return !!c && !!hit && c.contains(hit); };
   // what lies over text hides it only where it paints: a background, a picture, a border; an empty box stacked over
-  // a line (a title's box stretched across its strip) hides nothing. Text drawn there is text on text, below
+  // a line (a title's box stretched across its strip) hides nothing, and neither does a box that doesn't show (faded
+  // out, its own opacity or an ancestor's 0, or visibility hidden: a note gone from a screen still takes the point).
+  // Text drawn there is text on text, below
+  const invisible = (a) => {
+    if (getComputedStyle(a).visibility === 'hidden') return true;
+    for (let p = a; p; p = p.parentElement) if (+getComputedStyle(p).opacity === 0) return true;
+    return false;
+  };
   const paints = (hit, el) => {
     for (let a = hit; a && !a.contains(el); a = a.parentElement) {
+      if (invisible(a)) continue;
       if (/^(IMG|SVG|CANVAS|VIDEO|PICTURE|svg|path|use|circle|rect)$/.test(a.tagName)) return true;
       const s = getComputedStyle(a);
       if (s.backgroundImage !== 'none' || !/^(transparent|rgba\([^)]*,\s*0\))$/.test(s.backgroundColor)) return true;
@@ -354,6 +362,9 @@ export const gateFree = (el, check) => {
 //   white, the worse of the two.
 // Not judged: text in form fields, in SVG and in generated content (::before, ::after), and text whose fill is a picture
 // (background-clip: text). Text shadows are taken out with the text and count for nothing.
+// Left out as decoration: text drawn at under half opacity (its own times its ancestors') and text a filter blurs (on it
+// or round it): a blurred, faded copy of a title behind it. Text a screen reader skips (aria-hidden) is still judged when
+// it shows: a sighted listener reads a visible label (Now Playing's "Devices") whatever the button's accessible name.
 export async function contrast(page, { seeThrough = false } = {}) {
   const texts = await page.evaluate(contrastTexts);
   if (!texts.length) return null;
@@ -396,14 +407,16 @@ const contrastTexts = () => {
     if (!t.data.trim() || !el || el.closest('svg, script, style, template, .vh, .tooltip')) continue;
     if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
     const s = getComputedStyle(el);
-    let opacity = 1, through = false, picture = false;
+    let opacity = 1, through = false, picture = false, blurred = false;
     for (let p = el; p; p = p.parentElement) {
       const ps = getComputedStyle(p);
       opacity *= +ps.opacity;
       through = through || ps.pointerEvents === 'none';
       picture = picture || /text/.test(ps.backgroundClip + ps.webkitBackgroundClip);
+      blurred = blurred || [...ps.filter.matchAll(/blur\(\s*([\d.]+)/g)].some((m) => +m[1] > 0);
     }
     if (picture) continue;   // its fill is a picture: no one colour to judge
+    if (opacity < 0.5 || blurred) continue;   // decoration: faded or blurred, not meant to be read
     const fill = rgba(s.webkitTextFillColor || s.color), alpha = (fill[3] / 255) * opacity;
     const strokeWidth = parseFloat(s.webkitTextStrokeWidth) || 0, ink = rgba(s.webkitTextStrokeColor);
     const stroke = strokeWidth >= 0.5 && ink[3] > 5 ? { rgb: ink.slice(0, 3), alpha: (ink[3] / 255) * opacity, width: strokeWidth } : null;
