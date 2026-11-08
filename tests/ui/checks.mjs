@@ -338,3 +338,157 @@ export const gateFree = (el, check) => {
   }
   return '';
 };
+
+// Null when every line of text on the screen reads against what is actually drawn behind it; else the worst spot, by how
+// far it falls short. Each visible text's colour (with its opacity) is set against the pixels under its glyphs in a
+// picture of the page with every text made transparent, so a picture, a gradient or glass behind a line counts as what
+// it is, not as the token it was meant to sit on. A text passes when 95% of the pixels behind it give 4.5:1, or 3:1 for
+// large text (24px, or 18.66px bold): WCAG's minimums; the 5% left are the edges of whatever frames it.
+// - An outline (-webkit-text-stroke) is ink too: a line passes where its fill or its outline reads against what is
+//   behind, or, for an outline 2px or wider, where the fill reads against the outline round it.
+// - A line that something laid over it hides (a fade painted over a list's foot) is not judged: one that barely shows
+//   when every text is drawn in a probe colour, magenta.
+// - Pixels a mask draws or fades (a list dissolving at a scroller's edge, an icon cut from a fill) are left out: a third
+//   picture with the masks taken off finds them.
+// - With { seeThrough: true } (a window the desktop shows through) a see-through pixel is judged over black and over
+//   white, the worse of the two.
+// Not judged: text in form fields, in SVG and in generated content (::before, ::after), and text whose fill is a picture
+// (background-clip: text). Text shadows are taken out with the text and count for nothing.
+export async function contrast(page, { seeThrough = false } = {}) {
+  const texts = await page.evaluate(contrastTexts);
+  if (!texts.length) return null;
+  const shoot = async (css) => {
+    const style = css && await page.addStyleTag({ content: css });
+    try {
+      await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+      return (await page.screenshot({ type: 'png', omitBackground: seeThrough })).toString('base64');
+    } finally { if (style) await style.evaluate((s) => s.remove()); }
+  };
+  const inked = (c) => `*, *::before, *::after { color: ${c} !important; -webkit-text-fill-color: ${c} !important; ` +
+    `-webkit-text-stroke-color: ${c} !important; text-shadow: none !important; transition: none !important; }`;
+  const probe = await shoot(inked('#f0f')), clear = await shoot(inked('transparent'));
+  const unmasked = await shoot(inked('transparent') + ' *, *::before, *::after { -webkit-mask: none !important; mask: none !important; }');
+  return page.evaluate(contrastWorst, { texts, probe, clear, unmasked, seeThrough });
+}
+
+// In the page: each visible text node's fill and outline as drawn, its size class, and the boxes of its glyphs as far as
+// they show
+const contrastTexts = () => {
+  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const rgba = (css) => { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = '#000'; ctx.fillStyle = css; ctx.fillRect(0, 0, 1, 1); return [...ctx.getImageData(0, 0, 1, 1).data]; };
+  const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+  // a box cut to what its clipping ancestors and the window let show
+  const shows = (el, r) => {
+    let { left, right, top, bottom } = r;
+    for (let a = el; a && a !== document.documentElement; a = a.parentElement) {
+      const s = getComputedStyle(a); if (s.overflowX === 'visible' && s.overflowY === 'visible') continue;
+      const c = a.getBoundingClientRect();
+      left = Math.max(left, c.left); right = Math.min(right, c.right); top = Math.max(top, c.top); bottom = Math.min(bottom, c.bottom);
+    }
+    left = Math.max(left, 0); top = Math.max(top, 0); right = Math.min(right, vw); bottom = Math.min(bottom, vh);
+    return right - left >= 1 && bottom - top >= 1 ? { left, right, top, bottom } : null;
+  };
+  const out = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+    const el = t.parentElement;
+    if (!t.data.trim() || !el || el.closest('svg, script, style, template, .vh, .tooltip')) continue;
+    if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+    const s = getComputedStyle(el);
+    let opacity = 1, through = false, picture = false;
+    for (let p = el; p; p = p.parentElement) {
+      const ps = getComputedStyle(p);
+      opacity *= +ps.opacity;
+      through = through || ps.pointerEvents === 'none';
+      picture = picture || /text/.test(ps.backgroundClip + ps.webkitBackgroundClip);
+    }
+    if (picture) continue;   // its fill is a picture: no one colour to judge
+    const fill = rgba(s.webkitTextFillColor || s.color), alpha = (fill[3] / 255) * opacity;
+    const strokeWidth = parseFloat(s.webkitTextStrokeWidth) || 0, ink = rgba(s.webkitTextStrokeColor);
+    const stroke = strokeWidth >= 0.5 && ink[3] > 5 ? { rgb: ink.slice(0, 3), alpha: (ink[3] / 255) * opacity, width: strokeWidth } : null;
+    if (alpha < 0.02 && !stroke) continue;   // nothing drawn: transparent text
+    const range = document.createRange(); range.selectNodeContents(t);
+    // the middle of each line, where the glyphs are: a line box set taller than its text reaches past what it sits on
+    const rects = [...range.getClientRects()].filter((x) => x.width >= 1 && x.height >= 1)
+      .map((x) => shows(el, { left: x.left, right: x.right, top: x.top + x.height * 0.25, bottom: x.bottom - x.height * 0.25 })).filter(Boolean);
+    if (!rects.length) continue;
+    // something that takes clicks laid over it hides it: the chrome check's business, not this one's (text that lets
+    // clicks through can't be found by a click: the picture says whether it shows)
+    if (!through) {
+      const x = rects[0], hit = document.elementFromPoint((x.left + x.right) / 2, (x.top + x.bottom) / 2);
+      if (!hit || !(hit === el || el.contains(hit) || hit.contains(el) || (el.closest('button, a[href], label') || el).contains(hit))) continue;
+    }
+    const size = parseFloat(s.fontSize), weight = parseInt(s.fontWeight, 10) || 400;
+    const cls = typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/).join('.') : '';
+    out.push({ name: `${el.tagName.toLowerCase()}${cls} "${t.data.trim().replace(/\s+/g, ' ').slice(0, 24)}"`, fg: fill.slice(0, 3), alpha, stroke,
+      large: size >= 24 || (size >= 18.66 && weight >= 700), rects });
+  }
+  return out;
+};
+
+// In the page: the texts' ratios against the picture with the text taken out, and the worst that falls short
+const contrastWorst = async ({ texts, probe, clear, unmasked, seeThrough }) => {
+  const pixels = async (png) => {
+    const img = new Image(); img.src = 'data:image/png;base64,' + png; await img.decode();
+    const canvas = document.createElement('canvas'); canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true }); ctx.drawImage(img, 0, 0);
+    return ctx.getImageData(0, 0, img.naturalWidth, img.naturalHeight);
+  };
+  const [probed, behind, bare] = await Promise.all([probe, clear, unmasked].map(pixels));
+  const w = behind.width, h = behind.height, k = w / window.innerWidth;
+  const at = (x, y) => (Math.min(h - 1, Math.floor(y)) * w + Math.min(w - 1, Math.floor(x))) * 4;
+  const px = (img, i) => [img.data[i], img.data[i + 1], img.data[i + 2]];
+  const masked = (i) => [0, 1, 2, 3].some((c) => Math.abs(behind.data[i + c] - bare.data[i + c]) > 6);
+  const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+  const ratio = (p, q) => { const a = lum(p), b = lum(q); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); };
+  const over = (top, a, under) => top.map((v, i) => a * v + (1 - a) * under[i]);
+  const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+  const hex = (c) => '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+  // a text's inks over one pixel: its fill, and its outline
+  const inks = (t, bg) => {
+    const edge = t.stroke && over(t.stroke.rgb, t.stroke.alpha, bg);
+    return { fill: over(t.fg, t.alpha, edge && t.stroke.width >= 2 ? edge : bg), edge };
+  };
+  // the best they do against it: the fill or the outline against what is behind, or the fill against a wide outline
+  const reads = (t, bg) => {
+    const { fill, edge } = inks(t, bg);
+    return Math.max(ratio(over(t.fg, t.alpha, bg), bg), edge ? ratio(edge, bg) : 0, edge && t.stroke.width >= 2 ? ratio(fill, edge) : 0);
+  };
+  // whether a line shows: the most its probe-coloured glyphs change a pixel, beside the most they would at the text's
+  // opacity. Behind a probe-coloured spot (a magenta picture) the probe can't tell, and the line is judged
+  const PROBE = [255, 0, 255];
+  const hidden = (t, r) => {
+    const alpha = Math.max(t.alpha, t.stroke ? t.stroke.alpha : 0);
+    let seen = 0, meant = 0;
+    for (let y = Math.floor(r.top * k); y < r.bottom * k; y++) for (let x = Math.floor(r.left * k); x < r.right * k; x++) {
+      const i = at(x, y); if (masked(i)) continue;
+      const bg = px(behind, i);
+      meant = Math.max(meant, dist(over(PROBE, alpha, bg), bg));
+      seen = Math.max(seen, dist(px(probed, i), bg));
+    }
+    return meant >= 48 && seen < 0.4 * meant;
+  };
+  const short = [];
+  for (const t of texts) {
+    const lines = t.rects.filter((r) => !hidden(t, r));
+    const area = lines.reduce((s, r) => s + (r.right - r.left) * (r.bottom - r.top), 0);
+    const step = Math.max(1, Math.sqrt(area / 600));   // about 600 samples a text, at most
+    const spots = [];
+    for (const r of lines) for (let y = r.top + step / 2; y < r.bottom; y += step) for (let x = r.left + step / 2; x < r.right; x += step) {
+      const i = at(x * k, y * k); if (masked(i)) continue;
+      const pixel = px(behind, i), a = behind.data[i + 3] / 255;
+      for (const bg of a < 1 && seeThrough ? [over(pixel, a, [0, 0, 0]), over(pixel, a, [255, 255, 255])] : [pixel]) spots.push({ ratio: reads(t, bg), bg });
+    }
+    if (!spots.length) continue;
+    spots.sort((p, q) => p.ratio - q.ratio);
+    const worst = spots[Math.floor(spots.length * 0.05)], need = t.large ? 3 : 4.5;
+    if (worst.ratio < need) short.push({ ...t, ...worst, need });
+  }
+  if (!short.length) return null;
+  short.sort((p, q) => p.ratio / p.need - q.ratio / q.need);
+  const s = short[0];
+  const colour = hex(s.fg) + (s.alpha < 0.995 ? ` at ${Math.round(s.alpha * 100)}%` : '') + (s.stroke ? `, outlined ${hex(s.stroke.rgb)}` : '');
+  return `${s.ratio.toFixed(2)}:1 where ${s.need}:1 is needed: ${s.name}, ${colour} on ${hex(s.bg)}` +
+    (short.length > 1 ? ` (and ${short.length - 1} more under their minimum)` : '');
+};

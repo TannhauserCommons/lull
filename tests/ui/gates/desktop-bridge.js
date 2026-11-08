@@ -16,9 +16,12 @@ window.__bridge = { calls: {}, bytes: {}, largest: {}, heard: {}, answers: {}, l
     return Promise.resolve(name === 'desktop_settings' ? {} : null);
   }
   var unlisten = function () { return Promise.resolve(function () {}); };
-  // the main window's own calls too (desktop.js with __LULL_DESKTOP__ set, as the app's title bar draws it)
-  var win = { minimize: note, toggleMaximize: note, close: note, onFocusChanged: unlisten, onResized: unlisten, listen: unlisten,
-    isMaximized: function () { return Promise.resolve(false); }, setSize: note, focus: note };
+  var call = function (name) { return function (payload) { return note(name, payload); }; };
+  // the main window's own calls too (desktop.js with __LULL_DESKTOP__ set, as the app's title bar draws it); a mini
+  // player fits its window to the player with setSize (last.setSize: { width, height })
+  var win = { minimize: call('minimize'), toggleMaximize: call('toggleMaximize'), close: call('close'), onFocusChanged: unlisten,
+    onResized: unlisten, listen: unlisten, isMaximized: function () { return Promise.resolve(false); }, setSize: call('setSize'), focus: call('focus') };
+  function LogicalSize(width, height) { this.width = width; this.height = height; }
   window.__bridge.fire = function (name, payload) { (window.__bridge.heard[name] || []).forEach(function (fn) { fn({ payload: payload }); }); };
   window.__TAURI__ = {
     core: { invoke: note },
@@ -26,6 +29,7 @@ window.__bridge = { calls: {}, bytes: {}, largest: {}, heard: {}, answers: {}, l
       emit: note, emitTo: function (to, name, p) { return note(name, p); },
       listen: function (name, fn) { (window.__bridge.heard[name] = window.__bridge.heard[name] || []).push(fn); return Promise.resolve(function () {}); }
     },
-    window: { getCurrentWindow: function () { return win; } }
+    window: { getCurrentWindow: function () { return win; } },
+    dpi: { LogicalSize: LogicalSize }
   };
 })();

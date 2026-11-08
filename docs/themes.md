@@ -385,10 +385,21 @@ Also a window narrowed past each `data-size` step. Nothing may scroll sideways, 
 - **A built-in design:** `node tests/ui/fixture-hub/server.mjs 8790` serves your checkout's `web/` at `http://localhost:8790` with an invented library (150 albums, a 1,200-song playlist, lyrics) and no outside services.
 - **Hash flags:** pick a design and theme for one visit with `#/home?design=<name>&theme=night` (also `motion=reduce`).
 - **Against your own hub:** serve your checkout's `web/` files over the hub's (for example with Playwright's request routing) to see your own library.
+- **Every screen at once:** `mise run themes:check -- --mine home now mini`, with `LULL_THEMES_DIR` set to the folder that holds your theme folders. It draws each screen with a song playing, on desktop and phone, day and night, and writes one contact sheet, `tests/ui/themes-check/index.html`. It works on a copy, so nothing in your folder is changed.
+  - **Which looks:** `--mine` draws every theme in `LULL_THEMES_DIR` and none of the built-ins. `--only probe,lull` draws only the looks you name, yours or built in. With neither, it draws all of them.
+  - **Which sizes:** `--sizes 1280x800,1440x900,1920x1080` draws the desktop at each size in one run. `--size 1536x864` draws one. The phone is always 390×844.
+  - **The mini player:** the route `mini` draws the desktop app's mini player windows, the device and the strip, in a plain browser. They open at the app's width and fit their height to the player, as in the app. Your theme reaches them as one package, as it does in the app. Where the window is see-through, the sheet shows a checkerboard.
+  - **Beside your mockup:** `--mockup "C:/mockups/my-mockup.html?mode={mode}&screen={route}"` draws the mockup next to each picture, at the same size. `{mode}` becomes `day` or `night`, `{route}` the route's name (`home`, `mini`, `settings-appearance`), and `{size}` one of `desktop`, `phone`, `device` or `strip`. A file with no placeholders is shown as it is. A path, a `file://` URL or an `http://` URL all work.
 
 **Run the checks:**
 - **`mise run check`** includes this document's own gate (`tests/web/theme-hooks.test.mjs`): every hook lull's CSS and markup use must be in section 11, and a built-in design may not style a hook that no longer exists.
 - **`mise run check:ui`** runs the UI gates on every built-in design: performance budgets, the key screens and accessibility (docs/context/quality.md#ui-gates).
+- **`mise run themes:check`** (see Preview it) runs these checks on every picture. Whatever they find is listed under the picture in the contact sheet, and the run exits 1.
+  - **Fit:** a control nothing can click, text cut off or on other text, a missing play or search, anything sticking out sideways, a squeezed title, and console errors.
+  - **Contrast against what is drawn:** each line of text is checked against the pixels actually behind it: the picture, gradient or glass, not the token it was meant to sit on. A line passes when 95% of those pixels give 4.5:1, or 3:1 for large text (24px, or 18.66px bold). The sheet names the worst line, its ratio and its colour, and how many more fall short.
+  - **What the contrast check counts:** an outline (`-webkit-text-stroke`) counts as ink, and a fill counts against an outline 2px or wider. A line under a fade or a mask is left out. A see-through mini player is checked over black and over white.
+  - **What it can't check:** text in form fields, SVG and `::before`/`::after`, and text filled with a picture (`background-clip: text`). Text shadows are ignored.
+  - **On the built-in designs:** some of their screens fall short of these ratios, so for them contrast is shown in amber and doesn't count towards the exit code. For your theme it counts like any other finding.
 - **Visual goldens:** after a visible change, push and run `mise run ui:approve` to recapture the gates' goldens. `mise run ui:update` recaptures the full visual matrix. Review the pictures and commit them with the change.
 - **A new built-in design** also joins the lists of built-ins:
   - `D.builtIn` in `web/designs/designs.js`;
