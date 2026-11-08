@@ -64,6 +64,8 @@ export default defineConfig({
     { name: 'now', testMatch: 'now.spec.mjs', fullyParallel: true },
     // the source details of a stream no peer has answered for say Soulseek, not the library, and draw no empty chip
     { name: 'source-details', testMatch: 'source-details.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
+    // a switch to a better copy shows on every surface at once, and the next song's offer survives a gapless hand-over
+    { name: 'better-copy', testMatch: 'better-copy.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // a tooltip never shows away from its control: a sheet's Close takes focus while the sheet still slides up
     { name: 'sheet-tip', testMatch: 'sheet-tip.spec.mjs', fullyParallel: true },
     // Esc on search goes back to the page before it, where it was

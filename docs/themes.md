@@ -471,7 +471,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   - `.is-liked`, `.is-selected`, `.is-on`, `.is-open`, `.is-wide` (the player bar's view tools: Lyrics, Classic, Device view), `.is-dragging`, `.is-drop-target`;
   - `.is-applied`, `.is-bad` (Classic skins);
   - `.is-out` (Now Playing's slide while the song changes).
-- **Player status:** `data-status` (`#pbar`, `#mini`, the mini player windows' `[data-dk-player]`, an album's save status), `data-status-text` (`#pbar`, `#mini`, `[data-dk-player]`, with `--status-text`), `data-playing` (also on `:root`, with `data-player`), `data-state`, `data-liked` and `data-saved` (the playing song's, on `#pbar`, `#mini`, `.now__dev`, `.now__devc`); `--song-pos` (the song's place in hundredths, on the parts section 5 names).
+- **Player status:** `data-status` (`#pbar`, `#mini`, the mini player windows' `[data-dk-player]`, an album's save status), `data-status-text` (`#pbar`, `#mini`, `[data-dk-player]`, with `--status-text`), `data-playing` (also on `:root`, with `data-player`), `data-state`, `data-liked` and `data-saved` (the playing song's, on `#pbar`, `#mini`, `.now__dev`, `.now__devc`); `data-better-copy` (`true` on `#pbar` and `#mini` while the song plays a better copy it switched to mid-song; the player bar's quality chip then carries `.q-chip--better`, a small arrow before its words); `--song-pos` (the song's place in hundredths, on the parts section 5 names).
 
 ### Home and Search
 

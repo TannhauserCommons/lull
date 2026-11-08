@@ -1155,15 +1155,18 @@
   /* opts.fit: the order a part gives way in, in a row that fits itself (layout.js, data-fit) */
   function fitAttr(opts) { return opts && opts.fit ? raw('data-fit="' + (+opts.fit) + '"') : ''; }
   /* quality chip: outlined by default; { solid: true } for player bar / device; { button: true } opens source details */
+  /* opts.better: the song switched to this copy mid-song ({ from, at }): a quiet arrow, a tip saying from what */
   ui.qualityChip = function (fmt, opts) {
     opts = opts || {};
     if (!fmt) return '';   // a format nobody knows yet is no chip, never an empty one
     var f = M.formats[fmt] || { label: fmt, lossless: false };
     /* a YouTube copy's own chip ("YouTube · Opus 160", docs/context/youtube.md): never a peer file's format */
-    var cls = 'q-chip ' + (f.lossless ? 'q-chip--ll' : 'q-chip--ly') + (opts.solid ? ' q-chip--solid' : '') + (/^YouTube /.test(String(fmt)) ? ' q-chip--yt' : '');
-    var label = (f.lossless ? 'Lossless, ' : '') + f.label;
-    if (opts.button) return html`<button class="${cls}" data-act="source-details" ${opts.id ? raw('data-id="' + esc(opts.id) + '"') : ''} ${fitAttr(opts)} aria-label="${label}. Show source details" data-tip="Source details">${f.label}</button>`;
-    return html`<span class="${cls}" title="${label}">${f.label}</span>`;
+    var cls = 'q-chip ' + (f.lossless ? 'q-chip--ll' : 'q-chip--ly') + (opts.solid ? ' q-chip--solid' : '') + (/^YouTube /.test(String(fmt)) ? ' q-chip--yt' : '') + (opts.better ? ' q-chip--better' : '');
+    var label = (f.lossless ? 'Lossless, ' : '') + f.label, b = opts.better;
+    var better = b ? 'Switched to this better copy' + (b.from ? ' from ' + b.from : '') + (b.at != null ? ' at ' + fmtTime(b.at) : '') : '';
+    var mark = b ? icon('arrow-up') : '';
+    if (opts.button) return html`<button class="${cls}" data-act="source-details" ${opts.id ? raw('data-id="' + esc(opts.id) + '"') : ''} ${fitAttr(opts)} aria-label="${label}${b ? '. ' + better : ''}. Show source details" data-tip="${b ? better : 'Source details'}">${mark}${f.label}</button>`;
+    return html`<span class="${cls}" title="${label}${b ? '. ' + better : ''}">${mark}${f.label}</span>`;
   };
   ui.newBadge = function () { return html`<span class="badge-new">new</span>`; };
   ui.countBadge = function (n, label) { return html`<span class="badge-count" ${label ? raw('aria-label="' + esc(label) + '"') : ''}>${n}</span>`; };
@@ -2138,7 +2141,7 @@
     cur = e || null; nxt = null;
     was.forEach(letGo);
     if (!e || !M.track(e.trackId)) { out.pause(); out.setNext(null); ps.status = 'idle'; ps.playing = false; ps.source = null; changed('track'); return; }
-    e.attempt = null; e.job = null; e.better = null; if (opts.forceSoulseek) e.complete = false;
+    e.attempt = null; e.job = null; e.better = null; e.last = null; if (opts.forceSoulseek) e.complete = false;
     ps.source = e.source || null;
     ps.playing = opts.autoplay !== false;
     var library = App.isSaved(e.trackId) && !opts.forceSoulseek;
@@ -2583,15 +2586,16 @@
     if (ev.size && ev.received >= ev.size) e.complete = true;
     /* a fallback to another peer ends the old response: reopen the stream and seek back to where we were.
        The first event of a fetch only says which attempt the response already belongs to (the hub sends one on
-       every opening, also for a song that fell back long ago; and the better copy switched to counts its own), so
-       it is adopted, not reopened; then only that job's events count */
-    if (!e.job) { e.job = ev.jobId; e.attempt = ev.attempt || 0; }
-    else if (e.job !== ev.jobId) return;               // another fetch of the song
+       every opening, also for a song that fell back long ago), so it is adopted, not reopened; then only that job's
+       events count, and a job's that took over from it (LullRules.followEvent) */
+    var follow = LullRules.followEvent(e.job, ev);
+    if (follow === 'drop') return;                     // another fetch of the song
+    if (follow === 'adopt') { e.job = ev.jobId; e.attempt = ev.attempt || 0; }
     // a song that stopped stays stopped: its job's earlier events can come after the outcome, on another connection
     else if (e === cur && ps.status === 'failed' && ev.status !== 'failed' && !(ev.attempt > e.attempt)) return;
     else if (ev.attempt > e.attempt) { e.attempt = ev.attempt; if (e === cur) reopen(); }
+    e.last = ev;                                       // the next song's, for its hand-over
     if (e === nxt) { e.resolve = ev.status === 'failed' ? 'none' : ev.status === 'streaming' ? 'ready' : 'resolving'; changed('queue'); return; }
-    onUpgrade(e, ev.upgrade);
     var prevPeer = ps.peer && ps.peer.name, t = P.current();
     ps.received = ev.size ? clamp(ev.received / ev.size, 0, 1) : ps.received;
     ps.arrived = ev.ranges || (ev.size ? [[0, ps.received]] : ps.arrived);   // a hub before ADR-0014 sends no ranges
@@ -2630,6 +2634,7 @@
     if (ps.received >= 1 && duration) ps.durationKnown = true;
     updateBuffered();
     landKept();
+    onUpgrade(e, ev.upgrade);                          // last: a switch starts from the copy this event names
     changed(ev.peer !== prevPeer ? 'source' : 'status');
   }
 
@@ -2652,9 +2657,14 @@
       state: e.better.note ? 'next-play' : up.ready ? 'ready' : 'arriving', note: e.better.note };
     trySwitch();
   }
-  function waitForNextPlay(e, note) {
+  /* why (mismatch | nearEnd | cantSwitch | failed) goes to the hub once, for Activity */
+  function waitForNextPlay(e, note, why) {
     e.better.note = note;
     if (cur === e && ps.upgrade) { ps.upgrade.state = 'next-play'; ps.upgrade.note = note; changed('source'); }
+    var up = ps.upgrade;
+    if (!why || !up || e.better.told) return;
+    e.better.told = true;
+    M.api('/api/stream/' + encodeURIComponent(e.trackId) + '/not-switched', { method: 'POST', body: { peer: up.peer, path: up.path, why: why } }).catch(function () {});
   }
   /* switch when the song plays steadily, far enough from its end, from a copy nobody picked, with the better copy
      here up to a little past where the song is; anything else waits for a later tick */
@@ -2665,7 +2675,7 @@
       steady: ps.playing && sound.playing && !sound.waiting && !ps.crossfade });
     if (now === 'next-play') {
       waitForNextPlay(e, out.switchTo ? 'The song is nearly over, so the better copy plays from the next play.'
-        : 'This player can\'t line two copies up, so the better copy plays from the next play.');
+        : 'This player can\'t line two copies up, so the better copy plays from the next play.', out.switchTo ? 'nearEnd' : 'cantSwitch');
     }
     if (now !== 'switch') return;
     var t = M.track(e.trackId); if (!t) return;
@@ -2673,19 +2683,24 @@
     var url = M.url('/api/stream/' + id + '/copy?peer=' + encodeURIComponent(up.peer) + '&path=' + encodeURIComponent(up.path));
     switching = true; up.state = 'switching'; releaseNext(); changed('source');
     out.switchTo(item(e, t, url), { commit: function () {
-      return M.api('/api/stream/' + id + '/switch', { method: 'POST', body: { peer: up.peer, path: up.path } });
+      /* the answer is the copy's own job's event: followed from here, so every surface names it as the fade begins */
+      return M.api('/api/stream/' + id + '/switch', { method: 'POST', body: { peer: up.peer, path: up.path } }).then(function (ev) {
+        if (cur !== e || !ev || !ev.jobId) return;
+        e.job = ev.jobId; e.attempt = ev.attempt || 0;
+        onStreamEvent(ev);
+      });
     } }).then(null, function () { return { switched: false, why: 'error' }; })
       .then(function (r) {
         switching = false;
         if (cur !== e) return;
         if (r.switched) {
-          e.url = url; e.complete = up.pct >= 1; e.job = null;
+          e.url = url; e.complete = up.pct >= 1;
           ps.upgrade = { peer: up.peer, path: up.path, format: up.format, pct: up.pct, state: 'switched', from: from, at: at, residualMs: r.residualMs, offsetS: r.offsetS };
-          App.toast('Switched to a better copy' + (up.format ? ': ' + up.format : ''), { icon: 'soulseek', kind: 'ok' });
+          App.announce('Switched to a better copy' + (up.format ? ', ' + up.format : ''));
         } else if (r.why === 'mismatch') {
-          waitForNextPlay(e, 'The two copies couldn\'t be lined up closely enough to switch without a jump, so the better copy plays from the next play.');
+          waitForNextPlay(e, 'The two copies couldn\'t be lined up closely enough to switch without a jump, so the better copy plays from the next play.', 'mismatch');
         } else if (r.why === 'refused' || ++e.better.tries >= LullRules.SWITCH_TRIES) {
-          waitForNextPlay(e, 'Switching didn\'t work out this time, so the better copy plays from the next play.');
+          waitForNextPlay(e, 'Switching didn\'t work out this time, so the better copy plays from the next play.', r.why === 'refused' ? null : 'failed');
         } else up.state = 'ready';                       // interrupted (a seek, a pause, a quiet passage): later
         changed('source');
         preloadNext();
@@ -2745,7 +2760,7 @@
     var e = ps.queue[i], lead = LullRules.preloadLead(playback.crossfade, cur.soulseek, ps.received);
     if (!out.eagerNext && !LullRules.preloadNow(lead, P.duration(), ps.pos)) return;
     if (nxt === e) return;
-    var was = nxt; nxt = e; letGo(was); e.job = null; e.attempt = null;
+    var was = nxt; nxt = e; letGo(was); e.job = null; e.attempt = null; e.last = null; e.better = null;
     if (e.resolve === 'resolved') { e.resolve = 'resolving'; changed('queue'); }
     itemFor(e).then(function (it) { if (it && nxt === e) out.setNext(it); });
   }
@@ -2757,6 +2772,7 @@
     ps.status = e.soulseek ? (e.complete ? 'streaming' : 'buffering') : 'library';
     ps.received = e.soulseek && !e.complete ? 0 : 1; ps.arrived = ps.received ? [[0, 1]] : [];
     ps.durationKnown = !e.soulseek; ps.source = e.source || null;
+    if (e.soulseek && e.last) onStreamEvent(e.last);   // what the hub said of it while it was next
     letGo(was); applyLevels(); changed('track'); topUpRadio();
     if (out.eagerNext) preloadNext();
   }
@@ -3147,7 +3163,7 @@
     }
     return { eagerNext: true, on: function (type, fn) { return n.on(type, fn); }, load: call('load'), play: call('play'), pause: call('pause'),
       seek: call('seek'), setVolume: call('setVolume'), setNext: call('setNext'), crossfade: call('crossfade'),
-      equalize: n.equalize ? call('equalize') : null };
+      equalize: n.equalize ? call('equalize') : null, switchTo: n.switchTo ? call('switchTo') : null };
   }
 
   /* ---------- plays: POST /api/plays when a song starts, PATCH when it ends (scrobbling, history, taste) ---------- */
@@ -3296,6 +3312,8 @@
     }
   };
 
+  /* the better copy the song switched to mid-song, while it plays it */
+  P.switchedCopy = function () { return ps.upgrade && ps.upgrade.state === 'switched' ? ps.upgrade : null; };
   /* the copy that plays: LullRules.playingCopy over what the player knows (its rules say what each part means) */
   P.playingCopy = function () {
     var t = P.current(); if (!t) return null;
@@ -3844,6 +3862,8 @@
     /* the same state on the page's root, for a design to draw from anywhere (docs/themes.md: data-player): it changes
        a few times a song, and a rule that reads it restyles only what it selects */
     setAttr(document.documentElement, 'data-player', idle ? 'idle' : st);
+    var better = !idle && !!P.switchedCopy();
+    setAttr(bar, 'data-better-copy', better); setAttr(mini, 'data-better-copy', better);
     /* the state's own words, for a theme to show (docs/themes.md: data-status-text, and --status-text, which every
        element inside inherits): what the state tab says, the hub's reason for a failure among them, so a theme never
        has to word a reason of its own and get it wrong for the others */
@@ -3864,7 +3884,7 @@
           ${ui.playingFrom('pbar__from', null, { fit: 1 })}
           <div class="pbar__title" data-fit-keep>${fromPath ? html`<a href="#${fromPath}" data-act="go-playing" data-tip="Show the song in ${App.placeName(from)}">${t.title}</a>` : html`<a href="#/album/${t.albumId}">${t.title}</a>`}</div>
           <div class="pbar__artist" data-fit-keep><a href="#/artist/${t.artistId}">${t.artist}</a></div>
-          <div class="pbar__badges" data-fit-row>${yt ? '' : ui.sourceBadge(t, { button: true, fit: 1 })}${copy.format ? ui.qualityChip(copy.format, { solid: true, button: true, id: t.id, fit: 3 }) : ''}${ps.belowMinimum ? ui.belowBadge({ fit: 2 }) : ''}${yt && ps.unverified ? html`<span class="pbar__ask" data-fit="5"><span class="pbar__ask-q" data-fit="2">Unverified. Right song?</span><button class="btn btn--quiet btn--sm" data-act="verify" data-answer="yes" aria-label="Right song: yes" data-tip="Unverified copy. Right song?">Yes</button><button class="btn btn--quiet btn--sm" data-act="verify" data-answer="no" aria-label="Right song: no, play another copy" data-tip="Unverified copy. Right song?">No</button></span>` : ''}${priv}</div>
+          <div class="pbar__badges" data-fit-row>${yt ? '' : ui.sourceBadge(t, { button: true, fit: 1 })}${copy.format ? ui.qualityChip(copy.format, { solid: true, button: true, id: t.id, fit: 3, better: P.switchedCopy() }) : ''}${ps.belowMinimum ? ui.belowBadge({ fit: 2 }) : ''}${yt && ps.unverified ? html`<span class="pbar__ask" data-fit="5"><span class="pbar__ask-q" data-fit="2">Unverified. Right song?</span><button class="btn btn--quiet btn--sm" data-act="verify" data-answer="yes" aria-label="Right song: yes" data-tip="Unverified copy. Right song?">Yes</button><button class="btn btn--quiet btn--sm" data-act="verify" data-answer="no" aria-label="Right song: no, play another copy" data-tip="Unverified copy. Right song?">No</button></span>` : ''}${priv}</div>
         </div>
         <div class="pbar__acts" data-fit="2">${ui.likeButton(t.id)}${saveButton(t)}</div>`;
     }

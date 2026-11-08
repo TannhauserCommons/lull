@@ -23,7 +23,10 @@
 // (crates/skins/src/wsz.rs).
 //
 // POST /__fixture/emit { topic, data } sends one server event to every open /api/events stream (with X-Fixture-Client,
-// to that client's streams only). POST /__fixture/drop-events ends that client's streams, as a hub restart or a dropped
+// to that client's streams only). The latest `stream` event emitted for a song (per client) is the song's stream as
+// POST /api/stream/<id>/switch { peer, path } finds it: as the hub, the better copy its `upgrade` offers becomes the
+// song's stream, answered (and sent) as that copy's own job's event, naming the job it replaces; 409 when no copy is on
+// its way. POST /api/stream/<id>/not-switched { peer, path, why } answers 204; GET /__fixture/not-switched lists them. POST /__fixture/drop-events ends that client's streams, as a hub restart or a dropped
 // connection does: the browser connects again by itself.
 // POST /__fixture/artist-late { id, pending, errors } makes that artist's page answer with those sections still coming
 // (empty, named in `pending`) and `errors`, for that client; POST /__fixture/artist-in { id } answers it whole again
@@ -459,7 +462,14 @@ function lateArtist(page, late) {
 }
 const artistLate = new Map();   // client + ' ' + artist id -> { pending, errors }
 
+const streams = new Map();      // fixture client -> trackId -> the latest `stream` event emitted
+const notSwitched = new Map();  // fixture client -> [{ trackId, peer, path, why }]
 function emit(topic, data, only) {
+  if (topic === 'stream' && data && data.trackId) {
+    const client = only || '';
+    if (!streams.has(client)) streams.set(client, new Map());
+    streams.get(client).set(data.trackId, data);
+  }
   const line = `event: ${topic}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const [res, client] of clients) if (only === undefined || client === only) res.write(line);
 }
@@ -550,6 +560,18 @@ function chunk(type, data) {
 
 // The hub's own reason for a song no peer delivers, YouTube's part included (fetch.rs).
 const FAIL_REASON = 'no peer shares this song right now; YouTube: no YouTube upload matches this song';
+/* POST /api/stream/<id>/switch { peer, path }: the better copy on its way becomes the song's stream (soulseek/src/fetch.rs,
+   Fetcher::adopt): its own job's event answers, naming the job it replaces, and goes out on the event stream too */
+function switchCopy(req, res, id, b) {
+  const client = clientOf(req), last = streams.get(client) && streams.get(client).get(id), up = last && last.upgrade;
+  if (!up || up.peer !== b.peer || up.path !== b.path) return send(res, 409, { error: 'conflict', message: 'that copy is no longer on its way' });
+  const ev = { ...last, jobId: last.jobId + '-switched', replaces: last.jobId, peer: up.peer, format: up.format, youtube: false,
+    unverified: false, received: up.received, size: up.size, ranges: [[0, up.size ? up.received / up.size : 0]], attempt: 1 };
+  delete ev.upgrade;
+  emit('stream', ev, client);
+  return send(res, 200, ev);
+}
+
 /* POST /api/stream/<id>/output-error { jobId }: the job's state answers (soulseek/src/fetch.rs, Fetcher::output_error) */
 function outputError(res, id, jobId) {
   const t = L.tracks[id];
@@ -876,6 +898,7 @@ const server = createServer(async (req, res) => {
   const path = url.pathname, q = url.searchParams;
   if (path === '/__fixture/emit' && req.method === 'POST') { const b = await readBody(req); emit(b.topic, b.data, req.headers['x-fixture-client']); return send(res, 204); }
   if (path === '/__fixture/likes-log' && req.method === 'GET') return send(res, 200, likeLog(clientOf(req)));
+  if (path === '/__fixture/not-switched' && req.method === 'GET') return send(res, 200, notSwitched.get(clientOf(req)) || []);
   // songs neither saved nor liked, with their entities: what a like may save
   if (path === '/__fixture/unsaved-songs' && req.method === 'GET') {
     const out = L.trackIds.filter((id) => !L.tracks[id].saved && !state.likes.includes(id)).slice(0, +(q.get('n') || 3));
@@ -926,6 +949,13 @@ const server = createServer(async (req, res) => {
   if ((m = /^\/api\/(library\/)?stream\/([^/]+)$/.exec(path)) && req.method === 'GET') return audio(req, res, m[2], !!m[1]);
   if ((m = /^\/api\/stream\/([^/]+)\/output-error$/.exec(path)) && req.method === 'POST') return outputError(res, m[1], (await readBody(req)).jobId);
   if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'DELETE') return send(res, 204);
+  if ((m = /^\/api\/stream\/([^/]+)\/switch$/.exec(path)) && req.method === 'POST') return switchCopy(req, res, m[1], await readBody(req));
+  if ((m = /^\/api\/stream\/([^/]+)\/not-switched$/.exec(path)) && req.method === 'POST') {
+    const b = await readBody(req), client = clientOf(req);
+    if (!notSwitched.has(client)) notSwitched.set(client, []);
+    notSwitched.get(client).push({ trackId: m[1], peer: b.peer, path: b.path, why: b.why });
+    return send(res, 204);
+  }
   if (THEMES && (m = /^\/api\/themes\/([a-z0-9-]+)\/theme\.json$/.exec(path)) && req.method === 'GET') {
     // the hub's manifest, its slots the templates in the folder (crates/themes store.rs)
     const item = themeItem(m[1]);

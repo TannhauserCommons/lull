@@ -193,6 +193,7 @@ button.chip:hover, a.chip:hover { background: var(--lilac); }
 .q-chip--solid.q-chip--ll { background: var(--indigo); border-color: var(--indigo); color: var(--lilac); }
 .q-chip--solid.q-chip--ly { background: var(--ink); border-color: var(--ink); color: var(--cream); }
 .q-chip--yt { border-style: dashed; }
+.q-chip--better > .ic { margin-left: -2px; }
 button.q-chip { cursor: pointer; position: relative; }
 button.q-chip::after { content: ""; position: absolute; inset: -10px -2px; }
 button.src-badge { appearance: none; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; position: relative; }

@@ -805,6 +805,7 @@
       <div class="now-act__main">
         <div class="now-act__title"><b>${jobTitle(j)}</b><span>${sub}</span></div>
         ${parts.meta ? html`<div class="now-act__meta">${parts.meta}</div>` : ''}
+        ${j.note ? html`<p class="now-act__note">${j.note}</p>` : ''}
         ${parts.extra}
       </div>
       <div class="now-act__acts">${parts.acts}</div>

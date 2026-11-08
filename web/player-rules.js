@@ -167,6 +167,14 @@
      s: { track, e: { local, soulseek, url }, status, peer: { name, format } | null, saved, received (0-1), library: folder | jellyfin | null }
      -> { where: device | library | soulseek | youtube, name (what to call the place; null for Soulseek until a peer answers),
           library, peer, format (null when unknown: show no chip), received, saved } */
+  /* a song's `stream` event against the job followed: 'adopt' (the first, or a job naming it in `replaces`), 'follow',
+     or 'drop' (another fetch of the song) */
+  R.followEvent = function (job, ev) {
+    if (!job) return 'adopt';
+    if (ev.jobId === job) return 'follow';
+    return ev.replaces && ev.replaces === job ? 'adopt' : 'drop';
+  };
+
   R.playingCopy = function (s) {
     var e = s.e || {}, peer = s.peer || null, lib = s.library || null, where;
     if (e.local) where = 'device';

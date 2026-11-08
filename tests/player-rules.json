@@ -189,5 +189,16 @@
     { "song": 0.3, "copy": 0.2, "expect": 1.4999999999999998 },
     { "song": 0.01, "copy": 0.5, "expect": 0.5 },
     { "song": 0.1, "copy": 0, "expect": 2 }
-  ]
+  ],
+  "followEvent": {
+    "native": "decides for itself, more loosely: the native player takes every new job of the song it plays (classic_native/engine.rs, adopt), so it follows the job that took over without reading `replaces`",
+    "cases": [
+      { "job": null, "ev": { "jobId": "j1" }, "expect": "adopt" },
+      { "job": "j1", "ev": { "jobId": "j1" }, "expect": "follow" },
+      { "job": "j1", "ev": { "jobId": "j2" }, "expect": "drop" },
+      { "job": "j1", "ev": { "jobId": "j2", "replaces": "j1" }, "expect": "adopt" },
+      { "job": "j1", "ev": { "jobId": "j3", "replaces": "j2" }, "expect": "drop" },
+      { "job": "j2", "ev": { "jobId": "j2", "replaces": "j1" }, "expect": "follow" }
+    ]
+  }
 }

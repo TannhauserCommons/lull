@@ -46,6 +46,7 @@ const run = {
   switchNow: (c) => R.switchNow(c),
   quiet: (c) => R.quiet(c.levels),
   levelMatch: (c) => R.levelMatch(c.song, c.copy),
+  followEvent: (c) => R.followEvent(c.job, c.ev),
 };
 
 test('every section of the cases is a rule here, and every rule here has cases', () => {
