@@ -878,7 +878,7 @@ pub fn sized(source: &str, size: u32) -> String {
             None => source.replace("-{size}", ""),
         };
     }
-    if source.starts_with(LASTFM_IMAGES) {
+    if lastfm_picture(source).is_some() {
         // Checked 2026-11-04: any other size answers the original.
         return match size {
             0..=174 => source.replace("{size}", "174s"),
@@ -894,8 +894,17 @@ pub fn sized(source: &str, size: u32) -> String {
     source.replace("{size}", &size.to_string())
 }
 
-/// Last.fm's pictures, as a source: `…/i/u/{size}/<file>` (`sized`).
-pub const LASTFM_IMAGES: &str = "https://lastfm.freetls.fastly.net/i/u/";
+/// A Last.fm picture's address split where its size goes: `https://<host>/i/u/` and the rest
+/// (`<size>/<file>`, or `<file>` for the original). Its host is one of Last.fm's on Fastly, whichever
+/// it answers with: `lastfm.freetls.fastly.net` until 2026-11, `lastfm-img.freetls.fastly.net`
+/// since. A source keeps the host it was given (`sized`).
+pub fn lastfm_picture(url: &str) -> Option<(&str, &str)> {
+    let after = url.strip_prefix("https://")?;
+    let (host, path) = after.split_once('/')?;
+    let rest = path.strip_prefix("i/u/")?;
+    let lastfm = host.starts_with("lastfm") && host.ends_with(".freetls.fastly.net");
+    lastfm.then(|| url.split_at(url.len() - rest.len()))
+}
 
 /// The largest Deezer picture asked for. Its CDN serves up to 1900 px whatever the master is,
 /// and 1400 px is the smallest master it takes from labels, so this size is never blown up.
@@ -920,7 +929,7 @@ pub async fn fetch(http: &Http, url: &str) -> Result<Option<Vec<u8>>> {
         "Wikimedia Commons"
     } else if url.contains(".dzcdn.net/") {
         "Deezer"
-    } else if url.starts_with(LASTFM_IMAGES) {
+    } else if lastfm_picture(url).is_some() {
         "Last.fm"
     } else {
         "picture host"
@@ -1086,10 +1095,36 @@ mod tests {
         let itunes = "https://is1-ssl.mzstatic.com/image/thumb/x/1.png/{size}x{size}bb.jpg";
         // Live, iTunes answered 2048 at 2048 px and 5000 at its 4000 px original.
         assert!(sized(itunes, 2048).ends_with("/2048x2048bb.jpg"));
-        let lastfm = "https://lastfm.freetls.fastly.net/i/u/{size}/0a1b.jpg";
-        assert!(sized(lastfm, 96).ends_with("/i/u/174s/0a1b.jpg"));
-        assert!(sized(lastfm, 256).ends_with("/i/u/300x300/0a1b.jpg"));
-        assert!(sized(lastfm, 512).ends_with("/i/u/0a1b.jpg"), "the original");
+        // Live (2026-11-08), both of Last.fm's hosts served 174s, 300x300 and the original.
+        for host in ["lastfm.freetls.fastly.net", "lastfm-img.freetls.fastly.net"] {
+            let lastfm = format!("https://{host}/i/u/{{size}}/0a1b.jpg");
+            assert_eq!(sized(&lastfm, 96), format!("https://{host}/i/u/174s/0a1b.jpg"));
+            assert_eq!(sized(&lastfm, 256), format!("https://{host}/i/u/300x300/0a1b.jpg"));
+            assert_eq!(
+                sized(&lastfm, 512),
+                format!("https://{host}/i/u/0a1b.jpg"),
+                "the original"
+            );
+        }
+    }
+
+    #[test]
+    fn a_lastfm_picture_is_known_by_its_host_and_path_on_any_of_its_hosts() {
+        assert_eq!(
+            lastfm_picture("https://lastfm-img.freetls.fastly.net/i/u/300x300/0a1b.jpg"),
+            Some(("https://lastfm-img.freetls.fastly.net/i/u/", "300x300/0a1b.jpg"))
+        );
+        assert_eq!(
+            lastfm_picture("https://lastfm.freetls.fastly.net/i/u/0a1b.jpg"),
+            Some(("https://lastfm.freetls.fastly.net/i/u/", "0a1b.jpg"))
+        );
+        assert_eq!(
+            lastfm_picture("https://other.freetls.fastly.net/i/u/0a1b.jpg"),
+            None,
+            "another site"
+        );
+        assert_eq!(lastfm_picture("https://lastfm.freetls.fastly.net/other/0a1b.jpg"), None);
+        assert_eq!(lastfm_picture("http://lastfm.freetls.fastly.net/i/u/0a1b.jpg"), None);
     }
 
     #[test]

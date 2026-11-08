@@ -7,7 +7,7 @@ use std::sync::Arc;
 use lull_core::config::Secret;
 use lull_core::http::{self, Http};
 use lull_core::ids::{normalize, normalize_artist};
-use lull_core::pictures::LASTFM_IMAGES;
+use lull_core::pictures::lastfm_picture;
 use lull_core::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -241,9 +241,10 @@ impl LastFm {
     }
 
     /// An album's cover by name, as a picture source (`lull_core::pictures::sized`): Last.fm's
-    /// own picture of it, `None` when it has none. Kept a month.
+    /// own picture of it, `None` when it has none. Kept a month. The key's `2` drops the answers
+    /// kept before lull read Last.fm's second picture host, which said "none" for every cover there.
     pub async fn album_cover(&self, artist: &str, title: &str) -> Result<Option<String>> {
-        let key = format!("lfm:album-cover:{}:{}", normalize_artist(artist), normalize(title));
+        let key = format!("lfm:album-cover:2:{}:{}", normalize_artist(artist), normalize(title));
         self.cache
             .get(key, 30 * DAY, || async {
                 let body = self
@@ -301,9 +302,9 @@ pub fn cover_source(body: &Value) -> Option<String> {
         .rev()
         .filter_map(|i| i["#text"].as_str().map(str::to_owned))
         .find(|u| !u.is_empty())?;
-    let rest = largest.strip_prefix(LASTFM_IMAGES)?;
+    let (base, rest) = lastfm_picture(&largest)?;
     let file = rest.rsplit('/').next()?;
-    (!file.starts_with(NO_PICTURE)).then(|| format!("{LASTFM_IMAGES}{{size}}/{file}"))
+    (!file.starts_with(NO_PICTURE)).then(|| format!("{base}{{size}}/{file}"))
 }
 
 /// Last.fm gives a single item as an object and several as an array.
@@ -437,6 +438,19 @@ mod tests {
             { "size": "extralarge", "#text": "https://lastfm.freetls.fastly.net/i/u/300x300/2a96cbd8b46e442fc41c2b86b821562f.png" },
         ] } });
         assert_eq!(cover_source(&star), None);
+        // Live (2026-11-08), album.getInfo answered on Last.fm's second host; the source keeps it.
+        let moved = serde_json::json!({ "album": { "image": [
+            { "size": "extralarge", "#text": "https://lastfm-img.freetls.fastly.net/i/u/300x300/c97d.jpg" },
+            { "size": "mega", "#text": "https://lastfm-img.freetls.fastly.net/i/u/300x300/c97d.jpg" },
+        ] } });
+        assert_eq!(
+            cover_source(&moved).as_deref(),
+            Some("https://lastfm-img.freetls.fastly.net/i/u/{size}/c97d.jpg")
+        );
+        let moved_star = serde_json::json!({ "album": { "image": [
+            { "size": "mega", "#text": "https://lastfm-img.freetls.fastly.net/i/u/300x300/2a96cbd8b46e442fc41c2b86b821562f.png" },
+        ] } });
+        assert_eq!(cover_source(&moved_star), None);
         assert_eq!(cover_source(&serde_json::json!({})), None, "not found");
     }
 
