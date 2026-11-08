@@ -11,11 +11,11 @@ lull links that chat apps show as cards, served by a Cloudflare Worker on the fr
 | `share/src/link.js` | Reading and writing `/1/<kind>/<names>?<ids>`; the album or artist a cover is looked up for (`subjectKey`) |
 | `share/src/page.js` | The page: `site/open.html` with the card's tags (and the link to Discord's card) and the item for `site/open.js`; the 404 and 429 pages |
 | `share/src/card.js` | lull's card in Discord: a component embed, as JSON |
-| `share/src/colour.js` | A cover's colour, for the card's edge: read from a small JPEG's block averages, no full decode |
+| `share/src/colour.js` | A cover's colour, for the card's edge: from a small JPEG's block averages (no full decode) or a small PNG |
 | `share/src/sources.js` | The cover chain: iTunes (the US store, then the opener's: `request.cf.country`), Deezer, the Cover Art Archive, Last.fm, iTunes by name; Deezer and Wikidata for artists |
 | `share/src/objects.js` | Durable Objects: `Cover` (one per album or artist: one lookup at a time, keeps the address found and its colour) and `Gate` (each service's budget, worldwide) |
 | `share/build.mjs` | Gathers the static files into `share/public/` from where they live (`site/`, `web/`, `packaging/android/assetlinks.json`, `share/static/`), and writes `look.css`: lull's base tokens from `web/tokens.css`, the night block as a `prefers-color-scheme` rule. The page (`site/open.css`) is drawn with those tokens, its card as the app's card surface (`--cream`, `--ink`, `--link-on-cream`, `--line`), the same for everyone. Run by wrangler before every build, and by `pages.yml` |
-| `share/test/` | `share.test.mjs` runs wrangler's own bundle in Miniflare with every outside service faked (`harness.mjs`); `hosts.test.mjs`; `colour.test.mjs` with tiny synthetic JPEGs (`pictures.mjs`) |
+| `share/test/` | `share.test.mjs` runs wrangler's own bundle in Miniflare with every outside service faked (`harness.mjs`); `hosts.test.mjs`; `colour.test.mjs` with tiny synthetic JPEGs and PNGs (`pictures.mjs`) |
 | `.github/workflows/share.yml` | `test`; `deploy` on a dispatch on main |
 
 ## The link
@@ -34,7 +34,7 @@ For every lull install, in any market (ADR-0034, "For every lull"): links hold p
 - **Order:** the edge cache (works on a custom domain, does nothing on `*.workers.dev`), the instance's memory (10 minutes), then the `Cover` object for the album, which runs `sources.find` once for everyone waiting.
 - **Kept:** the picture's address, 30 days; "none" a day; a lookup a source couldn't answer, a minute. A kept address that stops answering is reported back (`broken`) and the chain runs again.
 - **Budgets** (`Gate`): iTunes 10 a minute, Deezer 10 a second, MusicBrainz and the archive 1 a second, Last.fm 2, Wikidata 1. A turn free within a second is waited for; otherwise the step is skipped. A 429 or 403 from an API pauses it 10 minutes.
-- **Its colour:** once a picture is found, the `Cover` object reads its small copy (128 px, `sources.smallCopy`) and keeps the colour (`#rrggbb`) beside the address; null for a picture that isn't a JPEG. Rows kept before colours get theirs on their next request.
+- **Its colour:** once a picture is found, the `Cover` object reads its small copy (128 px, or Last.fm's 174 px; `sources.smallCopy`) and keeps the colour (`#rrggbb`) beside the address, with the reader's version (`colour.READER`); null for a picture that isn't a JPEG or PNG it reads. A row an older reader read is read again on its next request: raise `READER` when the reader learns something new.
 - **Per client:** 60 requests a minute per location (`CLIENTS`, the rate-limiting binding). Over it a page gets a 429 page, a cover lull's card.
 
 ## Discord's card

@@ -4,6 +4,7 @@
 // - Gate, one for the Worker: hands out turns of each outside service's budget, worldwide.
 
 import { DurableObject } from 'cloudflare:workers';
+import { READER } from './colour.js';
 import { colourOf, find } from './sources.js';
 
 const DAY = 24 * 3600 * 1000;
@@ -18,8 +19,8 @@ export class Cover extends DurableObject {
   running = null;
 
   /**
-   * The picture for `subject`: `{ url, source, colour, until }`, `url` null when no source has one (yet), `colour`
-   * (`#rrggbb`) null when it couldn't be read from the picture.
+   * The picture for `subject`: `{ url, source, colour, read, until }`, `url` null when no source has one (yet), `colour`
+   * (`#rrggbb`) null when it couldn't be read from the picture, `read` the reader (colour.READER) that read it.
    * `broken` is an address the caller found no longer answering: it is dropped, and the lookup runs again.
    */
   async picture(subject, broken = null) {
@@ -28,8 +29,8 @@ export class Cover extends DurableObject {
       await this.ctx.storage.delete('picture');
       kept = null;
     }
-    // A picture kept before the card had colours gets its colour, and keeps its place.
-    if (kept?.url && kept.colour === undefined) kept = await this.keep({ ...kept, colour: await colourOf(kept.url, kept.source) });
+    // A picture whose colour an older reader read (or couldn't) is read again, and keeps its place.
+    if (kept?.url && kept.read !== READER) kept = await this.keep({ ...kept, colour: await colourOf(kept.url, kept.source), read: READER });
     if (kept && Date.now() < kept.until) return kept;
     if (kept?.url) {
       // Stale: answered at once, and looked for again behind it.
@@ -49,7 +50,7 @@ export class Cover extends DurableObject {
     const now = Date.now();
     const kept = await this.ctx.storage.get('picture');
     let next;
-    if (found.url) next = { url: found.url, source: found.source, colour: await colourOf(found.url, found.source), until: now + KEEP_FOUND };
+    if (found.url) next = { url: found.url, source: found.source, colour: await colourOf(found.url, found.source), read: READER, until: now + KEEP_FOUND };
     // A picture kept still answered when it was last served: nothing found now doesn't replace it.
     else if (kept?.url) next = { ...kept, until: now + RETRY };
     else next = { url: null, source: null, colour: null, until: now + (found.busy ? RETRY : KEEP_NONE) };

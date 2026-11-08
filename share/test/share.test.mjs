@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { HOST, internet, json, picture, start } from './harness.mjs';
-import { SOLID } from './pictures.mjs';
+import { CLEAR_PNG, SOLID } from './pictures.mjs';
 
 const MB = '48140466-cff6-3222-bd55-63c27e43190d';
 const SONG = '/1/song/Portishead/Glory%20Box?al=Dummy&len=305&it=1440823733&ic=1440823517&mb=' + MB;
@@ -245,6 +245,19 @@ test('Discord gets lull\'s card: the link\'s words, its cover beside them, the c
     const asked = net.count(/itunes\.apple\.com/);
     assert.equal(await (await w.get(COVER)).text(), 'picture:itunes');
     assert.equal(net.count(/itunes\.apple\.com/), asked);
+  });
+});
+
+test('a cover Last.fm has (a PNG) gives the card its colour too', async () => {
+  const net = internet();
+  net.on(/ws\.audioscrobbler\.com/, () => json({ album: { image: [{ '#text': 'https://lastfm.freetls.fastly.net/i/u/300x300/abc.png' }] } }));
+  net.on(/lastfm\.freetls\.fastly\.net\/i\/u\/300x300\/abc\.png$/, () => new Response('picture:lastfm', { headers: { 'content-type': 'image/png' } }));
+  // Its small copy, which the colour is read from: clear on the left, (52, 110, 190) on the right.
+  net.on(/lastfm\.freetls\.fastly\.net\/i\/u\/174s\/abc\.png$/, () => new Response(Buffer.from(CLEAR_PNG, 'base64'), { headers: { 'content-type': 'image/png' } }));
+  await withWorker(net, async (w) => {
+    const { component } = await (await w.get('/1/album/Grouper/Ruins/card')).json();
+    const edge = [16, 8, 0].map((shift) => (component.accent_color >> shift) & 255);
+    assert.ok(edge.every((v, i) => Math.abs(v - [52, 110, 190][i]) <= 2), `the edge ${edge} is the cover's colour`);
   });
 });
 

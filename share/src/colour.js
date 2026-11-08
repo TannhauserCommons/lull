@@ -1,17 +1,23 @@
 // A cover's colour, for the edge of lull's Discord card (docs/adr/0034, "The Discord card"): worked out once, by the
 // cover's lookup in its Durable Object, from a small copy of the picture; only the colour is kept.
 //
-// A JPEG stores each 8×8 block's average as its first ("DC") coefficient, so the average colours of a small cover
-// come from its first scan without the full decode (no inverse DCT, no upsampling): a 128 px cover gives an 8×8 to
-// 16×16 grid of colours in well under a millisecond. Baseline and progressive JPEGs are read, which is what every
-// source lull tracks serves at small sizes; anything else (PNG, arithmetic coding, CMYK) has no colour, and the card
-// keeps lull's own.
+// Covers come as JPEG (Apple, Deezer, the Cover Art Archive, Wikimedia) or PNG (Last.fm's):
+// - A JPEG stores each 8×8 block's average as its first ("DC") coefficient, so the average colours of a small cover
+//   come from its first scan without the full decode (no inverse DCT, no upsampling): a 128 px cover gives an 8×8 to
+//   16×16 grid of colours in a millisecond or two. Baseline and progressive JPEGs are read.
+// - A PNG is inflated (the platform's DecompressionStream) and unfiltered, and averaged over 8×8 blocks.
+// Anything else (arithmetic-coded or CMYK JPEGs, interlaced PNGs, other formats) has no colour, and
+// the card keeps lull's own.
 
-/** The colour of a cover, `#rrggbb`, from its JPEG bytes; null when it isn't a JPEG this reads. */
-export function coverColour(bytes) {
+/** Which reader a kept colour came from: a colour read by an older one (or none it could read) is read again. */
+export const READER = 2;
+
+/** The colour of a cover, `#rrggbb`, from its JPEG or PNG bytes; null when it isn't a picture this reads. */
+export async function coverColour(bytes) {
+  const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   let grid;
   try {
-    grid = averages(bytes);
+    grid = isPng(data) ? await pngAverages(data) : averages(data);
   } catch (e) {
     if (e instanceof Unreadable) return null;
     throw e;
@@ -25,8 +31,7 @@ function unreadable(why) { return new Unreadable(why); }
 // ---- The averages in a JPEG ----
 
 /** Each MCU's average colour, as [r, g, b] 0–255, read from the DC coefficients of the picture's scans. */
-function averages(bytes) {
-  const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+function averages(data) {
   if (data[0] !== 0xff || data[1] !== 0xd8) throw unreadable('not a JPEG');
   const quant = [];
   const dc = [];
@@ -264,6 +269,141 @@ function colours(frame, adobe) {
 }
 
 function clamp255(v) { return Math.min(255, Math.max(0, v)); }
+
+// ---- The averages in a PNG ----
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+/** Channels per PNG colour type: grey, RGB, palette, grey and alpha, RGBA. */
+const PNG_CHANNELS = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
+/** A small copy is at most a few hundred pixels a side; anything far larger isn't inflated. */
+const PNG_MAX_PIXELS = 1024 * 1024;
+
+function isPng(data) {
+  return PNG_SIGNATURE.every((b, i) => data[i] === b);
+}
+
+/** Each 8×8 block's average colour, as [r, g, b] 0–255, weighted by its pixels' opacity; clear blocks are left out. */
+async function pngAverages(data) {
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  let header = null;
+  let palette = null;
+  let clear = null;
+  const idat = [];
+  for (let at = 8; at + 8 <= data.length;) {
+    const length = view.getUint32(at);
+    const type = String.fromCharCode(...data.subarray(at + 4, at + 8));
+    const body = data.subarray(at + 8, at + 8 + length);
+    if (body.length !== length) throw unreadable('the PNG ended inside a chunk');
+    if (type === 'IHDR') {
+      header = { width: view.getUint32(at + 8), height: view.getUint32(at + 12), depth: body[8], type: body[9], interlace: body[12] };
+    } else if (type === 'PLTE') palette = body;
+    else if (type === 'tRNS') clear = body;
+    else if (type === 'IDAT') idat.push(body);
+    else if (type === 'IEND') break;
+    at += 12 + length;
+  }
+  if (!header || !idat.length) throw unreadable('a PNG with no picture');
+  const { width, height, depth, type, interlace } = header;
+  const channels = PNG_CHANNELS[type];
+  // Every depth PNG allows: 1, 2, 4 and 8 bits for grey and palettes, 8 and 16 for the rest.
+  const depths = type === 0 ? [1, 2, 4, 8, 16] : type === 3 ? [1, 2, 4, 8] : [8, 16];
+  if (!channels || interlace || !depths.includes(depth) || (type === 3 && !palette)) {
+    throw unreadable('a PNG kind this doesn\'t read');
+  }
+  if (!width || !height || width * height > PNG_MAX_PIXELS) throw unreadable('a PNG of no size, or too large');
+  const pixels = await inflate(idat);
+  const stride = Math.ceil((width * channels * depth) / 8);
+  const bpp = Math.max(1, (channels * depth) / 8);
+  if (pixels.length < height * (stride + 1)) throw unreadable('a PNG shorter than its size');
+  const rows = unfilter(pixels, height, stride, bpp);
+  const sample = sampler(depth, channels);
+
+  const across = Math.ceil(width / 8);
+  const sums = new Float64Array(across * Math.ceil(height / 8) * 4);
+  for (let y = 0; y < height; y++) {
+    const row = rows[y];
+    for (let x = 0; x < width; x++) {
+      const [r, g, b, a] = pixel((i) => sample(row, x, i), type, palette, clear, depth);
+      const k = ((y >> 3) * across + (x >> 3)) * 4;
+      sums[k] += r * a;
+      sums[k + 1] += g * a;
+      sums[k + 2] += b * a;
+      sums[k + 3] += a;
+    }
+  }
+  const out = [];
+  for (let k = 0; k < sums.length; k += 4) if (sums[k + 3] > 0) out.push([sums[k], sums[k + 1], sums[k + 2]].map((v) => v / sums[k + 3]));
+  return out;
+}
+
+/**
+ * Reads channel `i` of pixel `x` in a row: 16-bit samples by their high byte, samples under 8 bits unpacked (a
+ * palette index as it is, a grey scaled to 0–255).
+ */
+function sampler(depth, channels) {
+  if (depth >= 8) {
+    const step = depth / 8;
+    return (row, x, i) => row[(x * channels + i) * step];
+  }
+  const mask = (1 << depth) - 1;
+  return (row, x) => (row[(x * depth) >> 3] >> (8 - depth - ((x * depth) & 7))) & mask;
+}
+
+/** One pixel as [r, g, b, alpha 0–1], from `s(i)`, its channel i. */
+function pixel(s, type, palette, clear, depth = 8) {
+  if (type === 3) {
+    const i = s(0) * 3;
+    return [palette[i], palette[i + 1], palette[i + 2], clear && s(0) < clear.length ? clear[s(0)] / 255 : 1];
+  }
+  if (type === 0) {
+    const v = depth < 8 ? (s(0) * 255) / ((1 << depth) - 1) : s(0);
+    return [v, v, v, 1];
+  }
+  if (type === 4) return [s(0), s(0), s(0), s(1) / 255];
+  if (type === 2) return [s(0), s(1), s(2), 1];
+  return [s(0), s(1), s(2), s(3) / 255];
+}
+
+async function inflate(chunks) {
+  try {
+    const stream = new Blob(chunks).stream().pipeThrough(new DecompressionStream('deflate'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  } catch {
+    throw unreadable('a PNG whose picture doesn\'t inflate');
+  }
+}
+
+/** PNG's five row filters undone: each row's bytes as they were before filtering. */
+function unfilter(data, height, stride, bpp) {
+  const rows = [];
+  let prev = new Uint8Array(stride);
+  for (let y = 0; y < height; y++) {
+    const at = y * (stride + 1);
+    const filter = data[at];
+    const row = data.slice(at + 1, at + 1 + stride);
+    for (let i = 0; i < stride; i++) {
+      const left = i >= bpp ? row[i - bpp] : 0;
+      const up = prev[i];
+      const corner = i >= bpp ? prev[i - bpp] : 0;
+      if (filter === 1) row[i] += left;
+      else if (filter === 2) row[i] += up;
+      else if (filter === 3) row[i] += (left + up) >> 1;
+      else if (filter === 4) row[i] += paeth(left, up, corner);
+      else if (filter !== 0) throw unreadable('a PNG row with an unknown filter');
+    }
+    rows.push(row);
+    prev = row;
+  }
+  return rows;
+}
+
+function paeth(a, b, c) {
+  const p = a + b - c;
+  const pa = Math.abs(p - a);
+  const pb = Math.abs(p - b);
+  const pc = Math.abs(p - c);
+  return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+}
 
 // ---- From the averages to one colour ----
 

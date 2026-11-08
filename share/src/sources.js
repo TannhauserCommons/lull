@@ -61,7 +61,7 @@ export function smallCopy(url, source) {
 export async function colourOf(url, source) {
   let res;
   try {
-    res = await get(smallCopy(url, source), source, { accept: 'image/jpeg,image/*', api: false });
+    res = await get(smallCopy(url, source), source, { accept: 'image/jpeg,image/png,image/*', api: false });
   } catch (e) {
     if (e instanceof Busy) return null;
     throw e;

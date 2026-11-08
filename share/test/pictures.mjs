@@ -59,7 +59,26 @@ export const GREY = [
   'ipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/9oACAEBAAA/APGqKKK//9k=',
 ].join('');
 
-/** 8×8 PNG, red: not a JPEG. */
+/** 8×8 PNG, one colour (200, 40, 50). */
 export const PNG = [
   'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAFElEQVR4nGM8oWHEgA0wYRUdtBIA5+oBMnFCzDwAAAAASUVORK5CYII=',
+].join('');
+
+/** The two-colour picture as an RGB PNG. */
+export const TWO_PNG = [
+  'iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAAdElEQVR4nN3QsQmAQADF0BiczSmc2/qwujGutxYMvgHC52/zviiRGImRGImRGImR',
+  'GImRGImRGImRGImRGImRGImRGImRGImRmP2t0DjOfz4kMRIjMRIjMRIjMRIjMRIjMRIjMRIjMRIjMRIjMRIjMX494GkBvfIEhGy292AAAAAASUVO',
+  'RK5CYII=',
+].join('');
+
+/** The same picture as a palette PNG. */
+export const TWO_PALETTE = [
+  'iVBORw0KGgoAAAANSUhEUgAAADAAAAAwAQMAAABtzGvEAAAABlBMVEXo4tbIKDIEbWoIAAAAGElEQVR4nGNgGBqAkYGB4T8DAxOEN3gpALRsAS9W',
+  'JNNdAAAAAElFTkSuQmCC',
+].join('');
+
+/** 32×32 RGBA PNG: its left half clear green, its right half (52, 110, 190). */
+export const CLEAR_PNG = [
+  'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAQ0lEQVR4nO3RMQ0AIAADwaea0IwMZlyBCIYuf3uTJj84fJlr3599KIsHMEFZPIAJ',
+  'yuIBTFAWD2CCsngAE5TFA5iArgfEMwOfGwSvHgAAAABJRU5ErkJggg==',
 ].join('');
