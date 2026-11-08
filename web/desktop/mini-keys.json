@@ -6,6 +6,7 @@
   "play-pause": "main",
   "previous": "main",
   "repeat": "main",
+  "save": "main",
   "seek": "seek",
   "shuffle": "main",
   "vol-down": "main",

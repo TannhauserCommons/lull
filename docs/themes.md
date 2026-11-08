@@ -126,7 +126,7 @@ Go beyond tokens with any selector. These hooks are the theme API: they stay put
 | `#pbar` / `#mini` `[data-status]`, `[data-playing]` | player state (`idle`, `finding`, `queued`, `buffering`, `stalled`, `choose`, `streaming`, `library`, `failed`, `jellyfin-error`, `ended`); the desktop app's mini player windows have it too, on `[data-dk-player]` |
 | `:root[data-player]`, `:root[data-playing]` | the same state and whether sound is playing, on the page's root, so anything anywhere can follow them (`:root[data-playing="true"] .my-moon`) without a `:has()` on the player |
 | `#pbar`, `#mini`, `.now__dev`, `.now__devc` `[data-liked]`, `[data-saved]` | whether the playing song is liked and saved (`true` or `false`), on the player and Now Playing's hero; they change only with a like, a save or the song |
-| `--song-pos` | where the song is, `0` to `1` in hundredths, written only when it moves a hundredth, and only on `#pbar`, `#mini`, `.sky-specks`, Now Playing's hero (`.now__dev`, `.now__devc`), Home's `.disc-lead` and the mini player windows' `[data-dk-player]`: draw with it there (`rotate: calc(var(--song-pos) * 1turn)`, `translate`, `scale`, `opacity`). It isn't inherited: a part inside them, or a pseudo-element, that draws with it says `--song-pos: inherit` (each level between too). So a step restyles only what draws with it, never a whole hero, player or page |
+| `--song-pos` | where the song is, `0` to `1` in hundredths, written only when it moves a hundredth, and only on `#pbar`, `#mini`, `.sky-specks`, Now Playing's hero (`.now__dev`, `.now__devc`), Home's `.disc-lead`, the mini player windows' `[data-dk-player]` and any element of your slot markup marked `data-live` (section 14): draw with it there (`rotate: calc(var(--song-pos) * 1turn)`, `translate`, `scale`, `opacity`). It isn't inherited: a part inside them, or a pseudo-element, that draws with it says `--song-pos: inherit` (each level between too). So a step restyles only what draws with it, never a whole hero, player or page |
 | `#pbar` / `#mini` / `[data-dk-player]` `[data-status-text]`, `--status-text` | the state's own words: what the state tab says, the hub's reason for a failure among them ("YouTube couldn't find this song"); while a song simply plays, where from ("Streaming from YouTube", "Playing from your library"). `content: var(--status-text)` shows them on anything inside (the property is a CSS string every element inside inherits); `attr(data-status-text)` only on the element itself. See **The player's words** below |
 | `.mini__chip` | an empty part beside the mini player's song line, hidden unless your theme shows it and words it (`::before { content: ... }`, from `#mini[data-status]`); it gives way when the line needs the room, so never place it over the buttons |
 | Classes | the BEM blocks: `.card` (`.card-head`, `.card-head__title`), `.btn` (`--primary`, `--quiet`, `--sm`), `.btn-icon`, `.btn-gloss`, `.cover` (`.c1`-`.c8` recipes, `.has-art`; `.cover--artist` with `.cover__mono`, the artist's initial shown while it has no photo, in the design's display face), `.trow`, `.tile`, `.chip`, `.pill-filter`, `.seg`, `.input`, `.seek`, `.wave`, `.device`, `.empty`, `.sheet`, `.dialog`, `.toast`, `.banner`, `.nav-item`, `.nav-pill`, `.tab`, `.region-title` (hidden window titles you can show). Every other class and attribute, stable or internal, is in section 11 |
@@ -140,7 +140,7 @@ Go beyond tokens with any selector. These hooks are the theme API: they stay put
 | Containers | `main` (`.main`), `panel` (`.ctx`), `nowcol` (the Now Playing column), `section` (a Home module), `tlist` (a song list), `libpl` (the playlist table): `@container main (min-width: 1600px) { ... }` |
 | `.app[data-panel="strip"]`, `.ctx__strip` | the side panel collapsed to an icon strip |
 | `.nowcol`, `.nowcol__head`, `.nowcol__title`, `.nowcol__body`, `.app[data-nowcol="open\|strip"]` | the Now Playing column beside the main area |
-| `.disc-modules > .disc-mod > .card[data-region]` | Home's modules (`new`, `radio`, `picks`, `jump`, `tags`), in a fixed order |
+| `.disc-modules > .disc-mod[data-module] > .card[data-region]` | Home's modules (`new`, `radio`, `picks`, `jump`, `tags`), in a fixed order. Each module's box names it, so `.disc-mod[data-module="new"]` places or groups one without a `:has()` |
 
 **Never patch a width band.** The header, the player bar, its tools and the song's chips fit the room they actually
 have (a docked panel, the Now column, the text size and a long title count as much as the window): each part that can
@@ -264,7 +264,7 @@ Booleans render as `true` or `false`, so CSS can follow them: `[data-playing="tr
 
 Every slot also takes the live model's values, by path, as fields (`{{clock.time}}`, as the slot is drawn) and as bindings that stay current (`<b data-bind="clock.time"></b>`): section 14. A field is the value when the slot was drawn; a binding is the value now.
 
-Keep the live hooks when you rebuild a hero: `data-now="title|artist|album|format|screen|c-screen|c-art|led|head|state|facts|osd"` and `data-act` / `data-bind` on transport buttons (`design/DESIGN.md` 3.5 lists them all). A custom mini player keeps `data-dk-player`, the `data-dk="..."` keys and `data-dk-pos`, `data-dk-dur`, `data-dk-now`. The keys are `play-pause`, `previous`, `next`, `like`, `shuffle`, `repeat`, `vol-up`, `vol-down`, `seek` (on the wave), `full` and `mini-close`, the names `web/desktop/mini-keys.json` lists. The hub refuses a slot that names any other key, and says which keys there are, so a theme never ships a button that does nothing.
+Keep the live hooks when you rebuild a hero: `data-now="title|artist|album|format|screen|c-screen|c-art|led|head|state|facts|osd"` and `data-act` / `data-bind` on transport buttons (`design/DESIGN.md` 3.5 lists them all). A custom mini player keeps `data-dk-player` and the `data-dk="..."` keys. `data-dk-now`, `data-dk-pos` and `data-dk-dur` are lull's own pieces, which lull fills with its markup and words: keep them for lull's song block, or leave them out and show the song with the live model's values (`<b data-bind="song.title"></b>`, section 14), which lull keeps current without touching your markup. The keys are `play-pause`, `previous`, `next`, `like`, `save` (saved: `aria-pressed="true"`), `shuffle`, `repeat`, `vol-up`, `vol-down`, `seek` (on the wave), `full` and `mini-close`, the names `web/desktop/mini-keys.json` lists. The hub refuses a slot that names any other key, and says which keys there are, so a theme never ships a button that does nothing.
 
 ## 7. A full example: CSS and a slot
 
@@ -803,6 +803,30 @@ theme the same way, with no new hook.
 | `clock.month` | number | 1 to 12; as words the month's name in the device's language |
 | `clock.year` | number | `2026` |
 | `clock.daypart` | state | `morning` from 5:00, `afternoon` from 12:00, `evening` from 18:00, `night` from 22:00 |
+| `song.title`, `song.artist`, `song.album`, `song.year` | text | the playing song; empty while nothing plays |
+| `song.from` | text | the place it plays from, as the player bar names it: `Liked songs`, a playlist's name |
+| `song.source` | state | where the copy that plays comes from: `none` `library` `device` `soulseek` `youtube` |
+| `song.quality`, `song.format` | text | the copy's quality as its chip says it (`FLAC 16/44.1`), and the file's facts (`FLAC :: 44.1 kHz, 1123 kbps, 32.8 MB`) |
+| `song.lossless`, `song.liked`, `song.saved` | flag | |
+| `song.pos`, `song.buffered`, `song.received` | number | 0 to 1 in hundredths (as words a percentage): where it is, how far it is buffered, how much of the file has arrived |
+| `song.elapsed`, `song.duration` | text | `1:23`, `3:45`; `song.elapsed` changes every second, so name it only to show it |
+| `song.hue`, `song.seed` | number | for decoration, the same for a song every time: 0 to 359, and 0 to 1 in thousandths |
+| `song.title-length` | number | how many characters the title has, to size type by: `font-size: clamp(3rem, calc(90vw / var(--song-title-length)), 12rem)` |
+| `next.title`, `next.artist`, `next.album` | text | the song after it; empty at the end of the queue |
+| `next.saved` | flag | |
+| `queue.1.title` ... `queue.8.title`, `queue.1.artist` ... `queue.8.artist` | text | the eight songs after the playing one |
+| `queue.count`, `queue.left` | number, text | how many songs come after it, and for how long (`1 h 12 min`) |
+| `player.status` | state | as `:root[data-player]`: `idle` `finding` `queued` `buffering` `streaming` `stalled` `choose` `library` `failed` `jellyfin-error` `ended` |
+| `player.status-text` | text | the state's own words, as `--status-text` (section 5, The player's words) |
+| `player.playing`, `player.shuffle`, `player.muted`, `player.crossfading`, `player.private` | flag | |
+| `player.repeat` | state | `off` `all` `one` |
+| `player.volume` | number | 0 to 1 in hundredths |
+| `app.screen`, `app.view`, `app.ctx`, `app.size` | state | as `.app[data-screen]`, `[data-view]`, `[data-ctx]`, `[data-size]`, now on `:root` too, for what is drawn outside `.app` (`.sky-specks`) |
+| `services.soulseek`, `services.library`, `services.lastfm`, `services.catalog`, `services.cache` | state | `ok` `warn` `down`, as the status tray |
+| `week.time`, `week.plays`, `week.artists`, `week.peak` | text, number | the last 7 days, once Stats has read them |
+| `region.width`, `region.height` | number | each region's own size in px, written on that region alone when it resizes (`calc(var(--region-height) * 1px)`) |
+
+A value changes at its own pace: the song's values once a song, a press's at the press, the song's place a hundredth at a time (as `--song-pos`), `song.elapsed` once a second; and only the values you name are read at all. In the desktop app's mini player windows every value but the regions' arrives with the player's state from the main window, so they say what the main window says.
 
 **You pay for what you name.** The hub reads which values your CSS and slots name (a `data-bind` or `{{field}}` in a
 slot, a `var(--clock-minute)` your CSS reads, a `[data-clock-daypart]` it tests) and lists them in your theme's

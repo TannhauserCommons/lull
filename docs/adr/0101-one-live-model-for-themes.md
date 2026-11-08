@@ -168,7 +168,7 @@ Everything lull keeps current inside a theme's markup, it changes in place: a bi
 element, an attribute, a custom property. lull's own blocks inside slots (`data-dk-now`, the `data-now` hosts, the
 `device` and `compact` parts) stay lull's default pieces, which a theme may use or leave out; `data-dk-now` becomes
 optional. The desktop mini player gets the model and the key `save`. Home's lead is kept current by its bindings like
-any other slot, and drawn again when its variant (`playing`, `idle`) changes.
+any other slot. A built-in design's lead, drawn from fields, stays as it is today: drawn with Home.
 
 ### 4. Layout belongs to the theme: every layout choice is a switch CSS sets (cause 4)
 

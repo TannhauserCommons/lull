@@ -649,6 +649,10 @@
         b.innerHTML = likeIcon(); b.setAttribute('aria-pressed', String(S.liked)); b.classList.toggle('is-liked', S.liked);
         b.setAttribute('data-tip', S.liked ? 'Liked' : 'Like');
       });
+      $$('[data-dk="save"]', el).forEach(function (b) {
+        b.setAttribute('aria-pressed', String(!!S.saved)); b.classList.toggle('is-saved', !!S.saved);
+        b.setAttribute('data-tip', S.saved ? 'In your library' : 'Save to library');
+      });
       $$('[data-dk="shuffle"]', el).forEach(function (b) { b.setAttribute('aria-pressed', String(S.shuffle)); });
       $$('[data-dk="repeat"]', el).forEach(function (b) { b.setAttribute('aria-pressed', String(S.repeat !== 'off')); });
     });
@@ -674,6 +678,7 @@
     var key = function (s) { return JSON.stringify([s.track, s.received < 1]); };
     if (first || key(prev) !== key(next)) paintTrack(scope);
     paintPlayer(scope);
+    if (window.Live && next.live) Live.feed(next.live);   // the theme's live values, as the main window read them
     if (first) return;
     if (prev.volume !== next.volume) note(scope, 'volume ' + Math.round(next.volume * 100) + '%');
     if (prev.shuffle !== next.shuffle) note(scope, next.shuffle ? 'shuffle on' : 'shuffle off');
@@ -691,7 +696,7 @@
      pointer and arrow keys). The one list is mini-keys.json beside this file, which lull-themes reads too, so a slot
      naming any other key is refused (crates/themes/src/package.rs). The line below is written from it: edit the JSON,
      then LULL_WRITE_PACKAGES=1 cargo test -p lull-themes */
-  var MINI_KEYS = {"full":"window","like":"main","mini-close":"window","next":"main","play-pause":"main","previous":"main","repeat":"main","seek":"seek","shuffle":"main","vol-down":"main","vol-up":"main"};
+  var MINI_KEYS = {"full":"window","like":"main","mini-close":"window","next":"main","play-pause":"main","previous":"main","repeat":"main","save":"main","seek":"seek","shuffle":"main","vol-down":"main","vol-up":"main"};
   function seekTo(fraction) { toMain('seek', { fraction: Math.min(1, Math.max(0, fraction)) }); }
 
   doc.addEventListener('click', function (e) {
@@ -935,12 +940,15 @@
     var snapshot = function () {
       var t = P.current(), ps = P.state, id = t ? t.id : null, bar = P.transferBar();
       return { track: t ? { title: t.title, artist: t.artist, format: t.format || '', lossless: !!t.lossless } : null,
-        playing: !!ps.playing, liked: !!(id && App.isLiked(id)),
+        playing: !!ps.playing, liked: !!(id && App.isLiked(id)), saved: !!(id && App.isSaved(id)),
         pos: Math.floor(ps.pos || 0), duration: P.duration() || 0, durationKnown: ps.durationKnown !== false,
         buffered: bar.parts, front: Math.floor(bar.front * 100) / 100,
         received: ps.received == null ? 1 : Math.floor(ps.received * 100) / 100,
         shuffle: !!ps.shuffle, repeat: ps.repeat || 'off', volume: ps.muted ? 0 : ps.volume,
-        status: t ? ps.status || 'idle' : 'idle', statusText: t && ps.status !== 'idle' ? P.stateWords() : '' };
+        status: t ? ps.status || 'idle' : 'idle', statusText: t && ps.status !== 'idle' ? P.stateWords() : '',
+        /* the live model's values the theme names (designs/live.js, ADR-0101), as this page read them: the mini player
+           windows publish them as the page does. None for a design that names none */
+        live: window.Live ? Live.values() : undefined };
     };
     /* the cover goes on its own, once per song: inside the snapshot, a 100 KB data URL crossed to the mini player with
        every position update (four a second), and the page's memory grew by tens of MB a minute */

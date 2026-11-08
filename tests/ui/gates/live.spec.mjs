@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { designs, openScreen, ownHub, quiet, settle, traced } from './lib.mjs';
+import { designs, ids, openScreen, ownHub, quiet, settle, traced } from './lib.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const { budgets: B } = JSON.parse(readFileSync(join(here, 'perf-budgets.json'), 'utf8'));
@@ -17,6 +17,11 @@ const CSS = `.ck-hand { display: inline-block; width: 2px; height: 10px; backgro
 :root[data-clock-daypart="night"] .ck-time { text-decoration: underline; }`;
 const BRAND = '<span class="wordmark ck"><span class="ck-time" data-bind="clock.time"></span> <b data-bind="clock.hour"></b>:<b data-bind="clock.minute"></b><i class="ck-hand" data-live></i></span>';
 
+// a theme that shows the song, what comes next, where it comes from and the repeat mode, outside the player
+const SONG_CSS = `.sg-pos { --song-pos: inherit; scale: var(--song-pos) 1; }
+:root[data-player-repeat="one"] .sg-title { text-decoration: underline; }`;
+const SONG_BRAND = '<span class="wordmark sg"><b class="sg-title" data-bind="song.title"></b> <b class="sg-next" data-bind="next.title"></b> <b class="sg-src" data-bind="song.source"></b> <b class="sg-el" data-bind="song.elapsed"></b><i class="sg-pos" data-live></i></span>';
+
 let hub, dir;
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'lull-live-'));
@@ -24,6 +29,10 @@ test.beforeAll(async () => {
   writeFileSync(join(dir, 'clocked', 'theme.json'), JSON.stringify(MANIFEST));
   writeFileSync(join(dir, 'clocked', 'theme.css'), CSS);
   writeFileSync(join(dir, 'clocked', 'slots', 'brand.html'), BRAND);
+  mkdirSync(join(dir, 'songful', 'slots'), { recursive: true });
+  writeFileSync(join(dir, 'songful', 'theme.json'), JSON.stringify({ ...MANIFEST, id: 'songful', name: 'Songful' }));
+  writeFileSync(join(dir, 'songful', 'theme.css'), SONG_CSS);
+  writeFileSync(join(dir, 'songful', 'slots', 'brand.html'), SONG_BRAND);
   hub = await ownHub({ FIXTURE_THEMES: dir });
 });
 test.afterAll(() => { hub?.close(); rmSync(dir, { recursive: true, force: true }); });
@@ -42,6 +51,8 @@ test('the hub lists the clock values the theme names', async ({ browser }) => {
   const ctx = await context(browser), page = await ctx.newPage();
   const served = await (await page.request.get('/api/themes/clocked/theme.json')).json();
   expect(served.live).toEqual(['clock.daypart', 'clock.hour', 'clock.minute', 'clock.time']);
+  const song = await (await page.request.get('/api/themes/songful/theme.json')).json();
+  expect(song.live).toEqual(['next.title', 'player.repeat', 'song.elapsed', 'song.source', 'song.title']);
   await ctx.close();
 });
 
@@ -91,6 +102,44 @@ test('the minute\'s edge restyles only the hosts and the words, and forces no la
   expect(await page.locator('.ck b').nth(1).textContent()).toBe('07');
   expect(s.marked[0] ?? 0, 'elements restyled by one minute\'s publish').toBeLessThanOrEqual(B.fanOutElements);
   expect(s.forcedLayouts, 'layouts forced by it').toBe(0);
+  await ctx.close();
+});
+
+test('a theme that names the song shows it, what comes next and the repeat mode, outside the player, and they follow the player', async ({ browser }) => {
+  const ctx = await context(browser), page = await ctx.newPage();
+  await openScreen(page, `/album/${ids.album}`, { design: 'songful' });
+  const queue = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id'));
+    App.player.playTrack(rows[0], rows);
+    return rows.slice(0, 3).map((id) => App.data.track(id).title);
+  });
+  const sg = () => page.evaluate(() => ({ title: document.querySelector('.sg-title').textContent, next: document.querySelector('.sg-next').textContent,
+    source: document.querySelector('.sg-src').textContent, sourceRoot: document.documentElement.getAttribute('data-song-source'),
+    repeat: document.documentElement.getAttribute('data-player-repeat') }));
+  await expect(page.locator('.sg-title').first()).toHaveText(queue[0]);
+  const first = await sg();
+  expect(first.next).toBe(queue[1]);
+  expect(first.source).not.toBe('none');
+  expect(first.sourceRoot).toBe(first.source);
+  expect(first.repeat).toBe('off');
+  await page.evaluate(() => App.player.next());
+  await expect(page.locator('.sg-title').first()).toHaveText(queue[1]);
+  expect((await sg()).next).toBe(queue[2]);
+  await page.evaluate(() => { App.player.cycleRepeat(); App.player.cycleRepeat(); });
+  expect((await sg()).repeat).toBe('one');
+  await ctx.close();
+});
+
+test('a theme that names the song\'s place and its seconds keeps the player\'s tick within its budget', async ({ browser }) => {
+  const ctx = await context(browser), page = await ctx.newPage();
+  await openScreen(page, `/album/${ids.album}`, { design: 'songful' });
+  await page.evaluate(() => { const r = document.querySelector('#view .trow[data-track-id]'); App.player.playTrack(r.getAttribute('data-track-id'), [r.getAttribute('data-track-id')]); });
+  await page.waitForFunction(() => App.player.state.playing);
+  await page.evaluate(() => { location.hash = '#/home'; });
+  await settle(page);
+  const s = await traced(browser, page, () => page.waitForTimeout(3000));
+  expect(s.restyled[0] ?? 0, 'most elements restyled in one pass while playing').toBeLessThanOrEqual(B.tickRestyleElements);
+  expect(s.forcedLayouts, 'layouts forced while playing').toBe(0);
   await ctx.close();
 });
 

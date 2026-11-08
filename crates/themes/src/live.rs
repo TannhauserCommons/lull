@@ -41,6 +41,10 @@ pub(crate) fn model() -> BTreeMap<String, Value> {
         .unwrap_or_default()
 }
 
+/// Values whose custom property lull's page writes on its own hosts whatever a theme names (`--song-pos`,
+/// app.js): reading it names nothing, so a design that draws with it, as the built-ins do, loads no more than it did.
+const WRITTEN_ANYWAY: [&str; 1] = ["song.pos"];
+
 fn dashed(path: &str) -> String {
     path.replace('.', "-")
 }
@@ -76,8 +80,13 @@ impl Named {
             }
             if before.ends_with("var(") {
                 self.reads.insert(name);
-            } else if rest.trim_start().starts_with(':') {
-                self.sets.insert(name);
+            } else if let Some(value) = rest.trim_start().strip_prefix(':') {
+                // `--song-pos: inherit` passes the host's value down to a part: it reads it, it sets nothing
+                if value.trim_start().to_ascii_lowercase().starts_with("inherit") {
+                    self.reads.insert(name);
+                } else {
+                    self.sets.insert(name);
+                }
             }
         }
         let mut rest = text;
@@ -152,7 +161,7 @@ pub(crate) fn named(files: &Files) -> Vec<String> {
             let attr = format!("data-{}", dashed(path));
             let state = value.kind == "state" || value.kind == "flag";
             n.binds.contains(*path)
-                || (n.reads.contains(&css) && !n.sets.contains(&css))
+                || (n.reads.contains(&css) && !n.sets.contains(&css) && !WRITTEN_ANYWAY.contains(&path.as_str()))
                 || (state && n.attrs.contains(&attr))
         })
         .map(|(path, _)| path.clone())
@@ -209,10 +218,10 @@ mod tests {
                 "{path}: pace {}",
                 v.pace
             );
-            assert_eq!(
-                v.kind == "state",
-                !v.states.is_empty(),
-                "{path}: a state lists its states, nothing else does"
+            // a state lists its states, unless they are open (app.screen: every screen there is)
+            assert!(
+                v.kind == "state" || v.states.is_empty(),
+                "{path}: only a state lists states"
             );
             assert!(
                 path.split('.').count() >= 2
@@ -237,6 +246,26 @@ mod tests {
             ),
         ]));
         assert_eq!(got, ["clock.daypart", "clock.minute", "clock.time", "clock.weekday"]);
+    }
+
+    #[test]
+    fn passing_a_value_down_with_inherit_names_it() {
+        let got = named(&files(&[(
+            "theme.css",
+            ".hand { --clock-minute:INHERIT; rotate: calc(var(--clock-minute) * 6deg) }",
+        )]));
+        assert_eq!(got, ["clock.minute"]);
+    }
+
+    #[test]
+    fn drawing_with_song_pos_names_nothing_lull_writes_it_anyway() {
+        let got = named(&files(&[(
+            "theme.css",
+            ".hand { --song-pos: inherit; scale: var(--song-pos) 1; }",
+        )]));
+        assert!(got.is_empty(), "{got:?}");
+        let got = named(&files(&[("slots/brand.html", "<b data-bind=\"song.pos\"></b>")]));
+        assert_eq!(got, ["song.pos"]);
     }
 
     #[test]

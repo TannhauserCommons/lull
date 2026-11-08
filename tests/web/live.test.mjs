@@ -146,3 +146,39 @@ test('a slot drawn between changes shows the value now: its bindings and its hos
   assert.match(p.Live.text('clock.time'), /9:41|09:41/);
   assert.equal(p.Live.text('clock.nope'), '');
 });
+
+test('song and player values: words, flags and states on :root, and percentages as words', () => {
+  const title = el({ 'data-bind': 'song.title' }), pos = el({ 'data-bind': 'song.pos' }), host = el({ 'data-region': 'playerbar' });
+  const p = page(new Date(2026, 10, 8, 14, 12, 0), [title, pos, host]);
+  p.Live.use(['song.title', 'song.pos', 'song.liked', 'player.repeat', 'clock.hour']);
+  p.Live.feed({ 'song.title': 'Kasagumo', 'song.pos': 0.42, 'song.liked': true, 'player.repeat': 'one', 'song.artist': 'not named' });
+  assert.equal(title.textContent, 'Kasagumo');
+  assert.equal(pos.textContent, '42%');
+  assert.equal(host.style.props['--song-pos'], '0.42');
+  assert.equal(host.style.props['--song-title'], '"Kasagumo"');
+  assert.equal(host.style.props['--song-liked'], '1');
+  assert.equal(p.root.attrs['data-song-liked'], 'true');
+  assert.equal(p.root.attrs['data-player-repeat'], 'one');
+  assert.equal(host.style.props['--song-artist'], undefined, 'a value nobody names is never written');
+});
+
+test('the mini player windows get every named value but the clock\'s and the regions\', and set them as the page has them', () => {
+  const p = page(new Date(2026, 10, 8, 14, 12, 0));
+  p.Live.use(['song.title', 'next.title', 'clock.hour', 'region.width']);
+  p.Live.feed({ 'song.title': 'Kasagumo', 'next.title': 'Humid blue' });
+  assert.deepEqual(JSON.parse(JSON.stringify(p.Live.values())), { 'song.title': 'Kasagumo', 'next.title': 'Humid blue' });
+  const words = el({ 'data-bind': 'next.title' });
+  const mini = page(new Date(2026, 10, 8, 14, 12, 0), [words]);
+  mini.Live.use(['song.title', 'next.title']);
+  mini.Live.feed(p.Live.values());
+  assert.equal(words.textContent, 'Humid blue');
+});
+
+test('a state with nothing to say is no attribute', () => {
+  const p = page(new Date(2026, 10, 8, 14, 12, 0));
+  p.Live.use(['app.screen']);
+  p.Live.feed({ 'app.screen': 'home' });
+  assert.equal(p.root.attrs['data-app-screen'], 'home');
+  p.Live.feed({ 'app.screen': '' });
+  assert.equal(p.root.attrs['data-app-screen'], undefined);
+});

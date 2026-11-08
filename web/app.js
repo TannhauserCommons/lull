@@ -3363,7 +3363,7 @@
   /* the song's place, 0 to 1 in hundredths, for a design to draw with (docs/themes.md: --song-pos). Written only when it
      moves a hundredth, and only on the few parts a design draws it on. It isn't inherited (components.css): a value
      every element inherits restyles all of them at each step, a long playlist's thousands or a hero's hundreds */
-  var SONG_POS_AT = '#pbar, #mini, .sky-specks, .now__dev, .now__devc, .disc-lead', songStep = null, songAt = null;
+  var SONG_POS_AT = '#pbar, #mini, .sky-specks, .now__dev, .now__devc, .disc-lead, [data-live]', songStep = null, songAt = null;
   function paintSongPos(f) {
     var step = Math.floor(f * 100) / 100, at = $$kept(SONG_POS_AT);
     if (step === songStep && at === songAt) return;   // the same step on the same parts: nothing to write

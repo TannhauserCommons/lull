@@ -1,14 +1,456 @@
 {
   "note": "lull's live model for themes (ADR-0101, docs/themes.md section 14). Each value is a dotted path; its type gives its forms: text and number are words in data-bind and a custom property (--path-with-dashes) on the live hosts, a state also an attribute on :root (data-path-with-dashes), a flag only that attribute (true, false) and a number 1 or 0. pace is how often it can change. The hub lists in a theme's manifest the values its CSS and slots name, and the page publishes only those. Adding a value keeps the theme api; renaming or removing one breaks it. After editing, LULL_WRITE_PACKAGES=1 cargo test -p lull-themes writes web/designs/live.js's copy.",
   "values": {
-    "clock.time": { "type": "text", "pace": "minute", "about": "the time as the device writes it: 14:12, or 2:12 PM" },
-    "clock.hour": { "type": "number", "pace": "minute", "about": "0 to 23; as words two digits, 07" },
-    "clock.minute": { "type": "number", "pace": "minute", "about": "0 to 59; as words two digits, 05" },
-    "clock.second": { "type": "number", "pace": "second", "about": "0 to 59; as words two digits. The only clock value that changes every second, so name it only to show seconds" },
-    "clock.weekday": { "type": "state", "states": ["sun", "mon", "tue", "wed", "thu", "fri", "sat"], "pace": "minute", "about": "as words, the day's name in the device's language: Sunday" },
-    "clock.date": { "type": "number", "pace": "minute", "about": "the day of the month, 1 to 31" },
-    "clock.month": { "type": "number", "pace": "minute", "about": "1 to 12; as words, the month's name in the device's language: November" },
-    "clock.year": { "type": "number", "pace": "minute", "about": "2026" },
-    "clock.daypart": { "type": "state", "states": ["morning", "afternoon", "evening", "night"], "pace": "minute", "about": "morning from 5:00, afternoon from 12:00, evening from 18:00, night from 22:00, as Home's greeting has them" }
+    "clock.time": {
+      "type": "text",
+      "pace": "minute",
+      "about": "the time as the device writes it: 14:12, or 2:12 PM"
+    },
+    "clock.hour": {
+      "type": "number",
+      "pace": "minute",
+      "about": "0 to 23; as words two digits, 07"
+    },
+    "clock.minute": {
+      "type": "number",
+      "pace": "minute",
+      "about": "0 to 59; as words two digits, 05"
+    },
+    "clock.second": {
+      "type": "number",
+      "pace": "second",
+      "about": "0 to 59; as words two digits. The only clock value that changes every second, so name it only to show seconds"
+    },
+    "clock.weekday": {
+      "type": "state",
+      "states": [
+        "sun",
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri",
+        "sat"
+      ],
+      "pace": "minute",
+      "about": "as words, the day's name in the device's language: Sunday"
+    },
+    "clock.date": {
+      "type": "number",
+      "pace": "minute",
+      "about": "the day of the month, 1 to 31"
+    },
+    "clock.month": {
+      "type": "number",
+      "pace": "minute",
+      "about": "1 to 12; as words, the month's name in the device's language: November"
+    },
+    "clock.year": {
+      "type": "number",
+      "pace": "minute",
+      "about": "2026"
+    },
+    "clock.daypart": {
+      "type": "state",
+      "states": [
+        "morning",
+        "afternoon",
+        "evening",
+        "night"
+      ],
+      "pace": "minute",
+      "about": "morning from 5:00, afternoon from 12:00, evening from 18:00, night from 22:00, as Home's greeting has them"
+    },
+    "song.title": {
+      "type": "text",
+      "pace": "song",
+      "about": "the playing song's title; empty while nothing plays"
+    },
+    "song.artist": {
+      "type": "text",
+      "pace": "song",
+      "about": "its artist"
+    },
+    "song.album": {
+      "type": "text",
+      "pace": "song",
+      "about": "its album"
+    },
+    "song.year": {
+      "type": "text",
+      "pace": "song",
+      "about": "its album's year, when lull knows it"
+    },
+    "song.from": {
+      "type": "text",
+      "pace": "song",
+      "about": "the place it plays from, as the player bar names it: Liked songs, a playlist's name"
+    },
+    "song.source": {
+      "type": "state",
+      "states": [
+        "none",
+        "library",
+        "device",
+        "soulseek",
+        "youtube"
+      ],
+      "pace": "song",
+      "about": "where the copy that plays comes from"
+    },
+    "song.quality": {
+      "type": "text",
+      "pace": "song",
+      "about": "the copy's quality as its chip says it: FLAC 16/44.1, MP3 320"
+    },
+    "song.format": {
+      "type": "text",
+      "pace": "song",
+      "about": "the file's facts: FLAC :: 44.1 kHz, 1123 kbps, 32.8 MB"
+    },
+    "song.lossless": {
+      "type": "flag",
+      "pace": "song",
+      "about": "the copy that plays is lossless"
+    },
+    "song.liked": {
+      "type": "flag",
+      "pace": "press",
+      "about": "the listener likes it"
+    },
+    "song.saved": {
+      "type": "flag",
+      "pace": "press",
+      "about": "it is saved in the library"
+    },
+    "song.pos": {
+      "type": "number",
+      "pace": "tick",
+      "about": "where the song is, 0 to 1 in hundredths (as --song-pos); as words a percentage"
+    },
+    "song.elapsed": {
+      "type": "text",
+      "pace": "second",
+      "about": "the time played: 1:23. Changes every second, so name it only to show it"
+    },
+    "song.duration": {
+      "type": "text",
+      "pace": "song",
+      "about": "the song's length: 3:45"
+    },
+    "song.buffered": {
+      "type": "number",
+      "pace": "tick",
+      "about": "how far it is buffered, 0 to 1 in hundredths; as words a percentage"
+    },
+    "song.received": {
+      "type": "number",
+      "pace": "tick",
+      "about": "how much of the file has arrived, 0 to 1 in hundredths; as words a percentage"
+    },
+    "song.hue": {
+      "type": "number",
+      "pace": "song",
+      "about": "a hue for decoration, 0 to 359, the same for a song every time"
+    },
+    "song.seed": {
+      "type": "number",
+      "pace": "song",
+      "about": "a number for decoration, 0 to 1 in thousandths, the same for a song every time"
+    },
+    "song.title-length": {
+      "type": "number",
+      "pace": "song",
+      "about": "how many characters its title has, to size type by"
+    },
+    "next.title": {
+      "type": "text",
+      "pace": "song",
+      "about": "the song after it in the queue; empty at the end"
+    },
+    "next.artist": {
+      "type": "text",
+      "pace": "song",
+      "about": "its artist"
+    },
+    "next.album": {
+      "type": "text",
+      "pace": "song",
+      "about": "its album"
+    },
+    "next.saved": {
+      "type": "flag",
+      "pace": "song",
+      "about": "it is saved in the library"
+    },
+    "queue.1.title": {
+      "type": "text",
+      "pace": "song",
+      "about": "the song 1 after the playing one"
+    },
+    "queue.1.artist": {
+      "type": "text",
+      "pace": "song",
+      "about": "its artist"
+    },
+    "queue.2.title": {
+      "type": "text",
+      "pace": "song",
+      "about": "the song 2 after the playing one"
+    },
+    "queue.2.artist": {
+      "type": "text",
+      "pace": "song",
+      "about": "its artist"
+    },
+    "queue.3.title": {
+      "type": "text",
+      "pace": "song",
+      "about": "the song 3 after the playing one"
+    },
+    "queue.3.artist": {
+      "type": "text",
+      "pace": "song",
+      "about": "its artist"
+    },
+    "queue.4.title": {
+      "type": "text",
+      "pace": "song",
+      "about": "the song 4 after the playing one"
+    },
+    "queue.4.artist": {
+      "type": "text",
+      "pace": "song",
+      "about": "its artist"
+    },
+    "queue.5.title": {
+      "type": "text",
+      "pace": "song",
+      "about": "the song 5 after the playing one"
+    },
+    "queue.5.artist": {
+      "type": "text",
+      "pace": "song",
+      "about": "its artist"
+    },
+    "queue.6.title": {
+      "type": "text",
+      "pace": "song",
+      "about": "the song 6 after the playing one"
+    },
+    "queue.6.artist": {
+      "type": "text",
+      "pace": "song",
+      "about": "its artist"
+    },
+    "queue.7.title": {
+      "type": "text",
+      "pace": "song",
+      "about": "the song 7 after the playing one"
+    },
+    "queue.7.artist": {
+      "type": "text",
+      "pace": "song",
+      "about": "its artist"
+    },
+    "queue.8.title": {
+      "type": "text",
+      "pace": "song",
+      "about": "the song 8 after the playing one"
+    },
+    "queue.8.artist": {
+      "type": "text",
+      "pace": "song",
+      "about": "its artist"
+    },
+    "queue.count": {
+      "type": "number",
+      "pace": "song",
+      "about": "how many songs come after the playing one"
+    },
+    "queue.left": {
+      "type": "text",
+      "pace": "song",
+      "about": "how long they play for: 1 h 12 min"
+    },
+    "player.status": {
+      "type": "state",
+      "states": [
+        "idle",
+        "finding",
+        "queued",
+        "buffering",
+        "streaming",
+        "stalled",
+        "choose",
+        "library",
+        "failed",
+        "jellyfin-error",
+        "ended"
+      ],
+      "pace": "song",
+      "about": "the player's state, as :root[data-player] has it"
+    },
+    "player.status-text": {
+      "type": "text",
+      "pace": "song",
+      "about": "the state's own words, as --status-text has them: Streaming from YouTube, a failure's reason"
+    },
+    "player.playing": {
+      "type": "flag",
+      "pace": "press",
+      "about": "sound is coming out"
+    },
+    "player.shuffle": {
+      "type": "flag",
+      "pace": "press",
+      "about": "shuffle is on"
+    },
+    "player.repeat": {
+      "type": "state",
+      "states": [
+        "off",
+        "all",
+        "one"
+      ],
+      "pace": "press",
+      "about": "the repeat mode"
+    },
+    "player.volume": {
+      "type": "number",
+      "pace": "press",
+      "about": "0 to 1 in hundredths; as words a percentage"
+    },
+    "player.muted": {
+      "type": "flag",
+      "pace": "press",
+      "about": "the sound is muted"
+    },
+    "player.crossfading": {
+      "type": "flag",
+      "pace": "song",
+      "about": "a crossfade into the next song is under way"
+    },
+    "player.private": {
+      "type": "flag",
+      "pace": "press",
+      "about": "private listening is on: nothing played here is recorded"
+    },
+    "app.screen": {
+      "type": "state",
+      "pace": "press",
+      "about": "the screen showing, as .app[data-screen]: home, now, search, album, playlist, settings..."
+    },
+    "app.view": {
+      "type": "state",
+      "states": [
+        "page",
+        "now"
+      ],
+      "pace": "press",
+      "about": "page or now, as .app[data-view]"
+    },
+    "app.ctx": {
+      "type": "state",
+      "states": [
+        "docked",
+        "open",
+        "closed"
+      ],
+      "pace": "press",
+      "about": "the side panel: docked, open or closed, as .app[data-ctx]"
+    },
+    "app.size": {
+      "type": "state",
+      "states": [
+        "compact",
+        "regular",
+        "wide",
+        "xwide",
+        "ultra"
+      ],
+      "pace": "resize",
+      "about": "the main area's width class, as .app[data-size]"
+    },
+    "services.soulseek": {
+      "type": "state",
+      "states": [
+        "ok",
+        "warn",
+        "down"
+      ],
+      "pace": "press",
+      "about": "the soulseek service, as its tray pill says it"
+    },
+    "services.library": {
+      "type": "state",
+      "states": [
+        "ok",
+        "warn",
+        "down"
+      ],
+      "pace": "press",
+      "about": "the library service, as its tray pill says it"
+    },
+    "services.lastfm": {
+      "type": "state",
+      "states": [
+        "ok",
+        "warn",
+        "down"
+      ],
+      "pace": "press",
+      "about": "the lastfm service, as its tray pill says it"
+    },
+    "services.catalog": {
+      "type": "state",
+      "states": [
+        "ok",
+        "warn",
+        "down"
+      ],
+      "pace": "press",
+      "about": "the catalog service, as its tray pill says it"
+    },
+    "services.cache": {
+      "type": "state",
+      "states": [
+        "ok",
+        "warn",
+        "down"
+      ],
+      "pace": "press",
+      "about": "the cache service, as its tray pill says it"
+    },
+    "week.time": {
+      "type": "text",
+      "pace": "song",
+      "about": "time listened in the last 7 days: 12 h 40 min, once Stats has read it"
+    },
+    "week.plays": {
+      "type": "number",
+      "pace": "song",
+      "about": "songs played in the last 7 days"
+    },
+    "week.artists": {
+      "type": "number",
+      "pace": "song",
+      "about": "artists heard in the last 7 days"
+    },
+    "week.peak": {
+      "type": "number",
+      "pace": "song",
+      "about": "the hour of day listened to most, 0 to 23"
+    },
+    "region.width": {
+      "type": "number",
+      "pace": "resize",
+      "about": "each region's own width in px, on that region alone (a number: calc(var(--region-width) * 1px))"
+    },
+    "region.height": {
+      "type": "number",
+      "pace": "resize",
+      "about": "each region's own height in px, on that region alone"
+    }
   }
 }

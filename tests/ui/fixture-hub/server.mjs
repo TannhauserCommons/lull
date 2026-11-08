@@ -802,12 +802,15 @@ function liveNames(dir, slots) {
   const css = read('theme.css') + '\n' + read('pack.css'), html = slots.map((s) => read(`slots/${s}.html`)).join('\n');
   const text = css + '\n' + html;
   const reads = new Set([...text.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]));
-  const sets = new Set([...text.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
+  // `--x: inherit` passes the host's value down: it reads it, it sets nothing
+  const sets = new Set([...text.matchAll(/(--[\w-]+)\s*:(?!\s*inherit)/gi)].map((m) => m[1]));
+  for (const m of text.matchAll(/(--[\w-]+)\s*:\s*inherit/gi)) reads.add(m[1]);
   const attrs = new Set([...text.matchAll(/\[(data-[\w-]+)/g)].map((m) => m[1]));
   const binds = new Set([...html.matchAll(/data-bind\s*=\s*["']?([^"'\s>]+)/g), ...html.matchAll(/\{\{\s*([^}\s]+)\s*\}\}/g)].map((m) => m[1]));
   return Object.keys(LIVE).sort().filter((p) => {
     const d = p.replace(/\./g, '-'), state = LIVE[p].type === 'state' || LIVE[p].type === 'flag';
-    return binds.has(p) || (reads.has('--' + d) && !sets.has('--' + d)) || (state && attrs.has('data-' + d));
+    // --song-pos is written on lull's own hosts whatever a theme names (app.js): reading it names nothing
+    return binds.has(p) || (reads.has('--' + d) && !sets.has('--' + d) && p !== 'song.pos') || (state && attrs.has('data-' + d));
   });
 }
 /* the hub's rev: the theme's files' names, sizes and modification times (crates/themes, watch.rs and pictures.rs) */
