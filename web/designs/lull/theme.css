@@ -432,7 +432,7 @@
 :root[data-design="lull"] .nav-pill { padding: 0 14px 0 11px; font: 900 .875rem/1 var(--f-ui); gap: 7px; }
 :root[data-design="lull"] .nav-pill .ic { width: 18px; height: 18px; }
 /* a pill that gave way (layout.js, data-fit) is a round key with its icon */
-:root[data-design="lull"] .header .nav-pill[data-fit-out] { width: 40px; }
+:root[data-design="lull"] .header .nav-pill[data-fit-out] { width: 40px; padding: 0; }   /* the icon alone, centred: the text padding stays with the label */
 :root[data-design="lull"] :is(.nav-pill, .header .btn-icon):hover { background: color-mix(in srgb, var(--v-clear), #fff 18%); }
 :root[data-design="lull"] :is(.nav-pill, .header .btn-icon)[aria-current="page"], :root[data-design="lull"] .header .btn-icon[aria-pressed="true"] {
   color: #fff; background: var(--v-gel); box-shadow: var(--v-shine), 0 0 0 1px var(--v-gel-edge); text-shadow: 0 1px 0 var(--v-gel-edge);
