@@ -103,7 +103,8 @@ impl Db {
             }
             Err(e) => return Err(fail(&path, e)),
         }
-        let conn = Connection::open(&path)?;
+        let mut conn = Connection::open(&path)?;
+        writes_first(&mut conn);
         conn.execute_batch(
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
              CREATE TABLE IF NOT EXISTS schema (owner TEXT PRIMARY KEY, version INTEGER NOT NULL);",
@@ -130,7 +131,8 @@ impl Db {
 
     /// An empty in-memory database, for tests. It has no vault: tests of credentials open a folder.
     pub fn memory() -> Result<Self> {
-        let conn = Connection::open_in_memory()?;
+        let mut conn = Connection::open_in_memory()?;
+        writes_first(&mut conn);
         conn.execute_batch("CREATE TABLE schema (owner TEXT PRIMARY KEY, version INTEGER NOT NULL);")?;
         Ok(Db {
             conn: Arc::new(Mutex::new(conn)),
@@ -183,6 +185,43 @@ impl Db {
             rusqlite::params![m.owner, m.steps.len() as i64],
         )?;
         tx.commit()?;
+        Ok(())
+    }
+}
+
+/// Every transaction here writes, so it takes the write lock as it begins (`BEGIN IMMEDIATE`) and a busy database
+/// makes it wait, up to rusqlite's 5 s. A deferred one that reads first and writes after another connection wrote
+/// (the desktop app's own connection beside its hub's, a test's beside a running hub) gets SQLite's
+/// "database is locked" at once: in WAL mode that upgrade never waits.
+fn writes_first(conn: &mut Connection) {
+    conn.set_transaction_behavior(rusqlite::TransactionBehavior::Immediate);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A transaction holds the write lock from its start, so a second connection writing meanwhile waits for it
+    /// instead of making it fail later (the cause of a flaky queue run, 42538849524).
+    #[tokio::test]
+    async fn a_transaction_takes_the_write_lock_as_it_begins() -> Result<()> {
+        let dir = std::env::temp_dir().join(format!("lull-db-immediate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let db = Db::open(&dir)?;
+        let path = dir.join("lull.db");
+        let other_wrote = db
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                // Another connection that doesn't wait: it can begin writing only if this one holds no lock.
+                let other = Connection::open(&path)?;
+                other.busy_timeout(std::time::Duration::ZERO)?;
+                let wrote = other.execute_batch("BEGIN IMMEDIATE; ROLLBACK;").is_ok();
+                tx.rollback()?;
+                Ok(wrote)
+            })
+            .await?;
+        assert!(!other_wrote, "the open transaction already holds the write lock");
+        let _ = std::fs::remove_dir_all(dir);
         Ok(())
     }
 }
