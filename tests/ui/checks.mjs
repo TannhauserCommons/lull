@@ -614,3 +614,76 @@ const contrastWorst = async ({ texts, probe, clear, unmasked, seeThrough }) => {
   return `${s.ratio.toFixed(2)}:1 where ${s.need}:1 is needed: ${s.name}, ${colour} on ${hex(s.bg)}` +
     (short.length > 1 ? ` (and ${short.length - 1} more under their minimum)` : '');
 };
+
+// A scrollbar on the screen that the look never drew: lull's own (base.css's, a thin thumb in the surface's quiet colour)
+// where the theme or design drew the rest of the window. Information for the author, as contrast is (ADR-0101): lull's
+// scrollbar works, so this never judges a theme; it says where one shows that the author may not have seen, since a
+// browser in a test hides scrollbars and the app never does. Drawn by the look: a ::-webkit-scrollbar rule of its own
+// (or one of its parts) that reaches the element, scrollbar-color or scrollbar-width on it (which lull sets for Firefox
+// only), or --scroll-thumb set by the look on it or round it. The look's rules are the design's stylesheet
+// (#design-css) and a listener's theme (#user-css), with what they import. Only a bar that takes room is seen: an
+// overlay bar (a phone's) shows while scrolling only.
+export function plainScrollbars(page) { return page.evaluate(plainScrollbarsNow); }
+export const plainScrollbarsNow = () => {
+  // a selector list split at its own commas, never those inside :is(...) and the like
+  const parts = (list) => {
+    const out = []; let depth = 0, from = 0;
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      if (c === '(' || c === '[') depth++; else if (c === ')' || c === ']') depth--;
+      else if (c === ',' && !depth) { out.push(list.slice(from, i).trim()); from = i + 1; }
+    }
+    out.push(list.slice(from).trim());
+    return out;
+  };
+  const bars = [], tokens = [];
+  const walk = (rules) => {
+    for (const r of rules) {
+      if (r.styleSheet) { try { walk(r.styleSheet.cssRules); } catch { /* another origin's: not the look's */ } continue; }
+      if (r instanceof CSSMediaRule && !matchMedia(r.media.mediaText).matches) continue;
+      if (r instanceof CSSSupportsRule && !CSS.supports(r.conditionText)) continue;
+      if (r.selectorText) {
+        for (const p of parts(r.selectorText)) {
+          const at = p.indexOf('::-webkit-scrollbar');
+          // what the bar belongs to: `x ::-webkit-scrollbar` (a space, or > + ~, before it) is any element in x's place
+          if (at >= 0) { const on = p.slice(0, at); bars.push((/(^|[\s>+~])$/.test(on) ? on + '*' : on).trim()); }
+          else if (r.style.getPropertyValue('--scroll-thumb')) tokens.push(p);
+        }
+      }
+      if (r.cssRules && !r.selectorText) walk(r.cssRules);
+    }
+  };
+  for (const id of ['design-css', 'user-css']) {
+    const sheet = document.getElementById(id)?.sheet;
+    if (sheet) try { walk(sheet.cssRules); } catch { /* not readable */ }
+  }
+  const matches = (el, sel, up) => { try { return up ? !!el.closest(sel) : el.matches(sel); } catch { return false; } };
+  const drawn = (el) => {
+    const s = getComputedStyle(el);
+    if (s.scrollbarWidth === 'none') return true;
+    if (s.scrollbarColor !== 'auto' || s.scrollbarWidth !== 'auto') return true;
+    return bars.some((sel) => matches(el, sel)) || tokens.some((sel) => matches(el, sel, true));
+  };
+  const name = (el) => (el.id ? '#' + el.id : el.tagName.toLowerCase() + [...el.classList].map((c) => '.' + c).join(''));
+  const found = [];
+  const root = document.documentElement;
+  const sides = (down, across) => [down && 'down', across && 'across'].filter(Boolean).join(' and ');
+  {
+    const down = innerWidth - root.clientWidth > 2, across = innerHeight - root.clientHeight > 2;
+    if ((down || across) && !drawn(root)) found.push(`the page (${sides(down, across)})`);
+  }
+  for (const el of document.querySelectorAll('body *')) {
+    const s = getComputedStyle(el);
+    if (!/auto|scroll|overlay/.test(s.overflowX + s.overflowY)) continue;
+    const down = el.offsetWidth - el.clientWidth - parseFloat(s.borderLeftWidth) - parseFloat(s.borderRightWidth) > 2;
+    const across = el.offsetHeight - el.clientHeight - parseFloat(s.borderTopWidth) - parseFloat(s.borderBottomWidth) > 2;
+    if (!down && !across) continue;
+    if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+    const r = el.getBoundingClientRect();
+    if (r.right <= 0 || r.bottom <= 0 || r.left >= innerWidth || r.top >= innerHeight) continue;
+    if (!drawn(el)) found.push(`${name(el)} (${sides(down, across)})`);
+  }
+  if (!found.length) return null;
+  const shown = found.slice(0, 4).join(', ');
+  return `lull's own scrollbar, not the look's: ${shown}${found.length > 4 ? ` and ${found.length - 4} more` : ''}`;
+};

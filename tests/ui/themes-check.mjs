@@ -9,6 +9,8 @@
 // clamp that doesn't clip; a squeezed title; console errors), which judge whether the theme works, and a contrast
 // reading against what is drawn behind each line of text (checks.mjs, contrast), which is information for the author
 // and never judges their look: shown in amber with the line and its ratio, for every theme and built-in design alike.
+// Scrollbars show as the desktop app shows them (a phone's only while scrolling, so not there), and each scrollbar on
+// the screen that lull drew because the look never did is named, in amber too (checks.mjs, plainScrollbars).
 // One contact sheet shows them all: tests/ui/themes-check/index.html (or in --out's folder). It exits 1 when a check of
 // function finds something, never for contrast. Flags (themes-check-args.mjs):
 //   --only <id>[,<id>...]  those looks only (built in or in LULL_THEMES_DIR); --mine: LULL_THEMES_DIR's and no built-in
@@ -24,7 +26,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from '@playwright/test';
-import { chrome, contrast, holders, overflow, squeezed, unclippedClamps, unknownFeatures } from './checks.mjs';
+import { chrome, contrast, holders, overflow, plainScrollbars, squeezed, unclippedClamps, unknownFeatures } from './checks.mjs';
 import { designs as BUILT_IN, ids, openScreen, ownHub, screens } from './gates/lib.mjs';
 import { mockupUrl, outDir, parseArgs, USAGE, UsageError } from './themes-check-args.mjs';
 
@@ -101,7 +103,15 @@ if (existsSync(OUT)) for (const entry of readdirSync(OUT)) rmSync(join(OUT, entr
 mkdirSync(OUT, { recursive: true });
 const started = Date.now();
 const hub = await ownHub({ FIXTURE_THEMES: copy });
-const browser = await chromium.launch();
+// scrollbars drawn as the app draws them: Playwright starts Chromium with --hide-scrollbars, and no picture had one, while
+// the desktop app (WebView2, and the mini player's windows) always shows them, so a theme went out with bars nobody saw.
+// A phone's are overlay bars that show only while scrolling: hidden there (scrollbarsAsDrawn), as on the mockups.
+const browser = await chromium.launch({ ignoreDefaultArgs: ['--hide-scrollbars'] });
+async function hideScrollbars(page) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setScrollbarsHidden', { hidden: true });
+}
+const scrollbarsAsDrawn = (page, size) => (size === 'phone' ? hideScrollbars(page) : null);
 
 /* the web UI in a look and mode, with a song in the player: the fixture album's first */
 async function playFirst(page, look, errors) {
@@ -123,6 +133,8 @@ async function judge(page, job, errors, { seeThrough = false } = {}) {
   const problems = [...found, ...errors], notes = [];
   const low = await contrast(page, { seeThrough });
   if (low) notes.push('contrast ' + low);
+  const plain = await plainScrollbars(page);
+  if (plain) notes.push(plain);
   // last, as it opens and closes them: the menus and sheets one click opens hold what web/designs/features.json says
   problems.push(...known(await holders(page)));
   return { ...job, file, viewport: page.viewportSize(), problems, notes };
@@ -134,6 +146,7 @@ async function shootPage(job) {
   const page = await context.newPage();
   const errors = listen(page);
   try {
+    await scrollbarsAsDrawn(page, job.size);
     await playFirst(page, { design: job.design, theme: job.mode }, errors);
     await page.evaluate((r) => { location.hash = '#' + r; }, job.route.path);
     await page.waitForTimeout(400);
@@ -209,6 +222,7 @@ async function shootMockup(shot) {
   const context = await browser.newContext({ ...shot.options, viewport: shot.viewport });
   const page = await context.newPage();
   try {
+    await hideScrollbars(page);   // a mockup is the picture intended: its page's own scrollbars aren't in it
     await page.goto(shot.url, { waitUntil: 'load', timeout: 15000 });
     await page.evaluate(() => document.fonts.ready);
     await page.waitForTimeout(300);
@@ -289,14 +303,14 @@ writeFileSync(join(OUT, 'index.html'), `<!doctype html><meta charset="utf-8"><me
   td.none { color: GrayText; font-size: 12px; }
 </style>
 <h1>Themes check</h1>
-<p>${esc(sizesSaid)}${routes.some((r) => r.mini) ? '; the mini player at the width the app opens it, its height fitted to the player, over a checkerboard where the desktop shows through' : ''}. ${results.length} pictures, ${failed.length ? `<strong style="color:var(--bad)">${failed.length} with something to look at</strong>` : 'nothing found by the checks'}; ${Math.round((Date.now() - started) / 1000)} s. ${opts.mine ? 'The themes in LULL_THEMES_DIR' : opts.only ? 'The looks named' : 'Built-in designs, then the themes in LULL_THEMES_DIR'}, with a song in the player.${noted.length ? ` <span style="color:var(--note)">Contrast on a built-in design is reported in this colour, not counted.</span>` : ''}${opts.mockup ? ` The mockup, ${esc(opts.mockup)}, beside each picture at its size.` : ''}</p>
+<p>${esc(sizesSaid)}${routes.some((r) => r.mini) ? '; the mini player at the width the app opens it, its height fitted to the player, over a checkerboard where the desktop shows through' : ''}. ${results.length} pictures, ${failed.length ? `<strong style="color:var(--bad)">${failed.length} with something to look at</strong>` : 'nothing found by the checks'}; ${Math.round((Date.now() - started) / 1000)} s. ${opts.mine ? 'The themes in LULL_THEMES_DIR' : opts.only ? 'The looks named' : 'Built-in designs, then the themes in LULL_THEMES_DIR'}, with a song in the player.${noted.length ? ` <span style="color:var(--note)">Contrast, and a scrollbar the look left to lull, are reported in this colour for the author, never counted.</span>` : ''}${opts.mockup ? ` The mockup, ${esc(opts.mockup)}, beside each picture at its size.` : ''}</p>
 ${routes.map(table).join('\n')}
 `);
 
 const where = (r) => `${r.route.mini ? 'mini' : r.route.path} ${r.design} ${r.size} ${r.mode}`;
 console.log(`${results.length} pictures in ${Math.round((Date.now() - started) / 1000)} s; ${failed.length ? failed.length + ' with something to look at' : 'nothing found'}`);
 for (const r of failed) console.log(`  ${where(r)}: ${r.problems.join('; ')}`);
-if (noted.length) console.log(`for you to weigh, not counted (contrast, information for the author):\n${noted.map((r) => `  ${where(r)}: ${r.notes.join('; ')}`).join('\n')}`);
+if (noted.length) console.log(`for you to weigh, not counted (contrast and lull's own scrollbars, information for the author):\n${noted.map((r) => `  ${where(r)}: ${r.notes.join('; ')}`).join('\n')}`);
 const unopened = [...shots.values()].filter((s) => s.error);
 if (unopened.length) console.log(`mockup not drawn:\n${unopened.map((s) => `  ${s.url}: ${s.error}`).join('\n')}`);
 console.log('contact sheet: ' + pathToFileURL(join(OUT, 'index.html')).href);

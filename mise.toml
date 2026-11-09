@@ -41,7 +41,7 @@ description = "The UI gates CI runs on web/ changes: performance budgets, key sc
 run = "sh tests/ui/gates/run.sh"
 
 [tasks."themes:check"]
-description = "A quick look at screens (or `mini`, the desktop mini player) in every theme (the built-ins and LULL_THEMES_DIR's), desktop and phone, day and night, with the fit and contrast checks and one contact sheet: themes:check [--only ids | --mine] [--sizes WxH,...] [--mockup file] [--out dir] <route>..."
+description = "A quick look at screens (or `mini`, the desktop mini player) in every theme (the built-ins and LULL_THEMES_DIR's), desktop and phone, day and night, with the fit and contrast checks, scrollbars as the app shows them, and one contact sheet: themes:check [--only ids | --mine] [--sizes WxH,...] [--mockup file] [--out dir] <route>..."
 run = "node tests/ui/themes-check.mjs"
 
 [tasks."ui:approve"]
