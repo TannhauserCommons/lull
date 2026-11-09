@@ -55,3 +55,22 @@ test('Petal\'s title heart is a heart, not a block with a heart cut out', async 
   expect(share, 'the heart\'s colour covers a heart, not a block').toBeGreaterThan(0.003);
   expect(share).toBeLessThan(0.06);
 });
+
+// The contrast check judges text over a masked shape (fog, a feathered patch) against the shape as drawn, and leaves
+// out only the pixels a mask fades of text it is laid on itself (a list dissolving at its scroller's edge).
+test('the contrast check judges text over a masked shape as drawn, and lets a masked text fade', async ({ page }) => {
+  const { contrast } = await import('../checks.mjs');
+  const fog = 'radial-gradient(closest-side, rgba(0,0,0,.9), rgba(0,0,0,.6))';
+  await page.setContent(`<body style="margin:0;background:#000">
+    <div style="position:relative;width:400px;height:120px">
+      <div style="position:absolute;inset:0;background:#e8e8e8;-webkit-mask:${fog};mask:${fog}"></div>
+      <p style="position:relative;margin:0;padding:40px;font:16px sans-serif;color:#d0d0d0">low on the fog</p>
+    </div></body>`);
+  expect(await contrast(page), 'pale text on pale fog').toMatch(/where 4\.5:1 is needed: p "low on the fog"/);
+  await page.setContent(`<body style="margin:0;background:#000">
+    <div style="width:400px;height:120px;-webkit-mask:linear-gradient(#000 40%, transparent);mask:linear-gradient(#000 40%, transparent)">
+      <p style="margin:0;padding:10px 40px;font:16px sans-serif;color:#fff">a line that fades</p>
+      <p style="margin:0;padding:10px 40px;font:16px sans-serif;color:#fff">and its next line</p>
+    </div></body>`);
+  expect(await contrast(page), 'white text a mask fades over black').toBeNull();
+});

@@ -455,8 +455,9 @@ export const gateFree = (el, check) => {
 //   behind, or, for an outline 2px or wider, where the fill reads against the outline round it.
 // - A line that something laid over it hides (a fade painted over a list's foot) is not judged: one that barely shows
 //   when every text is drawn in a probe colour, magenta.
-// - Pixels a mask draws or fades (a list dissolving at a scroller's edge, an icon cut from a fill) are left out: a third
-//   picture with the masks taken off finds them.
+// - Text a mask fades itself (on it or round it: a list dissolving at a scroller's edge) is judged only where no mask
+//   draws: a third picture with the masks taken off finds those pixels. Text that sits over a masked shape (fog, a
+//   feathered patch, an icon cut from a fill) is judged against that shape as drawn.
 // - With { seeThrough: true } (a window the desktop shows through) a see-through pixel is judged over black and over
 //   white, the worse of the two.
 // Not judged: text in form fields, in SVG and in generated content (::before, ::after), and text whose fill is a picture
@@ -506,10 +507,11 @@ const contrastTexts = () => {
     if (!t.data.trim() || !el || el.closest('svg, script, style, template, .vh, .tooltip')) continue;
     if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
     const s = getComputedStyle(el);
-    let opacity = 1, through = false, picture = false, blurred = false;
+    let opacity = 1, through = false, picture = false, blurred = false, masked = false;
     for (let p = el; p; p = p.parentElement) {
       const ps = getComputedStyle(p);
       opacity *= +ps.opacity;
+      masked = masked || [ps.maskImage, ps.webkitMaskImage].some((m) => m && m !== 'none');
       through = through || ps.pointerEvents === 'none';
       picture = picture || /text/.test(ps.backgroundClip + ps.webkitBackgroundClip);
       blurred = blurred || [...ps.filter.matchAll(/blur\(\s*([\d.]+)/g)].some((m) => +m[1] > 0);
@@ -533,7 +535,7 @@ const contrastTexts = () => {
     }
     const size = parseFloat(s.fontSize), weight = parseInt(s.fontWeight, 10) || 400;
     const cls = typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/).join('.') : '';
-    out.push({ name: `${el.tagName.toLowerCase()}${cls} "${t.data.trim().replace(/\s+/g, ' ').slice(0, 24)}"`, fg: fill.slice(0, 3), alpha, stroke,
+    out.push({ name: `${el.tagName.toLowerCase()}${cls} "${t.data.trim().replace(/\s+/g, ' ').slice(0, 24)}"`, fg: fill.slice(0, 3), alpha, stroke, masked,
       large: size >= 24 || (size >= 18.66 && weight >= 700), rects });
   }
   return out;
@@ -574,7 +576,7 @@ const contrastWorst = async ({ texts, probe, clear, unmasked, seeThrough }) => {
     const alpha = Math.max(t.alpha, t.stroke ? t.stroke.alpha : 0);
     let seen = 0, meant = 0;
     for (let y = Math.floor(r.top * k); y < r.bottom * k; y++) for (let x = Math.floor(r.left * k); x < r.right * k; x++) {
-      const i = at(x, y); if (masked(i)) continue;
+      const i = at(x, y); if (t.masked && masked(i)) continue;
       const bg = px(behind, i);
       meant = Math.max(meant, dist(over(PROBE, alpha, bg), bg));
       seen = Math.max(seen, dist(px(probed, i), bg));
@@ -588,7 +590,7 @@ const contrastWorst = async ({ texts, probe, clear, unmasked, seeThrough }) => {
     const step = Math.max(1, Math.sqrt(area / 600));   // about 600 samples a text, at most
     const spots = [];
     for (const r of lines) for (let y = r.top + step / 2; y < r.bottom; y += step) for (let x = r.left + step / 2; x < r.right; x += step) {
-      const i = at(x * k, y * k); if (masked(i)) continue;
+      const i = at(x * k, y * k); if (t.masked && masked(i)) continue;
       const pixel = px(behind, i), a = behind.data[i + 3] / 255;
       for (const bg of a < 1 && seeThrough ? [over(pixel, a, [0, 0, 0]), over(pixel, a, [255, 255, 255])] : [pixel]) spots.push({ ratio: reads(t, bg), bg });
     }
