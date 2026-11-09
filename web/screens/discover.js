@@ -140,17 +140,10 @@
     tags: { body: tagsBody }
   };
   var MODULE_IDS = ['picks', 'new', 'radio', 'jump', 'tags'];        // reading order: "Picked for you" comes first
-  /* each shelf, for a theme to place anywhere (<lull-part name="home.jump">), and Home's lists by record (<lull-part
-     name="list" of="home.jump">): designs/parts.js, which fetches the feed only where one is placed */
+  /* each shelf, for a theme to place by a short name (<lull-part name="home.jump">: designs/parts.js, which fetches the
+     feed only where one is placed); any piece of Home is <lull-part name="screen" path="/home" pick="..."> too */
   MODULE_IDS.forEach(function (id) {
     App.sections['home.' + id] = { data: FEED, make: function () { return MODULES[id].body(M.peek(FEED)); } };
-  });
-  function kindOf(kind) { return function (x) { var r = kind === 'artist' ? M.artist(x.id || x) : M.album(x.id || x); return r ? Object.assign({ kind: kind }, r) : null; }; }
-  [['jump', function (f) { return list(f, 'jumpBackIn').map(function (j) { return kindOf(j.kind)(j); }); }],
-    ['new', function (f) { return list(f, 'newReleases').map(kindOf('album')); }],
-    ['picks', function (f) { return list(f, 'picks').map(function (p) { var t = M.track(p.trackId); return t ? Object.assign({ kind: 'track' }, t) : null; }); }]
-  ].forEach(function (l) {
-    App.lists['home.' + l[0]] = { data: FEED, items: function () { return l[1](M.peek(FEED)).filter(Boolean); } };
   });
   function homeModule(id, feed) {
     var m = MODULES[id];

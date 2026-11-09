@@ -76,15 +76,20 @@ impl Model {
         let fields = self.records.get(record)?;
         let found = fields.iter().find(|(f, _)| {
             *f != "..."
+                && *f != "*"
                 && (if case {
                     f.as_str() == name
                 } else {
                     f.eq_ignore_ascii_case(name)
                 })
         });
+        // `*`: a record that holds any field (a list's item, whatever its read has), as text
         match found {
             Some((_, t)) => Some(t.as_str()),
-            None => fields.get("...").and_then(|base| self.field(base, name, case)),
+            None => fields
+                .get("...")
+                .and_then(|base| self.field(base, name, case))
+                .or_else(|| fields.get("*").map(String::as_str)),
         }
     }
 
@@ -368,7 +373,7 @@ pub(crate) fn check_slot(path: &str, html: &str) -> Result<()> {
                 let mut rec = Some(root.of.as_str());
                 while let Some(r) = rec {
                     let Some(f) = m.records.get(r) else { break };
-                    fields.extend(f.keys().filter(|k| *k != "...").cloned());
+                    fields.extend(f.keys().filter(|k| *k != "..." && *k != "*").cloned());
                     rec = f.get("...").map(String::as_str);
                 }
                 let at = if root.list {

@@ -141,25 +141,21 @@ window.LullData = (function () {
     return r;
   };
   M.peek = function (path) { var r = records[path]; return r && r.data; };
-  /* a read's data once it has some: for a part a theme placed away from its screen (designs/parts.js) */
-  M.whenRead = function (path) {
-    var r = M.get(path);
-    return r.data ? Promise.resolve(r.data) : new Promise(function (ok) { (r.waiting = r.waiting || []).push(ok); });
-  };
+  /* M.onRead(path): set by a part a theme placed away from its screen (designs/parts.js), told each time a read settles */
+  M.onRead = null;
   function load(path, r) {
     var mine = r.seq = (r.seq || 0) + 1;
     M.api(path).then(function (data) {
       if (records[path] !== r || r.seq !== mine) return;
       r.loading = false; r.error = null; r.data = data;
-      if (r.waiting) r.waiting.splice(0).forEach(function (ok) { ok(data); });
-      settled(r);
+      settled(r, path);
     }, function (err) {
       if (records[path] !== r || r.seq !== mine) return;
       r.loading = false; r.error = err;
-      settled(r);
+      settled(r, path);
     });
   }
-  function settled(r) { if (r.generation === generation) M.onSettled(); }
+  function settled(r, path) { if (r.generation === generation) M.onSettled(); if (M.onRead) M.onRead(path); }
   /* the route changed: earlier routes' reads no longer re-render anything */
   M.nextRoute = function () { generation += 1; };
   /* refetch a read in place (the old data stays visible until the new answer arrives) */

@@ -375,33 +375,73 @@ Two more put markup of yours at the edges of any region or screen of lull's page
 - **You place the box.** A region lays out its children its own way (the player bar is a grid of three columns, the mini player a row), so give the box a place there (`#pbar > [data-slot="after.playerbar"] { grid-column: 1 / -1; }`), take it out of the flow, or say `display: contents` to hand what's inside to the region's own layout. A box you don't place lands where that layout puts a new child. What CSS moves is still read in the markup's order: a `before` box is read, and tabbed through, before the region.
 - **A theme with none adds nothing**, not even the box. A `before` or `after` always names its region or screen: the hub refuses `slots/before.html` and a name lull doesn't have, and says which there are.
 
-**Lists, with rows of your own.** `<lull-part name="list" of="<list>">` draws a list lull holds: `queue` (the songs after
-the one playing, each with its `group`: `yours` for those the listener queued, `place` for the place it plays from,
-`radio`), and Home's `home.jump`, `home.new` and `home.picks`. `where="group=yours"` keeps the items whose field says so
-(`group=place|radio` for either; several tests with commas), `count` takes the first so many (20 if absent, at most 100),
-`label` names the list for a screen reader, and `empty` says what shows when nothing is left (else nothing). Without a
-row of yours the items are lull's own rows. With one, `<lull-row>` inside the part, each item is drawn in your markup, in
-an `<li class="lull-list__row" data-id data-kind>` of an `<ol class="lull-list">`, filled from the item's record by
-`{{item.<field>}}` with pipes (section 14): a `queued` song's fields for the queue, an album's or an artist's (with `kind`)
-for `home.jump`:
+**lull itself, not a menu** (ADR-0101, amended again). Four parts reach everything lull holds and draws, so a mockup
+needs nothing added to lull:
+
+**1. Any list.** `<lull-part name="list">` draws any list of lull's records:
+- `of="queue"`: the songs after the one playing, each with its `group` (`yours` for those the listener queued, `place`
+  for the place it plays from, `radio`);
+- `of="home.jump"`, `home.new`, `home.picks`, `home.radio` (any key of Home's feed), `of="history"`, `of="liked"`;
+- `read="<path>" key="<field>"`: the items at `key` of any read of lull's API under `/api/` (docs/context/api.md), as
+  `read="/api/library/albums" key="items"` or `read="/api/search?q=city+pop" key="albums"` (`key` may go down through
+  lists: `days.items`).
+
+An item is the record its id names (lull's ids say their kind: `t-` a song, `al-` an album, `ar-` an artist, `pl-` a
+playlist), with what the list adds beside it (a play's `at`, a queued song's `group`), and the fields lull works out: a
+song's `source` (where it would play from: `library`, `device`, `soulseek`) and `liked`. `where="group=yours"` keeps
+the items whose field says so (`group=place|radio` for either; several tests with commas; a field may go down:
+`seed.kind=artist`), `sort="title"` (or `-duration`, descending) orders them, `count` takes the first so many (50 if
+absent, at most 200), `label` names the list for a screen reader, `empty` says what shows when nothing is left. A read
+is fetched where the list is placed, once, and the list is drawn again each time lull reads it again.
+
+Without a row of yours the items are lull's own rows. With one, `<lull-row>` inside the part, each item is drawn in
+your markup, in an `<li class="lull-list__row">` of an `<ol class="lull-list">`: `{{item.<field>}}` fills a field of it
+with pipes (section 14), and every part inside the row is that item's (below):
 ```html
-<h3>Next up · yours</h3>
 <lull-part name="list" of="queue" where="group=yours" label="Your next songs">
-  <lull-row><a href="#/album/{{item.albumId}}">{{item.title | upper}}</a> <i>{{item.duration | time}}</i>
-    <button data-act="play-track" data-id="{{item.id}}" aria-label="Play {{item.title}}">PLAY</button></lull-row>
+  <lull-row><lull-part name="cover" size="40"></lull-part>
+    <b>{{item.title}}</b> <i>{{item.source | map:library=● LIB,soulseek=◆ SLSK,device=▼ DEV}}</i> <i>{{item.duration | time}}</i>
+    <lull-part name="like-button"></lull-part><lull-part name="play-button"></lull-part></lull-row>
 </lull-part>
 <h3>Next from <b data-bind="radio.name"></b></h3>
 <lull-part name="list" of="queue" where="group=radio" count="4"></lull-part>
 ```
-A list is drawn again when what it shows changes (the queue at the player's changes; Home's lists when the feed
-arrives or refreshes). A row of yours keeps every feature reachable the way lull's rows do: a `data-act` button with
-the item's id (section 15).
 
-**Sections, anywhere.** A section lull's screens draw is a part too: Home's shelves, `home.picks`, `home.new`,
-`home.radio`, `home.jump`, `home.tags`, and Now Playing's `now.queue` (the whole queue with its radio switch) and
-`now.source` (the source card). `<lull-part name="home.jump"></lull-part>` in `after.ctx` puts "jump back in" in the side
-panel, exactly as Home draws it and kept current the same way. A section that reads Home's feed fetches it only where
-you place one, once.
+**2. Any part for any item.** `for="<id>"` makes a part that item's, anywhere; inside a list's row it is the row's
+item by itself. `cover` (`size`), `play-button` (plays the song, the album or the playlist; starts an artist's radio),
+`like-button`, `save-button`, `source-badge`, `quality-chip` and `menu` (the song's "…") each draw lull's own control
+for it, wired and kept current as lull's own rows are. Without `for`, a part is the playing song's, as before.
+
+**3. Any piece of any screen.** `<lull-part name="screen" path="/home" pick='[data-region="jump"]'>` draws the screen at
+`path` as lull draws it and keeps the piece `pick` names (any selector), in any slot: Home's "jump back in" in the side
+panel, Now Playing's queue on Home (`path="/now" pick='[data-now="queue"]'`), an album's tracklist beside the player
+(`path="/album/al-…" pick=".tlist"`). It is drawn again when what that screen read comes back and at the player's
+changes, never on a tick. Its buttons work by lull's actions; what a screen does only while it is the one shown (a
+drag to reorder, a scroll it keeps) stays there. `home.picks`, `home.new`, `home.radio`, `home.jump`, `home.tags`,
+`now.queue` and `now.source` are short names for the pieces used most.
+
+**4. State, for your own markup.** One action keeps a state, with no script: `data-act="state"` on a key of yours, and
+`data-set` for what it does:
+- `data-set="tab=lyrics"` sets a state to a value;
+- `data-set="drawer"` turns one on or off;
+- `data-set="mode=a|b|c"` steps through values.
+
+The state lives on the nearest element you mark `data-states` (else your slot's box), as `name:value` words of that
+attribute: start it with the values you want (`data-states="tab:queue"`), and follow it in CSS
+(`[data-states~="tab:lyrics"] .x`). An element marked `data-show="tab:lyrics"` (or `data-show="drawer"`) shows only in
+that state and is hidden otherwise, from a screen reader too. A key that sets a value or turns one on says whether it
+is on: `aria-selected` inside a `role="tablist"`, else `aria-pressed`. A set value stays set when its key is pressed
+again, so one tab is always open:
+```html
+<div data-states="tab:queue">
+  <div role="tablist" aria-label="Side"><button role="tab" data-act="state" data-set="tab=queue">QUEUE</button>
+    <button role="tab" data-act="state" data-set="tab=lyrics">LYRICS</button></div>
+  <div data-show="tab:queue"><lull-part name="list" of="queue"></lull-part></div>
+  <div data-show="tab:lyrics"><lull-part name="lyrics"></lull-part></div>
+</div>
+```
+
+A part or a state is drawn only for a theme that uses one (`designs/model.js` and `designs/parts.js` load for it alone).
 
 A template is static HTML. Two things are live:
 
@@ -654,6 +694,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
 - **Regions:** `data-region` (section 5), `.region-title`, `.region-meta`.
 - **A theme's slots at the edges** (section 6): `.region-slot`, the box a `before` or `after` slot is drawn in, the first or last child of its region or screen, with `data-slot` naming it (`after.playerbar`, `before.home`). A part of lull's catalogue keeps its `lull-part` element as its box (`display: contents`).
 - **Live hosts:** `data-live` on an element of a theme's slot markup: it carries the live model's custom properties, as lull's own hosts do (section 14).
+- **State a theme keeps** (section 6, State): `data-states` on an element of a theme's markup holds its state as `name:value` words (`[data-states~="tab:lyrics"]`); `data-set` on a `data-act="state"` key says what it sets; `data-show` on an element shows it only in a state. A list's own row is `lull-row`, its drawn rows `.lull-list__row` in `.lull-list` (style a row by its item with your own markup: `class="row--{{item.kind}}"`).
 - **Shell parts:** `.rail`, `.header`, `.main`, `.view` (with `--view-h` once Settings has opened: its height below its top padding, where something sticky at its top ends), `.ctx` (with `data-ctx-tab` on its tab buttons), `.ctx-scrim`, `.nowcol`, `.pbar`, `.mini`, `.tabbar`, `.tab`, `.nav-item`, `.nav-pill`, `.wordmark`, `.brand` (the default brand slot), `.skip-link`, `.sky-specks`, `.col-resize` (a resize handle, `data-resize`).
 - **Links:** `data-nav` on every nav link, `data-brand` on brand links.
 - **Rows that fit themselves** (section 5, Wide screens): `data-fit-row` on a row (the header, the player bar, its tools,
@@ -1078,18 +1119,20 @@ says which fields there are. (The amendment of 2026-11-09 to ADR-0101.)
 | `place` | the place the song plays from | `place` |
 | `radio` | the radio that adds songs, while there is one | `radio` |
 | `clock` | the device's time | `clock` |
+| `item` | inside a list part's own row (`<lull-row>`): the row's item, any field its record or its read holds | `item` |
 
 | Record | Fields, with their types |
 |---|---|
 | `track` | `id` text, `title` text, `artistId` text, `artist` text, `albumId` text, `album` text, `year` number, `no` number, `disc` number, `duration` number, `tags` list, `saved` flag, `format` text, `codec` text, `lossless` flag, `khz` number, `bits` number, `kbps` number, `sizeBytes` number |
 | `album` | `id` text, `title` text, `artistId` text, `artist` text, `year` number, `type` text, `released` text, `label` text, `tags` list, `saved` text, `trackIds` list, `duration` number, `musicbrainzId` text |
 | `artist` | `id` text, `name` text, `tags` list, `listeners` number, `bio` text, `musicbrainzId` text |
-| `queued` | a `track`'s fields, and `group` text (`yours`: queued by the listener, `place`: from the place it plays from, `radio`) |
+| `queued` | a `track`'s fields, and what lull works out for a song: `source` text (where it would play from: `library`, `device`, `soulseek`), `liked` flag, `kind` text; in the queue, `group` text (`yours`: queued by the listener, `place`: from the place it plays from, `radio`) |
 | `copy` | `where` text, `name` text, `library` text, `saved` flag, `received` number, `format` text, `peer` text, `sizeBytes` number, `speed` number, `rank` number, `of` number |
 | `player` | `status` text, `statusText` text, `playing` flag, `shuffle` flag, `repeat` text, `volume` number, `muted` flag, `crossfading` flag, `private` flag, `duration` number, `durationKnown` flag |
 | `place` | `kind` text, `id` text, `name` text, `path` text |
 | `radio` | `name` text, `keepsAdding` flag, `steer` number, `error` text, `seed` text |
 | `clock` | `now` date |
+| `item` | a `queued` song's fields, or an album's, an artist's or a playlist's (`kind` says which), and any other field its read holds (a play's `at`), as text |
 
 Each record's fields are lull's own, as the hub sends them (`track`, `album`, `artist`) or as the page builds them; a
 field lull adds reaches you by its name. A field lull doesn't know for a song (no track number) is empty, and a number

@@ -11,6 +11,7 @@ import vm from 'node:vm';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SRC = readFileSync(join(ROOT, 'web', 'designs', 'live.js'), 'utf8');
+const MODEL_SRC = readFileSync(join(ROOT, 'web', 'designs', 'model.js'), 'utf8');
 const MODEL = JSON.parse(readFileSync(join(ROOT, 'web', 'designs', 'live.json'), 'utf8')).values;
 
 /* an element: attributes, a style with custom properties, text, and the selectors live.js asks for */
@@ -58,6 +59,7 @@ function page(at, kids = []) {
   };
   ctx.window = ctx;
   vm.createContext(ctx);
+  vm.runInContext(MODEL_SRC, ctx);
   vm.runInContext(SRC, ctx);
   return { Live: ctx.Live, root, doc, timers, ctx, kids, advance(ms) { now += ms; }, at: (ms) => { now = ms; } };
 }
@@ -222,7 +224,7 @@ test('the records live.js builds have exactly the fields the model lists for the
   }
   // a queued song is its track and its group, as the model's `queued` has it
   assert.equal(p.Live.records.next().group, 'yours');
-  assert.deepEqual(p.Live.records.queue().map((s) => s.group), ['yours', 'yours', 'place']);
+  assert.deepEqual(JSON.parse(JSON.stringify(p.Live.records.queue().map((s) => s.group))), ['yours', 'yours', 'place']);
 });
 
 test('any field of a root is a value by path, in every form, and pipes turn it into words', () => {

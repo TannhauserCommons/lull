@@ -1,7 +1,8 @@
-/* parts.js: a theme's markup at every region's and screen's edge, and lull's catalogue of parts for any slot (ADR-0101;
-   docs/themes.md section 6). A theme pays only for what it uses: designs.js loads this file only for a design or theme
-   whose slots include a region or screen slot (slots/before.<name>.html, after.<name>.html) or name a part only the
-   catalogue draws (designs.js wantsParts). The built-ins use neither, so they never fetch it, and app.js's hooks for it
+/* parts.js: a theme's markup at every region's and screen's edge, lull's catalogue of parts for any slot, and the
+   state a theme's own markup keeps (ADR-0101 and its amendments; docs/themes.md section 6). A theme pays only for
+   what it uses: designs.js loads this file (after designs/model.js) only for a design or theme whose slots include a
+   region or screen slot (slots/before.<name>.html, after.<name>.html), name a part only the catalogue draws, or keep a
+   state (designs.js wantsParts). The built-ins use neither, so they never fetch it, and app.js's hooks for it
    (App.edges) do nothing. Runs in lull's page only: the desktop app's mini windows have no App, and their slots keep the
    parts their slot hands. It can load before app.js has run (with the theme, in the page's head): then it hooks in once
    the page has. */
@@ -101,7 +102,10 @@
        (display: contents). Each is lull's own markup, wired as lull's own copy is, and kept current the same way: the
        keys, Like, Save, the seek and the volume by their data-bind and data-seek (app.js renderBar, syncRows,
        updateSeeks find a copy anywhere); a part drawn from the song is drawn again in place (App.patch) at the player's
-       changes its `on` names. make(attr): attr(name) is the <lull-part>'s own attribute. */
+       changes its `on` names. make(attr, el): attr(name) is the <lull-part>'s own attribute.
+       Four kinds, each its own block below: the player's parts (PLAYER), parts for any item (ITEM, `for`), any piece of
+       any screen (`screen`) and any list (`list`), and the state a theme's own markup keeps (`state`, an action). */
+    var Model = window.LullModel;
     function size(v, dflt) { return !v ? dflt : /^\d+$/.test(v) ? +v : v; }
     /* the copy playing, or null while nothing does */
     function copyNow() { var t = P.current(); return t && ps.status !== 'idle' ? P.playingCopy() : null; }
@@ -110,11 +114,14 @@
     function now() { return App.nowParts; }
     var PLAYED = ['track', 'source', 'status', 'play', 'ended'], COPY = ['track', 'source', 'status'];
     /* a part keeps its <lull-part> as its box, out of the layout, so the part is an item of whatever holds it (a grid, a
-       row); a theme that wants the box gives it a display (its layers come after base) */
+       row); a theme that wants the box gives it a display (its layers come after base). A list's own row is its
+       template, never shown */
     var css = document.createElement('style');
     css.textContent = '@layer base { lull-part { display: contents; } lull-row { display: none; } }';
     document.head.appendChild(css);
-    var defs = {
+
+    /* ---------- the player's parts: the song playing, its keys and its player ---------- */
+    var PLAYER = {
       'play-button': { make: function (a) { var s = +a('size'); return ui.playButton([40, 48, 52, 56, 64].indexOf(s) >= 0 ? s : 56); } },
       /* the player bar's own keys (index.html): shuffle and repeat kept by their data-bind (app.js renderBar) */
       prev: { make: function () { return html`<button class="btn-icon btn-icon--bare" data-act="prev" aria-label="Previous" data-tip="Previous (P)">${icon('prev')}</button>`; } },
@@ -157,80 +164,167 @@
       lyrics: { on: ['track', 'lyrics'], make: function () { return now().lyrics('slot'); } }
     };
 
-    /* ---------- sections and lists: what lull's screens register (ADR-0101 amended, B) ----------
-       App.sections[name] = { make(attr), on: [kinds], data: path }: a section a screen draws (Home's shelves, Now
-       Playing's queue and source card...), placed by a theme anywhere as <lull-part name="<name>">, drawn as its screen
-       draws it. App.lists[name] = { items(), on, data }: a list lull holds, by record (live.json records), for the list
-       part. A `data` path is fetched only where a part names it, and its parts are drawn again when it arrives. */
-    var sections = App.sections, lists = App.lists, asked = {};
-    function needs(path) {
-      if (!path || asked[path]) return;
-      asked[path] = 1;
-      App.data.whenRead(path).then(function () { asked[path] = 2; App.parts.redraw('data:' + path); });
-    }
-    lists.queue = { on: ['track', 'queue', 'ended'], items: function () {
-      var G = { next: 'yours', context: 'place', radio: 'radio' };
-      return (ps.queue || []).slice((ps.index || 0) + 1).map(function (q) {
-        var t = App.data.track(q.trackId); return t ? Object.assign({}, t, { group: G[q.group] || q.group || '' }) : null;
-      }).filter(Boolean);
+    /* ---------- parts for any item: for="<id>" (in a list's row, that row's item, by itself) ----------
+       What lull draws for that song, album, artist or playlist, wired by its own actions (data-act with data-id) and kept
+       current as lull's rows are (App.syncRows: likes, saves). The ones a part draws for an item */
+    function title(it) { return it.title || it.name || ''; }
+    var PLAYS = { track: 'play-track', album: 'play-album', playlist: 'play-playlist' };
+    var ITEM = {
+      cover: function (it, a) {
+        var s = size(a('size'), 56);
+        return it.kind === 'artist' ? ui.cover(it.id, s, { round: true }) : it.kind === 'track' || it.kind === 'album' ? ui.cover(it, s) : '';
+      },
+      'play-button': function (it, a) {
+        var s = +a('size'), act = PLAYS[it.kind], label = (act ? 'Play ' : 'Start radio from ') + title(it);
+        return html`<button class="btn-gloss btn-gloss--${[40, 48, 52, 56, 64].indexOf(s) >= 0 ? s : 40}" data-act="${act || 'start-radio'}" data-kind="${it.kind}" data-id="${it.id}" aria-label="${label}" data-tip="${label}">${icon(act ? 'play' : 'radio', null, act ? 'ic-play' : '')}</button>`;
+      },
+      'like-button': function (it) { return it.kind === 'track' ? ui.likeButton(it.id) : ''; },
+      'save-button': function (it) {
+        return it.kind === 'track' ? ui.saveButton(it.id) : it.kind === 'album'
+          ? html`<button class="btn-icon btn-icon--bare" data-act="save-album" data-id="${it.id}" aria-label="Save ${title(it)} to library" data-tip="Save to library">${icon('save')}</button>` : '';
+      },
+      'source-badge': function (it) { return it.kind === 'track' ? ui.sourceBadge(it) : ''; },
+      'quality-chip': function (it) { return it.kind === 'track' && it.format ? ui.qualityChip(it.format) : ''; },
+      menu: function (it) {
+        return it.kind === 'track' ? html`<button class="btn-icon btn-icon--bare" data-act="track-menu" data-id="${it.id}" aria-haspopup="menu" aria-label="More for ${title(it)}" data-tip="More">${icon('more')}</button>` : '';
+      }
+    };
+    function itemOf(el) { var id = el.getAttribute('for'); return id && Model ? Model.item(id) : null; }
+
+    /* ---------- reads: what a placed part reads is fetched once where it is placed, and drawn again each time lull
+       reads it (App.data.onRead), as the screen that shows it would be ---------- */
+    var asked = {};
+    function needs(path) { if (path && !asked[path]) { asked[path] = 1; App.data.get(path); } }
+    App.data.onRead = function (path) { App.parts.redraw('read:' + path); };
+
+    /* ---------- any piece of any screen: <lull-part name="screen" path="/home" pick='[data-region="jump"]'> ----------
+       The screen at that path drawn as lull draws it (its route's render, off the page), and the piece `pick` keeps.
+       It is drawn again at any read and at the player's changes, never on a tick. Its buttons work by lull's actions;
+       what a screen wires when it is shown (its mount: a drag, a scroll) stays on that screen */
+    var QUIET = { el: document.createElement('div'), refresh: false, offscreen: true, onCleanup: function () {}, on: function () {} };
+    var screenPart = { on: ['track', 'queue', 'ended', 'source', 'status', 'mode', 'lyrics'], make: function (a) {
+      var path = a('path') || '/home', at = App.routeOf(path.split('?')[0]);
+      if (!at || (at.route.need && at.route.need(at.params, {}))) return '';   // its code still to load: drawn at the next change
+      try { return String(at.route.render(Object.assign({}, QUIET, { params: at.params, query: {}, route: at.route })) || ''); }
+      catch (e) { console.error('[screen part ' + path + ']', e); return ''; }
     } };
-    /* `where="group=yours,kind=album"`: every field equal (a value may list choices: group=place|radio) */
-    function matches(where) {
-      var tests = (where || '').split(',').map(function (w) { var i = w.indexOf('='); return i > 0 ? [w.slice(0, i).trim(), w.slice(i + 1).split('|')] : null; }).filter(Boolean);
-      return function (it) { return tests.every(function (t) { return t[1].indexOf(String(it[t[0]])) >= 0; }); };
-    }
-    /* a row of the theme's own (<lull-row>), each {{item.<field> | pipes}} filled from the item, escaped */
+
+    /* ---------- any list: <lull-part name="list" of="queue" | read="/api/..." key="items" where sort count> ----------
+       Its items are records (LullModel.list). With a <lull-row> inside, each item is drawn in the theme's own row:
+       {{item.<field> | pipes}} filled, escaped, and every part in it bound to the item; without one, lull's rows */
     function fill(row, it) {
       return row.replace(/\{\{\s*item((?:\.[a-zA-Z0-9-]+)+)\s*((?:\|[^|}]*)*)\}\}/g, function (all, path, pipes) {
         var v = it; path.slice(1).split('.').forEach(function (k) { v = v == null ? v : v[k]; });
         return App.esc(window.Live && Live.pipe ? Live.pipe(v, Live.parse('item' + pipes)[1]) : v == null ? '' : String(v));
       });
     }
-    function linkOf(it) { return it.kind === 'artist' ? '#/artist/' + it.id : it.kind === 'album' ? '#/album/' + it.id : '#/album/' + it.albumId; }
-    var list = { make: function (a, el) {
-      var src = lists[a('of')]; if (!src) return '';
-      needs(src.data);
-      /* the theme's row stays in the part, never shown (base layer below), so each drawing finds it */
-      var tpl = el.querySelector('lull-row'), row = tpl ? tpl.innerHTML : '', keep = tpl ? tpl.outerHTML : '';
-      var items = (src.items() || []).filter(matches(a('where'))).slice(0, App.clamp(parseInt(a('count'), 10) || 20, 1, 100));
-      var label = a('label') || '';
+    function linkOf(it) { return it.kind === 'artist' ? '#/artist/' + it.id : it.kind === 'album' ? '#/album/' + it.id : it.kind === 'playlist' ? '#/playlist/' + it.id : '#/album/' + it.albumId; }
+    function spec(a) { return { of: a('of'), read: a('read'), key: a('key'), where: a('where'), sort: a('sort'), count: a('count') }; }
+    var listPart = { make: function (a, el) {
+      var got = Model.list(spec(a)); needs(got.read);
+      var tpl = el.querySelector('lull-row'), keep = tpl ? tpl.outerHTML : '', label = a('label') || '', items = got.items;
       if (!items.length) return keep + (a('empty') ? html`<p class="lull-list__empty">${a('empty')}</p>` : '');
-      if (row) {
-        return keep + '<ol class="lull-list" role="list"' + (label ? ' aria-label="' + App.esc(label) + '"' : '') + '>' + items.map(function (it, i) {
-          return '<li class="lull-list__row" data-id="' + App.esc(it.id || '') + '" data-kind="' + App.esc(it.kind || 'track') + '" data-i="' + i + '">' + fill(row, it) + '</li>';
-        }).join('') + '</ol>';
+      if (!tpl) {
+        if (items.every(function (it) { return it.kind === 'track'; })) return ui.trackList(items, { dense: true, label: label || 'Songs', showSources: false });
+        return html`<ul class="lull-list" role="list" aria-label="${label}">${items.map(function (it) { return html`<li class="lull-list__row"><a href="${linkOf(it)}">${title(it)}</a></li>`; })}</ul>`;
       }
-      if (items.every(function (it) { return !it.kind || it.kind === 'track'; })) return ui.trackList(items, { dense: true, label: label || 'Songs', showSources: false });
-      return html`<ul class="lull-list" role="list" aria-label="${label}">${items.map(function (it) { return html`<li class="lull-list__row"><a href="${linkOf(it)}">${it.title || it.name || ''}</a></li>`; })}</ul>`;
+      var box = document.createElement('template');
+      box.innerHTML = '<ol class="lull-list" role="list"' + (label ? ' aria-label="' + App.esc(label) + '"' : '') + '>' + items.map(function (it, i) {
+        return '<li class="lull-list__row" data-id="' + App.esc(it.id || '') + '" data-kind="' + App.esc(it.kind || '') + '" data-i="' + i + '">' + fill(tpl.innerHTML, it) + '</li>';
+      }).join('') + '</ol>';
+      Array.prototype.forEach.call(box.content.querySelectorAll('.lull-list__row'), function (li, i) {
+        Array.prototype.forEach.call(li.querySelectorAll('lull-part'), function (p) {
+          if (!p.hasAttribute('for') && items[i].id) p.setAttribute('for', items[i].id);
+          if (App.parts.has(p.getAttribute('name'))) p.innerHTML = App.parts.draw(p);
+        });
+      });
+      return keep + box.innerHTML;
     } };
-    function def(name) {
-      return Object.prototype.hasOwnProperty.call(defs, name) ? defs[name] : name === 'list' ? list : sections[name] || null;
+    function listOn(host) { var g = Model.list(spec(function (n) { return host.getAttribute(n); })); return { on: g.on.concat(['like', 'save']), read: g.read }; }
+
+    /* ---------- one name to its part ---------- */
+    var sections = App.sections;
+    function def(name, host) {
+      if (host && host.hasAttribute('for') && ITEM[name]) return { item: ITEM[name], on: ['like', 'save'] };
+      if (Object.prototype.hasOwnProperty.call(PLAYER, name)) return PLAYER[name];
+      return name === 'list' ? listPart : name === 'screen' ? screenPart : sections[name] || null;
     }
-    /* what a part is drawn again on: its own kinds, its list's, and the arrival of the data it reads */
+    /* what a placed part is drawn again on: its kinds, its list's, and a read it makes coming back */
     function drawnOn(d, host, kind) {
-      var src = d === list ? lists[host.getAttribute('of')] : d;
-      return !!src && ((src.on && src.on.indexOf(kind) >= 0) || (src.data && kind === 'data:' + src.data));
+      if (d === listPart) { var l = listOn(host); return l.on.indexOf(kind) >= 0 || kind === 'read:' + l.read; }
+      if (d === screenPart) return d.on.indexOf(kind) >= 0 || kind.indexOf('read:') === 0;
+      return (d.on && d.on.indexOf(kind) >= 0) || (d.data && kind === 'read:' + d.data);
     }
     App.parts = {
-      has: function (name) { return !!def(name); },
+      has: function (name) { return !!def(name) || !!ITEM[name]; },
       /* a <lull-part>'s markup, with its pick and cls; the part's own attributes are make()'s to read */
       draw: function (el) {
-        var d = def(el.getAttribute('name'));
+        var name = el.getAttribute('name'), d = def(name, el), a = function (n) { return el.getAttribute(n); };
+        if (d.item) { var it = itemOf(el); return Designs.finish(el, it ? String(d.item(it, a) || '') : ''); }
         if (d.data) needs(d.data);
-        return Designs.finish(el, String(d.make(function (a) { return el.getAttribute(a); }, el) || ''));
+        return Designs.finish(el, String(d.make(a, el) || ''));
       },
-      /* the parts drawn from what changed (a player change's kind, Now Playing's own: 'lyrics', data arriving:
-         'data:<path>'), drawn again where shown */
+      /* the parts drawn from what changed (a player change's kind, Now Playing's 'lyrics', 'like' and 'save', a read
+         coming back: 'read:<path>'), drawn again where shown; a list's own row is a template, never drawn */
       redraw: function (kind) {
         if (!Designs.partsDrawn) return;
         App.$$kept('lull-part').forEach(function (host) {
-          var d = def(host.getAttribute('name'));
+          if (host.closest('lull-row')) return;
+          var d = def(host.getAttribute('name'), host);
           if (d && drawnOn(d, host, kind)) patch(host, App.parts.draw(host));
         });
       }
     };
     App.on('player', App.parts.redraw);
     App.on('lyrics', function () { App.parts.redraw('lyrics'); });   // now.js, when a song's lyrics arrive
+    App.on('like', function () { App.parts.redraw('like'); });
+    App.on('save', function () { App.parts.redraw('save'); });
+
+    /* ---------- state a theme's own markup keeps, without script: data-act="state" ----------
+       data-set="tab=lyrics" sets a state, data-set="drawer" toggles one, data-set="mode=a|b|c" cycles one. The state is
+       kept on the nearest [data-states] (else the slot's box) as name:value words of that attribute, which CSS follows
+       ([data-states~="tab:lyrics"]); an element marked data-show="tab:lyrics" (or "drawer") is shown only in that state,
+       hidden otherwise, from a screen reader too. A key that sets a state says whether it is on: aria-selected inside a
+       role="tablist", else aria-pressed (a cycling key has neither). A set state always has a value: the markup's own
+       first, so one tab is always open */
+    function hostOf(el) { return el.closest('[data-states]') || el.closest('.region-slot'); }
+    function states(h) { return (h.getAttribute('data-states') || '').split(/\s+/).filter(Boolean); }
+    function valueOf(h, name) { var w = states(h).filter(function (s) { return s.split(':')[0] === name; })[0]; return w ? (w.indexOf(':') > 0 ? w.slice(name.length + 1) : 'on') : null; }
+    function setState(h, name, v) {
+      var w = states(h).filter(function (s) { return s.split(':')[0] !== name; });
+      if (v != null) w.push(v === 'on' ? name : name + ':' + v);
+      h.setAttribute('data-states', w.join(' '));
+      applyStates(h);
+    }
+    function parseSet(s) { var i = s.indexOf('='); return i < 0 ? { name: s.trim(), values: null } : { name: s.slice(0, i).trim(), values: s.slice(i + 1).split('|') }; }
+    App.action('state', function (el) {
+      var h = hostOf(el), set = parseSet(el.getAttribute('data-set') || ''); if (!h || !set.name) return;
+      var cur = valueOf(h, set.name);
+      if (!set.values) setState(h, set.name, cur ? null : 'on');
+      else if (set.values.length === 1) setState(h, set.name, set.values[0]);
+      else setState(h, set.name, set.values[(set.values.indexOf(cur) + 1) % set.values.length]);
+    });
+    /* every state host within root drawn as its state says: what shows, what is pressed or selected */
+    function applyStates(root) {
+      var hosts = [].concat(root.matches && root.matches('[data-states]') ? [root] : [], Array.prototype.slice.call(root.querySelectorAll('[data-states]')));
+      hosts.forEach(function (h) {
+        Array.prototype.forEach.call(h.querySelectorAll('[data-show]'), function (el) {
+          if (hostOf(el) !== h) return;
+          var want = parseSet(el.getAttribute('data-show').replace(':', '=')), v = valueOf(h, want.name);
+          var shown = want.values ? want.values.indexOf(v) >= 0 : !!v;
+          if (el.hidden === shown) el.hidden = !shown;
+        });
+        Array.prototype.forEach.call(h.querySelectorAll('[data-act="state"]'), function (b) {
+          if (hostOf(b) !== h) return;
+          var set = parseSet(b.getAttribute('data-set') || ''), v = valueOf(h, set.name);
+          if (set.values && set.values.length > 1) return;
+          var on = set.values ? v === set.values[0] : !!v, tab = !!b.closest('[role="tablist"]');
+          b.setAttribute(tab ? 'aria-selected' : 'aria-pressed', String(on));
+        });
+      });
+    }
+    App.states = { apply: applyStates };
+    applyStates(document.body);
   }
   if (window.App && App.on) hook();
   else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook);

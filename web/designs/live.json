@@ -508,7 +508,7 @@
     "item": {
       "of": "item",
       "pace": "song",
-      "about": "inside a list part's own row (<lull-row>): the row's item, filled as the row is drawn"
+      "about": "inside a list part's own row (<lull-row>): the row's item, any field its record or its read holds, filled as the row is drawn"
     }
   },
   "records": {
@@ -566,6 +566,9 @@
     },
     "queued": {
       "...": "track",
+      "kind": "text",
+      "source": "text",
+      "liked": "flag",
       "group": "text"
     },
     "copy": {
@@ -612,10 +615,10 @@
     },
     "item": {
       "...": "queued",
-      "kind": "text",
       "name": "text",
       "type": "text",
-      "trackIds": "list"
+      "trackIds": "list",
+      "*": "text"
     }
   },
   "pipes": {

@@ -9,8 +9,8 @@
 (function () {
   'use strict';
   var App = window.App = {};
-  /* what screens register for a theme to place (designs/parts.js; ADR-0101 amended): sections and lists */
-  App.sections = {}; App.lists = {};
+  /* the sections screens name for a theme to place by a short name (designs/parts.js) */
+  App.sections = {};
   var M = window.LullData;
 
   /* =====================================================================
@@ -401,6 +401,14 @@
     def.pattern = pattern; def.re = re; def.keys = keys;
     routes = routes.filter(function (r) { return r.pattern !== pattern; });
     routes.push(def);
+  };
+  /* the route a path draws and its params, or null (designs/parts.js draws any screen's piece with it) */
+  App.routeOf = function (path) {
+    for (var i = 0; i < routes.length; i++) {
+      var m = routes[i].re.exec(path), params = {};
+      if (m) { routes[i].keys.forEach(function (k, j) { if (m[j + 1] !== undefined) params[k] = decodeURIComponent(m[j + 1]); }); return { route: routes[i], params: params }; }
+    }
+    return null;
   };
   function parseHash() {
     var h = location.hash.replace(/^#/, '') || '/home';

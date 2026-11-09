@@ -800,8 +800,8 @@ function themeItem(id) {
 const MODEL = JSON.parse(readFileSync(join(WEB, 'designs', 'live.json'), 'utf8')), LIVE = MODEL.values;
 function fieldType(rec, f, exact) {
   const r = MODEL.records[rec]; if (!r) return null;
-  const k = Object.keys(r).find((x) => x !== '...' && (exact ? x === f : x.toLowerCase() === f.toLowerCase()));
-  return k ? [k, r[k]] : r['...'] ? fieldType(r['...'], f, exact) : null;
+  const k = Object.keys(r).find((x) => x !== '...' && x !== '*' && (exact ? x === f : x.toLowerCase() === f.toLowerCase()));
+  return k ? [k, r[k]] : (r['...'] && fieldType(r['...'], f, exact)) || (r['*'] ? [f, r['*']] : null);
 }
 /* an open path from its segments, or null: a root, a position for a list root, then fields down to a value */
 function openPath(segs, exact) {

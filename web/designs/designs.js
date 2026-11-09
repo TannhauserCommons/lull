@@ -338,7 +338,7 @@
   /* sanitize: no scripts, event handlers, forms, embeds, <use>, and links only inside the app (#/...). DOMPurify checks
      every attribute value against ALLOWED_URI_REGEXP; the hook keeps that to links, so data-title="Error: x" stays. */
   var PURIFY = {
-    RETURN_DOM: true, ADD_TAGS: ['lull-part', 'lull-row'], ADD_ATTR: ['pick', 'inner', 'size', 'bars', 'icon', 'cls', 'label', 'count', 'focusable', 'orientation', 'of', 'where', 'empty'],
+    RETURN_DOM: true, ADD_TAGS: ['lull-part', 'lull-row'], ADD_ATTR: ['pick', 'inner', 'size', 'bars', 'icon', 'cls', 'label', 'count', 'focusable', 'orientation', 'of', 'where', 'empty', 'for', 'read', 'key', 'sort', 'path'],
     FORBID_TAGS: ['style', 'form', 'input', 'textarea', 'select', 'iframe', 'object', 'embed', 'foreignobject'],
     FORBID_ATTR: ['src', 'srcset', 'action', 'formaction'],
     ALLOWED_URI_REGEXP: /^#/
@@ -379,6 +379,7 @@
     var parts = body.querySelectorAll('lull-part'), made = {};
     for (var i = 0; i < parts.length; i++) {
       var p = parts[i], n = p.getAttribute('name');
+      if (!body.contains(p) || p.parentNode.closest('lull-row')) continue;   // in a list's row: drawn for each item (parts.js)
       if (catalogued(name, n) && window.App && App.parts && App.parts.has(n)) p.innerHTML = App.parts.draw(p);
       /* the playing-from part a slot hands, between two comments: Now Playing redraws only what lies between them, so
          a theme's own words beside it in the same element stay (now.js refreshFrom) */
@@ -388,6 +389,7 @@
     /* the catalogue's parts drew (each keeps its <lull-part>), or a theme's own bound keys: for app.js to set */
     if (body.querySelector(isTrusted ? 'lull-part' : 'lull-part, [data-bind]')) D.partsDrawn++;
     if (window.Live) Live.fill(body);                // its bindings and live hosts as they are now (live.js)
+    if (window.App && App.states) App.states.apply(body);   // what its own state shows (parts.js)
     return body.innerHTML;
   }
   /* lull's catalogue of parts (parts.js, App.parts; docs/themes.md section 6): every part in every slot of lull's page.
@@ -632,7 +634,11 @@
       return (m.extends && D.list[m.extends] ? manifest(m.extends) : Promise.resolve()).then(function () {
         var ids = chain(id), untrusted = ids.some(function (x) { return !trusted[x] && D.list[x].slots.length; });
         return (untrusted ? loadPurify() : Promise.resolve()).then(function () { return Promise.all(ids.map(loadTemplates)); })
-          .then(function () { return Promise.all([loadLive(id), wantsParts(ids) && load('parts.js').catch(console.error)]); });
+          .then(function () {
+            /* lull's data as a theme reads it (designs/model.js), first, for what reads it */
+            var parts = wantsParts(ids), model = parts || (!window.Live && liveOf(id).length) ? load('model.js').catch(console.error) : null;
+            return Promise.resolve(model).then(function () { return Promise.all([loadLive(id), parts && load('parts.js').catch(console.error)]); });
+          });
       });
     });
   }
@@ -653,7 +659,7 @@
       var t = templates[x];
       return Object.keys(t).some(function (k) {
         var slot = k.split('.')[0], re = /<lull-part\b[^>]*?\sname=["']?([\w.-]+)/g, m;
-        if (slot === 'before' || slot === 'after') return true;
+        if (slot === 'before' || slot === 'after' || /data-act=["']?state\b|\sdata-states\b/.test(t[k])) return true;
         while ((m = re.exec(t[k]))) if (catalogued(slot, m[1])) return true;
       });
     });

@@ -56,13 +56,27 @@ const PLACED = {
     '<h3>Then</h3><lull-part name="list" of="queue" where="group=place|radio" count="2"></lull-part>' +
     '<lull-part name="home.jump"></lull-part><lull-part name="list" of="home.jump" count="3"><lull-row><b class="pl-jump" data-kind="{{item.kind}}">{{item.title}}{{item.name}}</b></lull-row></lull-part></section>',
 };
+/* the contract theme (ADR-0101, amended again): built like the hardest mockups so far, with nothing lull adds for it.
+   Its own rows with lull's cover and source mark bound to each song, a list from any read, tabs it keeps itself, a
+   piece of another screen, a strip above the shell and facts by path. A wall a later mockup finds is added here */
+const HARD = {
+  'before.app': '<div class="hd-top" data-live><b class="hd-day">{{ clock.now | date:weekday-short | upper }}</b> <b class="hd-src" data-bind="copy.where | map:library=LIB,soulseek=SLSK,device=DEV,youtube=YT"></b></div>',
+  'after.ctx': '<section class="hd-side" aria-label="Side"><div data-states="tab:queue"><div role="tablist" aria-label="Side">' +
+    '<button role="tab" data-act="state" data-set="tab=queue">QUEUE</button><button role="tab" data-act="state" data-set="tab=albums">ALBUMS</button></div>' +
+    '<div class="hd-panel hd-q" data-show="tab:queue"><lull-part name="list" of="queue" count="5" label="Up next"><lull-row>' +
+      '<lull-part name="cover" size="40"></lull-part><b class="hd-t">{{item.title}}</b> <i class="hd-s">{{item.source | map:library=● LIB,soulseek=◆ SLSK,device=▼ DEV}}</i> <i class="hd-l">{{item.duration | time}}</i>' +
+      '<lull-part name="like-button"></lull-part><lull-part name="play-button"></lull-part></lull-row></lull-part></div>' +
+    '<div class="hd-panel hd-a" data-show="tab:albums"><lull-part name="list" read="/api/library/albums" key="items" count="3" label="Albums"><lull-row>' +
+      '<lull-part name="cover" size="40"></lull-part><b class="hd-al">{{item.title}}</b></lull-row></lull-part></div></div>' +
+    '<lull-part name="screen" path="/home" pick=\'[data-region="jump"]\'></lull-part></section>',
+};
 const UPRIGHT_CSS = `#pbar > [data-slot="after.playerbar"] { position: fixed; right: 40px; bottom: 120px; }
 .tu-fader .seek[aria-orientation="vertical"] { width: 24px; min-width: 0; height: 160px; }`;
 
 let hub, dir;
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'lull-slots-'));
-  for (const [id, slots, css] of [['slotted', SLOTS, CSS], ['handed', HANDED, ''], ['parted', PARTED, ''], ['upright', UPRIGHT, UPRIGHT_CSS], ['owned', OWNED, ''], ['placed', PLACED, '']]) {
+  for (const [id, slots, css] of [['slotted', SLOTS, CSS], ['handed', HANDED, ''], ['parted', PARTED, ''], ['upright', UPRIGHT, UPRIGHT_CSS], ['owned', OWNED, ''], ['placed', PLACED, ''], ['hard', HARD, '']]) {
     mkdirSync(join(dir, id, 'slots'), { recursive: true });
     writeFileSync(join(dir, id, 'theme.json'), JSON.stringify({ ...MANIFEST, id, name: id }));
     writeFileSync(join(dir, id, 'theme.css'), css);
@@ -332,5 +346,47 @@ test('a theme places lull\'s sections and lists anywhere, with its own rows, and
   await page.evaluate(() => new Promise((ok) => { App.on('design', ok); App.setDesign('lull', true); }));
   await settle(page);
   expect(await page.evaluate(() => document.querySelectorAll('.region-slot').length)).toBe(0);
+  await ctx.close();
+});
+
+test('the contract theme: its own rows with lull\'s parts for each song, any read, its own tabs, a piece of another screen', async ({ browser }) => {
+  const ctx = await context(browser), page = await ctx.newPage();
+  await page.clock.install({ time: new Date('2026-11-08T14:12:00Z') });   // a Sunday
+  await openScreen(page, `/album/${ids.album}`, { design: 'hard' });
+  await expect(page.locator('body > .region-slot[data-slot="before.app"] .hd-day')).toHaveText('SUN');
+  const songs = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id'));
+    App.player.playTrack(rows[0], rows);
+    return rows.slice(1, 6).map((id) => App.data.track(id));
+  });
+  // the queue in its own rows: lull's cover, Like and play for each song, its source mark and length by pipes
+  const rows = page.locator('.hd-q li.lull-list__row');
+  await expect(rows).toHaveCount(5);
+  const first = rows.first(), want = songs[0];
+  await expect(first.locator('.hd-t')).toHaveText(want.title);
+  await expect(first.locator('lull-part[name="cover"] .cover')).toHaveCount(1);
+  await expect(first.locator('lull-part[name="like-button"] [data-act="like"]')).toHaveAttribute('data-id', want.id);
+  await expect(first.locator('lull-part[name="play-button"] [data-act="play-track"]')).toHaveAttribute('data-id', want.id);
+  expect(['● LIB', '◆ SLSK', '▼ DEV']).toContain(await first.locator('.hd-s').textContent());
+  await expect(first.locator('.hd-l')).toHaveText(`${Math.floor(want.duration / 60)}:${String(want.duration % 60).padStart(2, '0')}`);
+  // its Like likes that song, and shows it
+  await first.locator('[data-act="like"]').click();
+  await expect(first.locator('[data-act="like"]')).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate((id) => App.isLiked(id), want.id)).toBe(true);
+  // its own tabs: one panel shown, the key says which; the other on a click, and never none
+  const tabs = page.locator('.hd-side [role="tab"]');
+  await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.hd-a')).toBeHidden();
+  await tabs.nth(1).click();
+  await expect(page.locator('.hd-q')).toBeHidden();
+  await expect(page.locator('.hd-a')).toBeVisible();
+  await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await tabs.nth(1).click();
+  await expect(page.locator('.hd-a'), 'a set state stays set').toBeVisible();
+  // a list from any read lull documents: the library's albums, each with lull's cover
+  await expect(page.locator('.hd-a li.lull-list__row').first()).toBeVisible();
+  await expect(page.locator('.hd-a li.lull-list__row').first().locator('.cover')).toHaveCount(1);
+  // a piece of another screen, drawn as that screen draws it
+  await expect(page.locator('.hd-side lull-part[name="screen"] [data-region="jump"]')).toHaveCount(1);
   await ctx.close();
 });
