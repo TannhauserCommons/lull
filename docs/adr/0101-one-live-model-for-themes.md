@@ -1,6 +1,6 @@
 # ADR-0101: One live model for themes, any value anywhere, markup in every region
 
-- Status: accepted (the owner approved it on 2026-11-08)
+- Status: accepted (the owner approved it on 2026-11-08, and its amendment of 2026-11-09 on 2026-11-09)
 - Date: 2026-11-08
 
 ## Context
@@ -317,3 +317,167 @@ Vertical slices, each through the queue with its docs, gates and tests:
 - The hub refuses an unknown binding, as it refuses an unknown mini player key.
 - The perf gates gain a scenario with a theme that uses everything, so a later change that makes a value costly fails
   there, not on a listener's phone.
+
+## Amended 2026-11-09: no list kept by hand
+
+The owner asked for complete freedom. A theme should be able to show any fact lull holds, place any part anywhere and
+look however it wants. lull never decides for it, and lull must not need a new addition each time a theme wants
+something. The one guarantee lull keeps is that every feature stays reachable and accessible.
+
+Three listener themes built on this ADR still met eight gaps: a part's label ignored, a mini player key's words wiped,
+no upright slider, an up-next that can't tell the listener's songs from the radio's, missing values (file size, track
+number, peer, a short day name), Home's "jump back in" placeable nowhere else, no room above the shell, and a contrast
+check blind over masks. Fixing each one where it was found would add one more entry to a list lull keeps by hand. The
+audit behind this amendment found four such lists, and code that still decides for the theme:
+
+1. **Values listed by hand.** `web/designs/live.json` names 74 values one by one, and each slot that hands fields lists
+   its own (`designs.js` FIELDS). A fact lull holds but hasn't named (a file's size alone, a track number, the peer, the
+   radio's name) waits for an entry. Words for a state ("pause" and "play", "SUN") need a lookup table in the theme's
+   CSS.
+2. **Lists and parts that can't be placed.** The catalogue is a hand-picked list of parts (`parts.js` defs, `designs.js` PARTS). Home's shelves,
+   the queue's groups, history, search results, the library's lists, the source card and Stats are drawn only on their
+   own screen, in lull's own row markup, and `up-next` can't pick a group. A part's options pass a hand list in the
+   sanitizer (`designs.js` PURIFY.ADD_ATTR), so a new option needs a change to lull. The edges a slot can take are hand
+   lists too (`parts.js` REGIONS and SCREENS, `package.rs` EDGES): there is no edge around the whole shell, and none
+   around a section.
+3. **lull writing over a theme's words.** The desktop mini player replaced a key's whole contents with its icon. Now
+   Playing's refresh wrote "playing from" over a part's own label. Both are fixed on main (56b9f350), one by one. The
+   `data-now` and `data-dk-*` hosts fill words lull chooses ("like", "liked", "pause"), and parts carry fixed words
+   ("nothing queued", "Nothing up next").
+4. **Layout chosen in code.** These are still decided in code:
+   - the drag limits and defaults of the side panel and the Now column (`layout.js`: 280 to 560 px, 360 px, the 60 px
+     strip, the 16 px gap);
+   - where a popover or tooltip opens and how far it keeps from the edge (`app.js`);
+   - the desktop mini windows' width (`app/src/desktop/mini.rs`: 340 and 540 px);
+   - the list of layout switches itself, which `layout.js` keeps by hand.
+
+### Decision: one general mechanism per cause, each generated from one source
+
+Every list below is generated from the code or data it describes, never kept by hand. A check in `mise run check`
+fails when a hand-kept copy drifts. Something lull learns later then reaches every theme with no change to the theme
+contract.
+
+**A. An open live model: any fact lull holds, by path, in any words.** A path is a root and then any field of what that
+root holds:
+
+| Root | What it holds |
+|---|---|
+| `song` | the playing song's record |
+| `album`, `artist` | its album's and its artist's records |
+| `copy` | the copy of it that plays: its source, format, size, peer |
+| `next`, `queue.<n>` | the songs after it, at any position |
+| `player` | the player's state |
+| `place` | where the song plays from |
+| `radio` | the radio that adds songs |
+| `clock` | `clock.now`, the device's time |
+| `app`, `services`, `week`, `region` | as today |
+| `item` | the row a list draws (B) |
+
+A path's fields are the fields of lull's own records, as the hub's API sends them, and of the records the page builds
+(the copy, the player, the place, the radio). `web/designs/live.json` lists them (`roots`, `records`): the hub's
+tests hold the hub's records to lull's own types, and the page's tests hold the page's to what it builds, so a field
+lull adds fails a test until it is listed, and then reaches every theme. (As built, the song's album, artist and copy
+are roots of their own, `album.label`, `copy.peer`, since a song's record already has fields named `album` and
+`artist`, their titles.)
+
+**Pipes** turn a value into words:
+- `{{copy.sizeBytes | size}}`, `{{queue.1.duration | time}}`;
+- `{{clock.now | date:weekday-short | upper}}` makes SUN;
+- `{{player.playing | pick:pause,play}}`, `{{song.no | or:-}}`;
+- also `pad:2`, `pct`, `count`.
+
+A value by path takes every form a value has today: `data-bind`, `{{...}}`, a custom property on a live host
+(`--song-no`), and on `:root` its own words (`[data-copy-where="soulseek"]`). Pipes turn it into words where words
+go, a binding or a field; CSS reads the value itself. The 74 named values stay, as they are, so `api` stays 1, and
+where a named value and a field share a path (`song.duration`), the named value is the one.
+
+**B. Every section is a part, and every list takes the theme's own row.**
+- **One registry.** Each screen registers each section it draws, with its data, how it draws, and when it draws again.
+  The catalogue is that registry rather than a list: Home's shelves (`home.jump`, `home.picks`...), the queue and its
+  groups, history, search results, the library's lists, Now Playing's cards, the source card and Stats.
+- **Placed anywhere.** `<lull-part name="home.jump">` puts lull's own section in any slot. Its data is fetched only
+  where it is placed.
+- **Any list, any rows.** `<lull-part name="list" of="queue" where="group=yours" count="5">` draws any list lull holds.
+  Given a `<template>` inside, each row is the theme's own markup, filled from `item.*` with pipes. Its `data-act`
+  buttons act on that row's item, so `data-act="play"` plays that song. lull keeps each row's role, focus, keyboard
+  and long-list drawing.
+- **Open options.** A part takes any attribute: the sanitizer checks each attribute by its value, as for any element,
+  and each part reads its own options. A part's visible words are options too (`label`, `empty`), so no part has words
+  a theme can't change.
+
+**C. Slots at every edge, from one list.**
+- Every region, the whole shell (`before.app`, `after.app`) and every registered section (B) has a `before.` and an
+  `after.` slot.
+- The list the hub accepts is generated from the web code.
+- lull sets no layout for a slot's box: the theme's CSS makes room for it.
+
+**D. lull never writes over a theme's markup, and a gate proves it.** Inside a theme's markup lull writes only:
+- a binding's text, an attribute and a custom property;
+- a part's own element;
+- the `<use>` of an icon the theme placed.
+
+A gate records every write lull makes to theme markup while it plays, likes, queues, saves and changes route, in the
+page and in the mini windows. Any other write fails it. `data-now` and `data-dk-*` stay lull's own pieces, used only
+by a theme that wants lull's words. A theme with its own words uses A's values with pipes.
+
+**E. No layout number in script.**
+- The drag limits and defaults, the strip's width, a popover's side and margins, and the mini windows' size become
+  layout switches.
+- The mini window asks the app for the size the theme's CSS gives it, kept within the screen.
+- The switch list is generated from the `@property` lines in `components.css`, so a new switch is one line of CSS.
+- The listener's own drag stays per device, within the theme's bounds.
+
+**F. One vocabulary of actions everywhere.**
+- Every `data-act` works in a theme's markup on the page, in a list row (on that row's item) and in the desktop mini
+  windows, which relay it to the main window.
+- `mini-keys.json` becomes the actions list, generated from the code that runs the actions.
+
+### What stays lull's
+
+Every feature stays reachable, named and readable. The features gate (section 6) checks it in every built-in and in
+`themes:check`, and applies to a theme's own rows and sections too. Beyond that:
+- keyboard and screen-reader order is the markup's;
+- themes run no script (ADR-0004);
+- the sanitizer forbids forms, embeds and outside URLs;
+- long lists keep their own scroller.
+
+### Constraints and cost
+
+The ADR's constraints hold unchanged:
+- **Additive.** `api` stays 1, and every name that works today keeps working.
+- **Defaults unchanged.** The built-ins name no new path, part, slot or switch, so their pages and downloads stay as
+  they are.
+- **Pay for use.** The hub lists in the manifest every path, part and slot a theme names. The scripts that serve them
+  load only for a theme that names one. A root is read only at its own events, and a placed section fetches only its
+  own data.
+- **Nothing per frame.** A piped value is computed when its value changes, at its root's pace. The clock wakes at the
+  finest unit a named format shows: each second only when one shows seconds. A theme's rows are drawn and drawn again
+  as lull's own rows are.
+- **Measured.** The perf gates' every-value scenario gains a theme using open paths, templated rows and placed sections,
+  held to the same budgets.
+
+### Order of work
+
+1. A, with the gate that the hand list is gone. A draft that added the missing values one by one is dropped for it and never
+   ships.
+2. D, which needs only the gate: the two overrides found are already fixed.
+3. B and C together, since sections are both parts and edges.
+4. E.
+5. F.
+
+The contrast check's fix (judging text over a mask as drawn, unless the text itself is masked) is a check fix, not a
+theme mechanism, and lands on its own. Each slice: docs/themes.md, design/DESIGN.md, tests and gates, through the merge
+queue.
+
+### The eight gaps, under this amendment
+
+| Gap | Mechanism |
+|---|---|
+| 1. label ignored | landed (56b9f350); B's open options keep it so |
+| 2. mini keys' words wiped | landed (56b9f350); D's gate keeps it so |
+| 3. no upright slider | landed (56b9f350): `orientation="vertical"` |
+| 4. up-next can't pick a group | B: `list of="queue" where="group=..."` |
+| 5. missing values, short day | A: any field, `date:weekday-short` |
+| 6. jump back in can't be placed | B: `home.jump` in any slot, its rows the theme's own |
+| 7. no room above the shell | C: `before.app` |
+| 8. contrast blind over masks | the check's own fix, above |
