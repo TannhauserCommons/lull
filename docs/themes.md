@@ -1010,6 +1010,66 @@ theme the same way, with no new hook.
 
 A value changes at its own pace: the song's values once a song, a press's at the press, the song's place a hundredth at a time (as `--song-pos`), `song.elapsed` once a second; and only the values you name are read at all. In the desktop app's mini player windows every value but the regions' arrives with the player's state from the main window, so they say what the main window says.
 
+**Any fact by path.** Beyond the named values above, any field of what lull holds is a value: a root, then the field
+(`song.no`, `copy.peer`, `album.label`, `queue.3.title`). It takes the forms its field's type gives: words with
+`data-bind` or a field, a custom property on the live hosts (`--song-no`, a list as how many things it has), and on
+`:root` its own words (`:root[data-copy-where="soulseek"]`). Where a named value and a field share a path
+(`song.duration`, the named value's `3:45`), the named value is the one. The hub refuses a path no record has, and
+says which fields there are. (The amendment of 2026-11-09 to ADR-0101.)
+
+| Root | What | Record |
+|---|---|---|
+| `song` | the playing song | `track` |
+| `album` | the playing song's album | `album` |
+| `artist` | the playing song's artist | `artist` |
+| `copy` | the copy of it that plays | `copy` |
+| `next` | the song after it | `queued` |
+| `queue.<n>` | the songs after it, by position: queue.1, queue.2... | `queued` |
+| `player` | the player | `player` |
+| `place` | the place the song plays from | `place` |
+| `radio` | the radio that adds songs, while there is one | `radio` |
+| `clock` | the device's time | `clock` |
+
+| Record | Fields, with their types |
+|---|---|
+| `track` | `id` text, `title` text, `artistId` text, `artist` text, `albumId` text, `album` text, `year` number, `no` number, `disc` number, `duration` number, `tags` list, `saved` flag, `format` text, `codec` text, `lossless` flag, `khz` number, `bits` number, `kbps` number, `sizeBytes` number |
+| `album` | `id` text, `title` text, `artistId` text, `artist` text, `year` number, `type` text, `released` text, `label` text, `tags` list, `saved` text, `trackIds` list, `duration` number, `musicbrainzId` text |
+| `artist` | `id` text, `name` text, `tags` list, `listeners` number, `bio` text, `musicbrainzId` text |
+| `queued` | a `track`'s fields, and `group` text (`yours`: queued by the listener, `place`: from the place it plays from, `radio`) |
+| `copy` | `where` text, `name` text, `library` text, `saved` flag, `received` number, `format` text, `peer` text, `sizeBytes` number, `speed` number, `rank` number, `of` number |
+| `player` | `status` text, `statusText` text, `playing` flag, `shuffle` flag, `repeat` text, `volume` number, `muted` flag, `crossfading` flag, `private` flag, `duration` number, `durationKnown` flag |
+| `place` | `kind` text, `id` text, `name` text, `path` text |
+| `radio` | `name` text, `keepsAdding` flag, `steer` number, `error` text, `seed` text |
+| `clock` | `now` date |
+
+Each record's fields are lull's own, as the hub sends them (`track`, `album`, `artist`) or as the page builds them; a
+field lull adds reaches you by its name. A field lull doesn't know for a song (no track number) is empty, and a number
+0.
+
+**Pipes: a value in your words.** In a binding or a field, `|` hands the value to a pipe, and pipes chain:
+`<b data-bind="copy.sizeBytes | size"></b>` reads `32.8 MB`, `{{ clock.now | date:weekday-short | upper }}` reads
+`SUN`, `<b data-bind="player.playing | pick:pause,play"></b>` says what the key will do, `{{ clock.weekday | upper }}`
+turns the named state `sun` into `SUN`. A pipe's argument follows a colon. CSS reads the value itself, never piped.
+Pipes work on the model's values only: `{{ song.title | upper }}`, not a slot's own `{{ title }}`. A clock shown to the
+second (`date:second`, `date:time-seconds`) wakes each second, as `clock.second` does; any other, each minute.
+
+| Pipe | What it gives |
+|---|---|
+| `size` | a byte count as words: 32.8 MB |
+| `time` | seconds as a clock: 3:45, 1:02:03 |
+| `length` | seconds as a length: 36 min, 1 h 12 min |
+| `date` | a time in the device's language, by its argument: weekday, weekday-short, weekday-narrow, month, month-short, day, year, date, date-short, time, time-seconds, hour, minute, second |
+| `upper` | in capitals |
+| `lower` | in small letters |
+| `pad` | a number with leading zeros to its argument's length: pad:2 makes 07 |
+| `pct` | 0 to 1 as a percentage: 42% |
+| `fixed` | a number with its argument's decimals: fixed:1 |
+| `pick` | the first word for a true value (not 0, empty or false), else the second: pick:pause,play |
+| `map` | a value's own words by key: map:sun=SUNDAY,sat=SATURDAY; any other value stays as it is |
+| `or` | its argument when the value is empty, 0 or false: or:- |
+| `count` | how many things a list has |
+| `join` | a list's things joined by its argument (', ' if none) |
+
 **You pay for what you name.** The hub reads which values your CSS and slots name (a `data-bind` or `{{field}}` in a
 slot, a `var(--clock-minute)` your CSS reads, a `[data-clock-daypart]` it tests) and lists them in your theme's
 manifest, as `live`; lull loads the model's script (`designs/live.js`) only for a theme that names one, and computes
@@ -1017,8 +1077,9 @@ and writes only those. The clock is one timer to the next minute's edge (to the 
 `clock.second`), and stops while lull is hidden. A custom property your theme sets itself (`--clock-hour: 3`) is your
 own: lull leaves it alone.
 
-**What the hub refuses:** a slot that binds or fields a path in one of the model's branches that the model doesn't
-have (`data-bind="clock.hours"`), naming the ones it has. Names outside the model are your own, as always.
+**What the hub refuses:** a slot that binds or fields a path in one of the model's branches or roots that the model
+doesn't have (`data-bind="clock.hours"`, `copy.peers`), naming the ones it has; a pipe lull doesn't have, naming its
+pipes; and a pipe on a name outside the model. Names outside the model are your own, as always.
 
 ## 15. Building from a mockup
 

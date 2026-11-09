@@ -794,9 +794,29 @@ function themeItem(id) {
     return { ...m, slots, ...(live.length ? { live } : {}), builtIn: false, rev, pictures: ['day', 'night'].filter((mode) => themePictures.has(`${id}/${rev}-${mode}`)) };
   } catch { return null; }
 }
-/* the live model's values a theme names, as the hub lists them (crates/themes live.rs, ADR-0101): a binding or a field
-   in a slot, a custom property its CSS reads and doesn't set, a root state its CSS tests */
-const LIVE = JSON.parse(readFileSync(join(WEB, 'designs', 'live.json'), 'utf8')).values;
+/* the live model's values a theme names, as the hub lists them (crates/themes live.rs, ADR-0101 and its amendment of
+   2026-11-09): a binding or a field in a slot (its pipes aside), a custom property its CSS reads and doesn't set, a
+   root state its CSS tests; a named value or any field of a root's record */
+const MODEL = JSON.parse(readFileSync(join(WEB, 'designs', 'live.json'), 'utf8')), LIVE = MODEL.values;
+function fieldType(rec, f, exact) {
+  const r = MODEL.records[rec]; if (!r) return null;
+  const k = Object.keys(r).find((x) => x !== '...' && (exact ? x === f : x.toLowerCase() === f.toLowerCase()));
+  return k ? [k, r[k]] : r['...'] ? fieldType(r['...'], f, exact) : null;
+}
+/* an open path from its segments, or null: a root, a position for a list root, then fields down to a value */
+function openPath(segs, exact) {
+  const root = MODEL.roots[segs[0]]; if (!root) return null;
+  const out = [segs[0]]; let i = 1, rec = root.of;
+  if (root.list) { if (!/^[1-9]\d*$/.test(segs[1] || '')) return null; out.push(segs[1]); i = 2; }
+  if (i >= segs.length) return null;
+  for (; i < segs.length; i++) {
+    const f = fieldType(rec, segs[i], exact); if (!f) return null;
+    const last = i === segs.length - 1;
+    if (f[1].startsWith('@') === last) return null;
+    out.push(f[0]); if (!last) rec = f[1].slice(1); else return [out.join('.'), f[1]];
+  }
+  return null;
+}
 function liveNames(dir, slots) {
   const read = (f) => { try { return readFileSync(join(dir, f), 'utf8'); } catch { return ''; } };
   const css = read('theme.css') + '\n' + read('pack.css'), html = slots.map((s) => read(`slots/${s}.html`)).join('\n');
@@ -806,12 +826,31 @@ function liveNames(dir, slots) {
   const sets = new Set([...text.matchAll(/(--[\w-]+)\s*:(?!\s*inherit)/gi)].map((m) => m[1]));
   for (const m of text.matchAll(/(--[\w-]+)\s*:\s*inherit/gi)) reads.add(m[1]);
   const attrs = new Set([...text.matchAll(/\[(data-[\w-]+)/g)].map((m) => m[1]));
-  const binds = new Set([...html.matchAll(/data-bind\s*=\s*["']?([^"'\s>]+)/g), ...html.matchAll(/\{\{\s*([^}\s]+)\s*\}\}/g)].map((m) => m[1]));
-  return Object.keys(LIVE).sort().filter((p) => {
+  const written = [...html.matchAll(/data-bind\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g)].map((m) => m[1] ?? m[2] ?? m[3])
+    .concat([...html.matchAll(/\{\{([^}]*)\}\}/g)].map((m) => m[1]));
+  const out = new Set();
+  for (const w of written) {
+    const [path, ...pipes] = w.split('|').map((x) => x.trim());
+    if (!(path in LIVE) && !openPath(path.split('.'), true)) continue;
+    out.add(path);
+    if (path === 'clock.now' && pipes.some((x) => /^date:\s*(second|time-seconds)\s*$/.test(x))) out.add('clock.second');
+  }
+  for (const p of Object.keys(LIVE)) {
     const d = p.replace(/\./g, '-'), state = LIVE[p].type === 'state' || LIVE[p].type === 'flag';
     // --song-pos is written on lull's own hosts whatever a theme names (app.js): reading it names nothing
-    return binds.has(p) || (reads.has('--' + d) && !sets.has('--' + d) && p !== 'song.pos') || (state && attrs.has('data-' + d));
-  });
+    if ((reads.has('--' + d) && !sets.has('--' + d) && p !== 'song.pos') || (state && attrs.has('data-' + d))) out.add(p);
+  }
+  for (const r of reads) {
+    const d = r.replace(/^--/, '');
+    if (sets.has(r) || d.replace(/-/g, '.') in LIVE) continue;
+    const o = openPath(d.split('-'), true); if (o && o[1] !== 'date') out.add(o[0]);
+  }
+  for (const a of attrs) {
+    const d = a.replace(/^data-/, '');
+    if (d.replace(/-/g, '.') in LIVE) continue;
+    const o = openPath(d.split('-'), false); if (o && o[1] !== 'date' && o[1] !== 'list') out.add(o[0]);
+  }
+  return [...out].sort();
 }
 /* the hub's rev: the theme's files' names, sizes and modification times (crates/themes, watch.rs and pictures.rs) */
 function themeRev(id) {

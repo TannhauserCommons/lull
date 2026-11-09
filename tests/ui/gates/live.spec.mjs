@@ -22,6 +22,12 @@ const SONG_CSS = `.sg-pos { --song-pos: inherit; scale: var(--song-pos) 1; }
 :root[data-player-repeat="one"] .sg-title { text-decoration: underline; }`;
 const SONG_BRAND = '<span class="wordmark sg"><b class="sg-title" data-bind="song.title"></b> <b class="sg-next" data-bind="next.title"></b> <b class="sg-src" data-bind="song.source"></b> <b class="sg-el" data-bind="song.elapsed"></b><i class="sg-pos" data-live></i></span>';
 
+// a theme that shows facts no named value has, by path, in its own words (the amendment of 2026-11-09)
+const OPEN_BRAND = '<span class="wordmark op"><b class="op-size" data-bind="copy.sizeBytes | size"></b> <b class="op-no" data-bind="song.no | or:-"></b>/' +
+  '<b class="op-of" data-bind="album.trackIds | count"></b> <b class="op-day">{{ clock.now | date:weekday-short | upper }}</b> ' +
+  '<b class="op-play" data-bind="player.playing | pick:pause,play"></b> <b class="op-next" data-bind="queue.2.title | upper"></b></span>';
+const OPEN_CSS = ':root[data-copy-where="library"] .op { outline: 1px solid }';
+
 let hub, dir;
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'lull-live-'));
@@ -33,6 +39,10 @@ test.beforeAll(async () => {
   writeFileSync(join(dir, 'songful', 'theme.json'), JSON.stringify({ ...MANIFEST, id: 'songful', name: 'Songful' }));
   writeFileSync(join(dir, 'songful', 'theme.css'), SONG_CSS);
   writeFileSync(join(dir, 'songful', 'slots', 'brand.html'), SONG_BRAND);
+  mkdirSync(join(dir, 'opened', 'slots'), { recursive: true });
+  writeFileSync(join(dir, 'opened', 'theme.json'), JSON.stringify({ ...MANIFEST, id: 'opened', name: 'Opened' }));
+  writeFileSync(join(dir, 'opened', 'theme.css'), OPEN_CSS);
+  writeFileSync(join(dir, 'opened', 'slots', 'brand.html'), OPEN_BRAND);
   hub = await ownHub({ FIXTURE_THEMES: dir });
 });
 test.afterAll(() => { hub?.close(); rmSync(dir, { recursive: true, force: true }); });
@@ -130,9 +140,9 @@ test('a theme that names the song shows it, what comes next and the repeat mode,
   await ctx.close();
 });
 
-test('a theme that names the song\'s place and its seconds keeps the player\'s tick within its budget', async ({ browser }) => {
+for (const [design, what] of [['songful', 'the song\'s place and its seconds'], ['opened', 'facts by path, through pipes']]) test(`a theme that names ${what} keeps the player's tick within its budget`, async ({ browser }) => {
   const ctx = await context(browser), page = await ctx.newPage();
-  await openScreen(page, `/album/${ids.album}`, { design: 'songful' });
+  await openScreen(page, `/album/${ids.album}`, { design });
   await page.evaluate(() => { const r = document.querySelector('#view .trow[data-track-id]'); App.player.playTrack(r.getAttribute('data-track-id'), [r.getAttribute('data-track-id')]); });
   await page.waitForFunction(() => App.player.state.playing);
   await page.evaluate(() => { location.hash = '#/home'; });
@@ -155,3 +165,27 @@ for (const design of designs) {
     await ctx.close();
   });
 }
+
+test('a theme shows any fact lull holds by path, in its own words, and it follows the player', async ({ browser }) => {
+  const ctx = await context(browser), page = await ctx.newPage();
+  const served = await (await page.request.get('/api/themes/opened/theme.json')).json();
+  expect(served.live).toEqual(['album.trackIds', 'clock.now', 'copy.sizeBytes', 'copy.where', 'player.playing', 'queue.2.title', 'song.no']);
+  await page.clock.install({ time: new Date('2026-11-08T14:12:00Z') });   // a Sunday
+  await openScreen(page, `/album/${ids.album}`, { design: 'opened' });
+  await expect(page.locator('.op-day').first()).toHaveText('SUN');
+  const want = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id'));
+    App.player.playTrack(rows[0], rows);
+    const t = App.data.track(rows[0]);
+    return { no: t.no ? String(t.no) : '-', of: String(App.data.album(t.albumId).trackIds.length), next: App.data.track(rows[2]).title.toUpperCase() };
+  });
+  await expect(page.locator('.op-of').first()).toHaveText(want.of);
+  expect(await page.locator('.op-no').first().textContent()).toBe(want.no);
+  await expect(page.locator('.op-next').first()).toHaveText(want.next);
+  await expect(page.locator('.op-play').first()).toHaveText('pause');
+  await page.evaluate(() => App.player.pause());
+  await expect(page.locator('.op-play').first()).toHaveText('play');
+  // the copy's own words on :root, for any rule to follow
+  expect(await page.evaluate(() => document.documentElement.getAttribute('data-copy-where'))).toBe(await page.evaluate(() => App.player.playingCopy().where));
+  await ctx.close();
+});

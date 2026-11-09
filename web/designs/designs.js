@@ -367,10 +367,10 @@
     if (!tpl) return '';
     var f = FIELDS[name] ? FIELDS[name](ctx) : {};
     f.product = D.product;
-    /* a dotted field is a value of the live model as the slot is drawn ({{clock.time}}, live.js); a dotted name outside
-       it stays as written, as it always did */
-    var filled = tpl.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9]*(?:\.[a-zA-Z0-9-]+)*)\s*\}\}/g, function (all, k) {
-      if (k.indexOf('.') > 0) return window.Live && Live.known(k) ? esc(Live.text(k)) : all;
+    /* a dotted field is a value of the live model as the slot is drawn ({{clock.time}}, {{copy.sizeBytes | size}}:
+       live.js); a dotted name outside it stays as written, as it always did */
+    var filled = tpl.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9]*(?:\.[a-zA-Z0-9-]+)*)\s*((?:\|[^|}]*)*)\}\}/g, function (all, k, pipes) {
+      if (k.indexOf('.') > 0) return window.Live && Live.known(k) ? esc(Live.text(k, pipes ? Live.parse(k + pipes)[1] : null)) : all;
       if (!Object.prototype.hasOwnProperty.call(f, k)) { console.warn('[theme slot ' + name + '] unknown field', k); return ''; }
       return esc(f[k]);
     });

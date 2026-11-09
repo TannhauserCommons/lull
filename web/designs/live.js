@@ -7,6 +7,10 @@
    - a custom property --<path with dashes> on the live hosts (HOSTS: lull's own, every region, and any [data-live] a
      theme marks), registered inherits: false (base.css), so a write restyles the host alone;
    - for a state or a flag, data-<path with dashes> on :root, so any rule can follow it.
+   Beyond the values the model names, any field of what one of its roots holds is a value by path (OPEN: the
+   amendment of 2026-11-09): song.no, copy.peer, queue.3.title, album.label. Its type is its field's, so it takes the
+   same forms (a text, number or flag also on :root). A binding or a field can turn a value into words with pipes:
+   <b data-bind="copy.sizeBytes | size">, {{clock.now | date:weekday-short | upper}}.
    A value nobody names is never computed. The clock is one timer to the next minute's edge (to the next second only
    when clock.second is named), stopped while the page is hidden. Runs in lull's page and in the desktop app's own
    pages (the mini player windows), without App. */
@@ -18,7 +22,33 @@
   /* web/designs/live.json, one line (path: [type, pace, states]); written from it by
      LULL_WRITE_PACKAGES=1 cargo test -p lull-themes */
   var MODEL = {"app.ctx":["state","press",["docked","open","closed"]],"app.screen":["state","press"],"app.size":["state","resize",["compact","regular","wide","xwide","ultra"]],"app.view":["state","press",["page","now"]],"clock.date":["number","minute"],"clock.daypart":["state","minute",["morning","afternoon","evening","night"]],"clock.hour":["number","minute"],"clock.minute":["number","minute"],"clock.month":["number","minute"],"clock.second":["number","second"],"clock.time":["text","minute"],"clock.weekday":["state","minute",["sun","mon","tue","wed","thu","fri","sat"]],"clock.year":["number","minute"],"next.album":["text","song"],"next.artist":["text","song"],"next.saved":["flag","song"],"next.title":["text","song"],"player.crossfading":["flag","song"],"player.muted":["flag","press"],"player.playing":["flag","press"],"player.private":["flag","press"],"player.repeat":["state","press",["off","all","one"]],"player.shuffle":["flag","press"],"player.status":["state","song",["idle","finding","queued","buffering","streaming","stalled","choose","library","failed","jellyfin-error","ended"]],"player.status-text":["text","song"],"player.volume":["number","press"],"queue.1.artist":["text","song"],"queue.1.title":["text","song"],"queue.2.artist":["text","song"],"queue.2.title":["text","song"],"queue.3.artist":["text","song"],"queue.3.title":["text","song"],"queue.4.artist":["text","song"],"queue.4.title":["text","song"],"queue.5.artist":["text","song"],"queue.5.title":["text","song"],"queue.6.artist":["text","song"],"queue.6.title":["text","song"],"queue.7.artist":["text","song"],"queue.7.title":["text","song"],"queue.8.artist":["text","song"],"queue.8.title":["text","song"],"queue.count":["number","song"],"queue.left":["text","song"],"region.height":["number","resize"],"region.width":["number","resize"],"services.cache":["state","press",["ok","warn","down"]],"services.catalog":["state","press",["ok","warn","down"]],"services.lastfm":["state","press",["ok","warn","down"]],"services.library":["state","press",["ok","warn","down"]],"services.soulseek":["state","press",["ok","warn","down"]],"song.album":["text","song"],"song.artist":["text","song"],"song.buffered":["number","tick"],"song.duration":["text","song"],"song.elapsed":["text","second"],"song.format":["text","song"],"song.from":["text","song"],"song.hue":["number","song"],"song.liked":["flag","press"],"song.lossless":["flag","song"],"song.pos":["number","tick"],"song.quality":["text","song"],"song.received":["number","tick"],"song.saved":["flag","press"],"song.seed":["number","song"],"song.source":["state","song",["none","library","device","soulseek","youtube"]],"song.title":["text","song"],"song.title-length":["number","song"],"song.year":["text","song"],"week.artists":["number","song"],"week.peak":["number","song"],"week.plays":["number","song"],"week.time":["text","song"]};
+  /* the open model, one line ({ roots: { name: [record, list, pace] }, records: { name: { field: type } }, pipes }),
+     written from live.json by the same test */
+  var OPEN = {"pipes":["count","date","fixed","join","length","lower","map","or","pad","pct","pick","size","time","upper"],"records":{"album":{"artist":"text","artistId":"text","duration":"number","id":"text","label":"text","musicbrainzId":"text","released":"text","saved":"text","tags":"list","title":"text","trackIds":"list","type":"text","year":"number"},"artist":{"bio":"text","id":"text","listeners":"number","musicbrainzId":"text","name":"text","tags":"list"},"clock":{"now":"date"},"copy":{"format":"text","library":"text","name":"text","of":"number","peer":"text","rank":"number","received":"number","saved":"flag","sizeBytes":"number","speed":"number","where":"text"},"place":{"id":"text","kind":"text","name":"text","path":"text"},"player":{"crossfading":"flag","duration":"number","durationKnown":"flag","muted":"flag","playing":"flag","private":"flag","repeat":"text","shuffle":"flag","status":"text","statusText":"text","volume":"number"},"playlist":{"createdAt":"number","description":"text","id":"text","name":"text","trackIds":"list","updatedAt":"number"},"queued":{"...":"track","group":"text"},"radio":{"error":"text","keepsAdding":"flag","name":"text","seed":"text","steer":"number"},"track":{"album":"text","albumId":"text","artist":"text","artistId":"text","bits":"number","codec":"text","disc":"number","duration":"number","format":"text","id":"text","kbps":"number","khz":"number","lossless":"flag","no":"number","saved":"flag","sizeBytes":"number","tags":"list","title":"text","year":"number"}},"roots":{"album":["album",false,"song"],"artist":["artist",false,"song"],"clock":["clock",false,"minute"],"copy":["copy",false,"song"],"next":["queued",false,"song"],"place":["place",false,"song"],"player":["player",false,"press"],"queue":["queued",true,"song"],"radio":["radio",false,"song"],"song":["track",false,"song"]}};
   L.model = MODEL;
+  var own = Object.prototype.hasOwnProperty;
+  /* a field's type in a record or the record it extends (`...`): text, number, flag, list, date, or @record */
+  function fieldType(rec, f) {
+    var r = OPEN.records && OPEN.records[rec]; if (!r) return null;
+    if (f !== '...' && own.call(r, f)) return r[f];
+    return r['...'] ? fieldType(r['...'], f) : null;
+  }
+  /* an open path's type, or null: a root, a position for a list root (queue.3), then fields down to a value */
+  var walked = {};
+  function walk(p) {
+    if (own.call(walked, p)) return walked[p];
+    var s = p.split('.'), r = OPEN.roots && OPEN.roots[s[0]], t = null;
+    if (r) {
+      var rec = r[0], i = r[1] ? (/^[1-9]\d*$/.test(s[1] || '') ? 2 : s.length) : 1, last = s.length - 1;
+      for (; i <= last; i++) {
+        t = fieldType(rec, s[i]);
+        if (!t || (t.charAt(0) === '@') === (i === last)) { t = null; break; }
+        if (t.charAt(0) === '@') rec = t.slice(1);
+      }
+    }
+    return (walked[p] = t);
+  }
+  function typeOf(p) { return own.call(MODEL, p) ? MODEL[p][0] : walk(p); }
 
   /* the parts a value is drawn on: lull's own hosts (as --song-pos has them), every region, any element a theme marks */
   var HOSTS = '#pbar, #mini, .sky-specks, .now__dev, .now__devc, .disc-lead, [data-dk-player], [data-region], [data-live]';
@@ -27,12 +57,11 @@
   L.cssName = function (p) { return '--' + dashed(p); };
   L.attrName = function (p) { return ['data', dashed(p)].join('-'); };   // only the model's: data-clock-daypart
   /* a path of the model's, or a dotted path in one of its branches (which the hub refuses in a slot unless listed) */
-  L.known = function (p) { return Object.prototype.hasOwnProperty.call(MODEL, p); };
+  L.known = function (p) { return own.call(MODEL, p) || !!walk(p); };
 
   /* ---------- what is named, and its values now ---------- */
-  var used = {}, any = false, vals = {}, own = {};
+  var used = {}, any = false, opened = false, vals = {}, mine = {};
   function cssString(t) { return '"' + String(t).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\A ') + '"'; }
-  function pad(n) { return (n < 10 ? '0' : '') + n; }
   /* words a value shows (data-bind, {{field}}); a value's own words where its number or state isn't them */
   var WORDS = {
     'clock.hour': pad, 'clock.minute': pad, 'clock.second': pad,
@@ -45,17 +74,83 @@
   function fmt(k, o) { return fmts[k] || (fmts[k] = new Intl.DateTimeFormat(undefined, o)); }
   function words(p) {
     var v = vals[p]; if (v == null) return '';
-    var t = MODEL[p][0];
+    var t = typeOf(p);
     if (WORDS[p]) return String(WORDS[p](v, raws));
     if (t === 'flag') return v ? 'true' : 'false';
+    if (t === 'list') return [].concat(v).join(', ');
+    if (t === 'date') return fmt('time', { hour: 'numeric', minute: '2-digit' }).format(v);
     return String(v);
   }
-  L.text = function (p) { return L.known(p) ? (vals[p] == null ? compute(p) : words(p)) : ''; };
+  /* a value's words, through a binding's or a field's pipes when it has some (its raw value goes through them) */
+  L.text = function (p, pipes) {
+    if (!L.known(p)) return '';
+    if (vals[p] == null && CLOCK[p]) compute(p);
+    var v = vals[p] == null && !own.call(MODEL, p) && !CLOCK[p] && window.App && App.player ? resolve(p, {}) : vals[p];   // a slot drawn before the first read
+    if (pipes && pipes.length) return piped(v, pipes);
+    if (vals[p] == null && v != null) { vals[p] = v; var w = words(p); if (!used[p]) delete vals[p]; return w; }
+    return vals[p] == null ? (CLOCK[p] ? compute(p) : '') : words(p);
+  };
   function cssValue(p) {
-    var v = vals[p], t = MODEL[p][0];
-    if (t === 'number') return String(v);
+    var v = vals[p], t = typeOf(p);
+    if (t === 'number') return v == null ? '' : String(v);
     if (t === 'flag') return v ? '1' : '0';
+    if (t === 'list') return String(v ? [].concat(v).length : 0);
+    if (t === 'date') return null;
     return cssString(words(p));
+  }
+
+  /* ---------- pipes: a value into words, at a binding or a field (`path | pipe:arg | pipe`) ---------- */
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  var DATES = {
+    weekday: { weekday: 'long' }, 'weekday-short': { weekday: 'short' }, 'weekday-narrow': { weekday: 'narrow' },
+    month: { month: 'long' }, 'month-short': { month: 'short' }, day: { day: 'numeric' }, year: { year: 'numeric' },
+    date: { dateStyle: 'long' }, 'date-short': { dateStyle: 'short' }, time: { hour: 'numeric', minute: '2-digit' },
+    'time-seconds': { hour: 'numeric', minute: '2-digit', second: '2-digit' }
+  };
+  function empty(v) { return v == null || v === '' || v === 0 || v === false || (Array.isArray(v) && !v.length); }
+  var PIPES = {
+    size: function (v) { var mb = (+v || 0) / 1e6; return !mb ? '' : mb >= 1000 ? Math.round(mb / 100) / 10 + ' GB' : (mb >= 100 ? Math.round(mb) : Math.round(mb * 10) / 10) + ' MB'; },
+    time: function (v) {
+      var s = Math.max(0, Math.round(+v || 0)), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
+      return (h ? h + ':' + pad(m) : m) + ':' + pad(s % 60);
+    },
+    length: function (v) { var m = Math.round((+v || 0) / 60); return m >= 60 ? Math.floor(m / 60) + ' h ' + m % 60 + ' min' : m + ' min'; },
+    date: function (v, a) {
+      var d = v instanceof Date ? v : new Date(typeof v === 'number' && v < 1e11 ? v * 1000 : v);
+      if (isNaN(d)) return '';
+      if (a === 'hour') return pad(d.getHours()); if (a === 'minute') return pad(d.getMinutes()); if (a === 'second') return pad(d.getSeconds());
+      return fmt('d:' + a, DATES[a] || DATES.time).format(d);
+    },
+    upper: function (v) { return String(v).toUpperCase(); },
+    lower: function (v) { return String(v).toLowerCase(); },
+    pad: function (v, a) { var s = String(v); while (s.length < (+a || 2)) s = '0' + s; return s; },
+    pct: function (v) { return Math.round((+v || 0) * 100) + '%'; },
+    fixed: function (v, a) { return (+v || 0).toFixed(Math.min(6, +a || 0)); },
+    pick: function (v, a) { var w = a.split(','); return empty(v) || v === 'false' ? w[1] || '' : w[0]; },
+    map: function (v, a) {
+      var k = String(v), out = v;
+      a.split(',').forEach(function (pair) { var i = pair.indexOf('='); if (i > 0 && pair.slice(0, i).trim() === k) out = pair.slice(i + 1); });
+      return out;
+    },
+    or: function (v, a) { return empty(v) ? a : v; },
+    count: function (v) { return Array.isArray(v) ? v.length : v ? 1 : 0; },
+    join: function (v, a) { return Array.isArray(v) ? v.join(a || ', ') : v; }
+  };
+  L.pipes = Object.keys(PIPES);
+  /* `path | pipe:arg | pipe` -> [path, [[pipe, arg]...]], kept per text */
+  var parsedAt = {};
+  function parse(text) {
+    if (own.call(parsedAt, text)) return parsedAt[text];
+    var bits = String(text).split('|');
+    return (parsedAt[text] = [bits[0].trim(), bits.slice(1).map(function (b) {
+      b = b.trim(); var i = b.indexOf(':');
+      return i < 0 ? [b, ''] : [b.slice(0, i).trim(), b.slice(i + 1)];
+    })]);
+  }
+  L.parse = parse;
+  function piped(v, pipes) {
+    for (var i = 0; i < pipes.length; i++) { var f = PIPES[pipes[i][0]]; if (f) v = f(v == null ? '' : v, pipes[i][1]); }
+    return v == null ? '' : typeof v === 'boolean' ? String(v) : Array.isArray(v) ? v.join(', ') : String(v);
   }
 
   /* ---------- writes: each skips an unchanged value (a rewrite still costs a restyle) ---------- */
@@ -72,13 +167,27 @@
     if (watch.takeRecords().length) kept = {};
     return kept[sel] || (kept[sel] = Array.prototype.slice.call(document.querySelectorAll(sel)));
   }
-  function bound(p) { return '[data-bind="' + p + '"]'; }
+  /* the bindings to a value: [data-bind="<path>"], with or without pipes */
+  function bound(p) {
+    var key = 'bind:' + p;
+    if (watch.takeRecords().length) kept = {};
+    return kept[key] || (kept[key] = all('[data-bind]').filter(function (el) { return parse(el.getAttribute('data-bind'))[0] === p; }));
+  }
+  function bindText(el, p) {
+    var pipes = parse(el.getAttribute('data-bind'))[1];
+    setText(el, pipes.length ? piped(vals[p], pipes) : words(p));
+  }
   /* one value's forms, on the page as it is */
   function write(p) {
-    var t = MODEL[p][0];
+    var t = typeOf(p), open = !own.call(MODEL, p);
     if (p.indexOf('region.') === 0) return;      // each region's own size, written by sizes() on that region alone
-    if (t !== 'flag') { var w = words(p); all(bound(p)).forEach(function (el) { setText(el, w); }); }
-    if (!own[p]) { var name = L.cssName(p), css = cssValue(p); all(HOSTS).forEach(function (el) { setVar(el, name, css); }); }
+    bound(p).forEach(function (el) { if (t !== 'flag' || parse(el.getAttribute('data-bind'))[1].length) bindText(el, p); });
+    var css = cssValue(p);
+    if (!mine[p] && css != null) { var name = L.cssName(p); all(HOSTS).forEach(function (el) { setVar(el, name, css); }); }
+    if (open && t !== 'list' && t !== 'date') {   // an open value on :root as it is (copy.where: "soulseek")
+      var a0 = L.attrName(p), v0 = vals[p] == null ? '' : String(vals[p]);
+      if (!v0) root.removeAttribute(a0); else if (root.getAttribute(a0) !== v0) root.setAttribute(a0, v0);
+    }
     if (t === 'state' || t === 'flag') {
       var a = L.attrName(p), s = t === 'flag' ? (vals[p] ? 'true' : 'false') : String(vals[p]);
       if (!s) root.removeAttribute(a);           // a state with nothing to say (no screen yet) is no attribute
@@ -105,7 +214,8 @@
     'clock.date': function (d) { return d.getDate(); },
     'clock.month': function (d) { return d.getMonth() + 1; },
     'clock.year': function (d) { return d.getFullYear(); },
-    'clock.daypart': function (d) { return daypart(d.getHours()); }
+    'clock.daypart': function (d) { return daypart(d.getHours()); },
+    'clock.now': function (d) { return d; }      // the time itself, for the date pipe
   };
   /* a value as it is now, before it was ever set (a slot drawn before the first publish) */
   function compute(p) {
@@ -139,7 +249,8 @@
   function register(p) {
     if (registered[p] || !window.CSS || !CSS.registerProperty) return;
     registered[p] = true;
-    var t = MODEL[p][0], num = t === 'number' || t === 'flag';
+    var t = typeOf(p), num = t === 'number' || t === 'flag' || t === 'list';
+    if (t === 'date') return;
     try { CSS.registerProperty(num ? { name: L.cssName(p), syntax: '<number>', inherits: false, initialValue: '0' } : { name: L.cssName(p), syntax: '*', inherits: false }); }
     catch (e) { /* registered already (a page that loaded live.js twice) */ }
   }
@@ -203,6 +314,54 @@
   }
   var READ = [['song.', songValues], ['next.', queueValues], ['queue.', queueValues], ['player.', playerValues], ['app.', appValues],
     ['services.', serviceValues], ['week.', weekValues]];
+
+  /* the open model's records, as the page holds them (live.json records: tests/web/live.test.mjs holds each to its
+     fields). Built only for a root a named path reads, once per change */
+  var GROUPS = { next: 'yours', context: 'place', radio: 'radio' };
+  function queued(q) { var t = q && App.data.track(q.trackId); return t ? Object.assign({}, t, { group: GROUPS[q.group] || q.group || '' }) : null; }
+  function after() { var ps = App.player.state; return (ps.queue || []).slice((ps.index || 0) + 1).map(queued).filter(Boolean); }
+  var RECORD = L.records = {
+    song: function () { return App.player.current(); },
+    album: function () { var t = App.player.current(); return t ? App.data.album(t.albumId) : null; },
+    artist: function () { var t = App.player.current(); return t && App.data.artist ? App.data.artist(t.artistId) : null; },
+    copy: function () {
+      var P = App.player, t = P.current(), c = t ? P.playingCopy() : null, peer = c && c.peer;
+      return !c ? null : { where: c.where, name: c.name || '', library: c.library || '', saved: !!c.saved, received: c.received || 0,
+        format: c.format || '', peer: peer && peer.name || '', sizeBytes: peer && peer.sizeMB ? Math.round(peer.sizeMB * 1e6) : t.sizeBytes || 0,
+        speed: peer && peer.speed || 0, rank: peer && peer.rank || 0, of: peer && peer.of || 0 };
+    },
+    next: function () { return after()[0] || null; },
+    queue: after,
+    player: function () {
+      var P = App.player, ps = P.state, idle = !P.current() || ps.status === 'idle';
+      return { status: idle ? 'idle' : ps.status, statusText: idle ? '' : P.stateWords() || '', playing: !!ps.playing, shuffle: !!ps.shuffle,
+        repeat: ps.repeat || 'off', volume: ps.volume == null ? 1 : ps.volume, muted: !!ps.muted, crossfading: !!ps.crossfade,
+        private: !!App.store.get('privateListening'), duration: P.duration() || 0, durationKnown: !!ps.durationKnown };
+    },
+    place: function () { var f = App.player.playingFrom(); return f ? { kind: f.kind || '', id: f.id || '', name: App.placeName(f), path: App.placePath(f) || '' } : null; },
+    radio: function () {
+      var r = App.player.state.radio;
+      return r ? { name: r.name || '', keepsAdding: !!r.keepsAdding, steer: r.steer == null ? 0.4 : r.steer, error: r.error || '', seed: r.seed && r.seed.kind || '' } : null;
+    }
+  };
+  /* an open path's value now: its root's record (built once for the pass, in `made`), then each field */
+  function resolve(p, made) {
+    var s = p.split('.'), r = OPEN.roots[s[0]], i = 1;
+    var v = own.call(made, s[0]) ? made[s[0]] : (made[s[0]] = RECORD[s[0]] ? RECORD[s[0]]() : null);
+    if (r[1]) { v = v && v[+s[1] - 1]; i = 2; }
+    for (; i < s.length && v != null; i++) v = v[s[i]];
+    return v === undefined ? null : v;
+  }
+  /* the roots a branch's change reaches: a song changes its album, artist, copy and place; the queue its next songs */
+  var REACH = { 'song.': ['song', 'album', 'artist', 'copy', 'place'], 'next.': ['next', 'queue', 'radio', 'place'], 'player.': ['player', 'copy'] };
+  function openValues(o, which) {
+    var roots = which ? [].concat.apply([], which.map(function (w) { return REACH[w] || []; })) : null, made = {};
+    Object.keys(used).forEach(function (p) {
+      var r = p.slice(0, p.indexOf('.'));
+      if (own.call(MODEL, p) || !RECORD[r] || (roots && roots.indexOf(r) < 0)) return;
+      o[p] = resolve(p, made);
+    });
+  }
   /* the named branches among `which` (all when absent), read and set */
   function fromApp(which) {
     if (!window.App || !App.player) return;
@@ -213,6 +372,7 @@
       done.push(r[1]); r[1](o);
     });
     if (!which || which.indexOf('song.') >= 0) placeValues(o);
+    if (opened) openValues(o, which);
     Object.keys(o).forEach(function (p) { set(p, o[p]); });
   }
   /* the named values but the clock's and the regions', for a window that can't read them itself: the desktop app's mini
@@ -231,8 +391,8 @@
     if (!sizer) sizer = new ResizeObserver(function (entries) {
       entries.forEach(function (e) {
         var b = e.borderBoxSize && e.borderBoxSize[0], w = Math.round(b ? b.inlineSize : e.contentRect.width), h = Math.round(b ? b.blockSize : e.contentRect.height);
-        if (used['region.width'] && !own['region.width']) setVar(e.target, '--region-width', String(w));
-        if (used['region.height'] && !own['region.height']) setVar(e.target, '--region-height', String(h));
+        if (used['region.width'] && !mine['region.width']) setVar(e.target, '--region-width', String(w));
+        if (used['region.height'] && !mine['region.height']) setVar(e.target, '--region-height', String(h));
       });
     });
     all('[data-region]').forEach(function (el) { sizer.observe(el); });
@@ -243,14 +403,15 @@
      custom properties it sets itself, which stay its own (the hub leaves them out of `live` already) */
   L.use = function (names, owns) {
     var was = used;
-    used = {}; own = {}; vals = {};
+    used = {}; mine = {}; vals = {};
     (names || []).forEach(function (p) { if (L.known(p)) { used[p] = true; register(p); } });
-    (owns || []).forEach(function (p) { own[p] = true; });
+    (owns || []).forEach(function (p) { mine[p] = true; });
     any = Object.keys(used).length > 0;
-    /* a state or flag no longer named leaves :root */
+    opened = Object.keys(used).some(function (p) { return !own.call(MODEL, p); });
+    /* a state, a flag or an open value no longer named leaves :root */
     Object.keys(was).forEach(function (p) {
-      var t = MODEL[p][0];
-      if (!used[p] && (t === 'state' || t === 'flag')) root.removeAttribute(L.attrName(p));
+      var t = typeOf(p);
+      if (!used[p] && (t === 'state' || t === 'flag' || !own.call(MODEL, p))) root.removeAttribute(L.attrName(p));
     });
     clockOn = Object.keys(CLOCK).some(function (p) { return used[p]; });
     seconds = !!used['clock.second'];
@@ -267,13 +428,14 @@
     if (!any) return;
     Object.keys(used).forEach(function (p) { if (vals[p] == null) compute(p); });
     Array.prototype.forEach.call(box.querySelectorAll('[data-bind]'), function (el) {
-      var p = el.getAttribute('data-bind');
-      if (used[p] && MODEL[p][0] !== 'flag') setText(el, words(p));
+      var b = parse(el.getAttribute('data-bind')), p = b[0];
+      if (used[p] && (typeOf(p) !== 'flag' || b[1].length)) bindText(el, p);
     });
     var hosts = box.querySelectorAll(HOSTS);
     Object.keys(vals).forEach(function (p) {
-      if (own[p]) return;
-      var name = L.cssName(p), css = cssValue(p);
+      var css = cssValue(p);
+      if (mine[p] || css == null) return;
+      var name = L.cssName(p);
       Array.prototype.forEach.call(hosts, function (el) { setVar(el, name, css); });
     });
   };

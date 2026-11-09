@@ -188,3 +188,71 @@ test('no script builds data-* names from a bare "data-" prefix, so the hook chec
   const prefixes = JSON.parse(/"prefixes":(\[[^\]]*\])/.exec(hooks)[1]);
   assert.ok(!prefixes.includes('data-'), 'web/designs/hooks.js lists "data-" as a prefix lull builds names from');
 });
+
+/* a stand-in App: one song playing from an album, from a Soulseek peer, two songs queued by the listener and one from
+   the album after it, and a radio adding more */
+function withApp(p) {
+  const track = { id: 't1', title: 'Kasagumo', artist: 'A', artistId: 'ar', album: 'Al', albumId: 'al', no: 4, duration: 225, tags: ['city pop'], saved: false, sizeBytes: 30200000 };
+  const tracks = { t1: track, a: { ...track, id: 'a', title: 'Two' }, b: { ...track, id: 'b', title: 'Three' }, c: { ...track, id: 'c', title: 'Four' } };
+  const state = { queue: [{ trackId: 't1' }, { trackId: 'a', group: 'next' }, { trackId: 'b', group: 'next' }, { trackId: 'c', group: 'context' }],
+    index: 0, status: 'streaming', playing: true, shuffle: false, repeat: 'all', volume: 0.5, durationKnown: true,
+    radio: { name: 'Night drive', keepsAdding: true, steer: 0.6, seed: { kind: 'artist' } } };
+  p.ctx.App = {
+    player: { current: () => track, playingCopy: () => ({ where: 'soulseek', name: 'mira', library: null, saved: false, received: 0.5, format: 'FLAC 16/44.1',
+      peer: { name: 'mira', sizeMB: 32.8, speed: 1.2, rank: 1, of: 3 } }), playingFrom: () => ({ kind: 'album', id: 'al' }), duration: () => 225, state,
+      upNext: () => [tracks.a, tracks.b, tracks.c], stateWords: () => 'Streaming from mira' },
+    data: { formats: {}, track: (id) => tracks[id], album: () => ({ id: 'al', title: 'Al', year: 1984, label: 'Alfa', trackIds: ['x', 't1'] }), artist: () => ({ id: 'ar', name: 'A', listeners: 9 }) },
+    fmt: { formatLine: () => '', time: () => '', size: () => '', length: () => '' },
+    placeName: () => 'Al', placePath: () => '/album/al', isLiked: () => false, isSaved: () => false, store: { get: () => false },
+  };
+  return p;
+}
+const LIVE_JSON = JSON.parse(readFileSync(join(ROOT, 'web', 'designs', 'live.json'), 'utf8'));
+
+test('every pipe the model lists is one live.js has, and no other', () => {
+  const p = page(new Date(2026, 10, 8, 14, 12, 0));
+  assert.deepEqual([...p.Live.pipes].sort(), Object.keys(LIVE_JSON.pipes).sort());
+});
+
+test('the records live.js builds have exactly the fields the model lists for them', () => {
+  const p = withApp(page(new Date(2026, 10, 8, 14, 12, 0)));
+  const fieldsOf = (rec) => { const r = LIVE_JSON.records[rec]; return [...(r['...'] ? fieldsOf(r['...']) : []), ...Object.keys(r).filter((k) => k !== '...')]; };
+  for (const root of ['copy', 'player', 'place', 'radio']) {
+    assert.deepEqual(Object.keys(p.Live.records[root]()).sort(), fieldsOf(LIVE_JSON.roots[root].of).sort(), root);
+  }
+  // a queued song is its track and its group, as the model's `queued` has it
+  assert.equal(p.Live.records.next().group, 'yours');
+  assert.deepEqual(p.Live.records.queue().map((s) => s.group), ['yours', 'yours', 'place']);
+});
+
+test('any field of a root is a value by path, in every form, and pipes turn it into words', () => {
+  const size = el({ 'data-bind': 'copy.sizeBytes | size' }), no = el({ 'data-bind': 'song.no | pad:2' }), q = el({ 'data-bind': 'queue.3.title | upper' });
+  const day = el({ 'data-bind': 'clock.now | date:weekday-short | upper' }), play = el({ 'data-bind': 'player.playing | pick:pause,play' });
+  const label = el({ 'data-bind': 'album.label' }), host = el({ 'data-live': '' });
+  const p = withApp(page(new Date(2026, 10, 8, 14, 12, 0), [size, no, q, day, play, label, host]));
+  p.Live.use(['copy.sizeBytes', 'song.no', 'queue.3.title', 'clock.now', 'player.playing', 'album.label', 'copy.where', 'song.tags']);
+  assert.equal(size.textContent, '32.8 MB');
+  assert.equal(no.textContent, '04');
+  assert.equal(q.textContent, 'FOUR');
+  assert.equal(day.textContent, new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(new Date(2026, 10, 8)).toUpperCase());
+  assert.equal(play.textContent, 'pause');
+  assert.equal(label.textContent, 'Alfa');
+  assert.equal(host.style.props['--song-no'], '4');
+  assert.equal(host.style.props['--copy-where'], '"soulseek"');
+  assert.equal(host.style.props['--song-tags'], '1', 'a list as a custom property is how many things it has');
+  assert.equal(p.root.attrs['data-copy-where'], 'soulseek');
+  assert.equal(p.Live.text('queue.1.duration', [['time', '']]), '3:45');
+  assert.equal(p.Live.text('song.tags', [['join', ' / ']]), 'city pop');
+  assert.equal(p.Live.known('copy.peers'), false);
+  assert.equal(p.Live.known('queue.0.title'), false);
+});
+
+test('the pipes say what their names say', () => {
+  const p = page(new Date(2026, 10, 8, 14, 12, 0));
+  const t = (v, ...pipes) => { p.Live.use(['player.volume']); p.Live.feed({ 'player.volume': v }); return p.Live.text('player.volume', pipes); };
+  assert.equal(t(0.42, ['pct', '']), '42%');
+  assert.equal(t(0, ['or', '-']), '-');
+  assert.equal(t(0.5, ['fixed', '2']), '0.50');
+  assert.equal(t(1, ['map', '1=FULL,0=OFF']), 'FULL');
+  assert.equal(t(0.3, ['map', '1=FULL']), '0.3');
+});

@@ -1,6 +1,8 @@
-//! The live model a theme names values of (ADR-0101; docs/themes.md section 14): `web/designs/live.json`. The
-//! hub reads which of its values a theme's CSS and slots name, so the page publishes only those
-//! (`Manifest::live`), and refuses a slot that binds a value the model doesn't have.
+//! The live model a theme names values of (ADR-0101 and its amendment of 2026-11-09; docs/themes.md section 14):
+//! `web/designs/live.json`. A value is one the model names (`clock.time`) or any field of what one of its roots holds
+//! (`song.no`, `copy.peer`, `queue.3.title`), turned into words by pipes (`song.duration | time`). The hub reads
+//! which values a theme's CSS and slots name, so the page publishes only those (`Manifest::live`), and refuses a slot
+//! that binds a value or a pipe the model doesn't have.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -29,16 +31,142 @@ pub(crate) struct Value {
     pub states: Vec<String>,
 }
 
-#[derive(Deserialize)]
-struct Model {
-    values: BTreeMap<String, Value>,
+/// A root of the open model: the record it holds (`of`), whether it is a list by position (`queue.3`), and how often
+/// it changes.
+#[derive(Debug, Deserialize)]
+pub(crate) struct Root {
+    pub of: String,
+    #[serde(default)]
+    pub list: bool,
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the page's copy carries it; the tests write that copy")
+    )]
+    pub pace: String,
 }
 
-/// The model's values by path. Empty if the file can't be read, which this crate's tests catch.
-pub(crate) fn model() -> BTreeMap<String, Value> {
-    serde_json::from_str::<Model>(LIVE)
-        .map(|m| m.values)
-        .unwrap_or_default()
+#[derive(Default, Deserialize)]
+pub(crate) struct Model {
+    pub values: BTreeMap<String, Value>,
+    #[serde(default)]
+    pub roots: BTreeMap<String, Root>,
+    /// Each record's fields and their types (`text`, `number`, `flag`, `list`, `date`); `...` names a record whose
+    /// fields it has too.
+    #[serde(default)]
+    pub records: BTreeMap<String, BTreeMap<String, String>>,
+    #[serde(default)]
+    pub pipes: BTreeMap<String, String>,
+}
+
+/// The whole model. Empty if the file can't be read, which this crate's tests catch.
+pub(crate) fn schema() -> Model {
+    serde_json::from_str::<Model>(LIVE).unwrap_or_default()
+}
+
+/// The model's named values by path.
+#[cfg(test)]
+fn model() -> BTreeMap<String, Value> {
+    schema().values
+}
+
+impl Model {
+    /// A field's type in a record (or in the record it extends); `case` false matches its name in any case, as an
+    /// HTML attribute's name is.
+    fn field(&self, record: &str, name: &str, case: bool) -> Option<&str> {
+        let fields = self.records.get(record)?;
+        let found = fields.iter().find(|(f, _)| {
+            *f != "..."
+                && (if case {
+                    f.as_str() == name
+                } else {
+                    f.eq_ignore_ascii_case(name)
+                })
+        });
+        match found {
+            Some((_, t)) => Some(t.as_str()),
+            None => fields.get("...").and_then(|base| self.field(base, name, case)),
+        }
+    }
+
+    /// The path an open value has, with its type, from its segments (`["queue", "3", "title"]`), or None: a root,
+    /// a position for a list root, then fields down to one that holds a value (a field naming a record, `@album`,
+    /// goes on into it).
+    fn walk(&self, segs: &[&str], case: bool) -> Option<(String, String)> {
+        let (first, rest) = segs.split_first()?;
+        let root = self.roots.get(*first)?;
+        let mut path = vec![(*first).to_owned()];
+        let mut rest = rest;
+        if root.list {
+            let (n, more) = rest.split_first()?;
+            n.parse::<u32>().ok().filter(|n| *n > 0)?;
+            path.push((*n).to_owned());
+            rest = more;
+        }
+        let mut record = root.of.as_str();
+        let (last, inner) = rest.split_last()?;
+        for seg in inner {
+            let t = self.field(record, seg, case)?;
+            record = t.strip_prefix('@')?;
+            path.push(self.name_of(record, seg));
+        }
+        let t = self.field(record, last, case)?;
+        if t.starts_with('@') {
+            return None;
+        }
+        path.push(self.name_of(record, last));
+        Some((path.join("."), t.to_owned()))
+    }
+
+    /// A field's own name in its record, whatever the case it was written in.
+    fn name_of(&self, record: &str, seg: &str) -> String {
+        let mut rec = record;
+        loop {
+            let Some(fields) = self.records.get(rec) else {
+                return seg.to_owned();
+            };
+            if let Some(f) = fields.keys().find(|f| *f != "..." && f.eq_ignore_ascii_case(seg)) {
+                return f.clone();
+            }
+            match fields.get("...") {
+                Some(base) => rec = base,
+                None => return seg.to_owned(),
+            }
+        }
+    }
+
+    /// Whether a dotted path names a value: one the model names, or a field of one of its roots.
+    pub(crate) fn knows(&self, path: &str) -> bool {
+        self.values.contains_key(path) || self.walk(&path.split('.').collect::<Vec<_>>(), true).is_some()
+    }
+
+    /// The open value a dashed name stands for (`song-no` for `--song-no`, `copy-where` for `[data-copy-where]`).
+    fn open_dashed(&self, name: &str, case: bool) -> Option<(String, String)> {
+        self.walk(&name.split('-').collect::<Vec<_>>(), case)
+    }
+}
+
+/// A binding's or a field's path and its pipes: `song.duration | time` is `song.duration` and `[("time", "")]`.
+fn piped(text: &str) -> (String, Vec<(String, String)>) {
+    let mut parts = text.split('|');
+    let path = parts.next().unwrap_or_default().trim().to_owned();
+    let pipes = parts
+        .map(|p| {
+            let p = p.trim();
+            match p.split_once(':') {
+                Some((name, arg)) => (name.trim().to_owned(), arg.to_owned()),
+                None => (p.to_owned(), String::new()),
+            }
+        })
+        .collect();
+    (path, pipes)
+}
+
+/// `clock.now` with a pipe that shows seconds: the clock wakes each second for it, as for `clock.second`.
+fn shows_seconds(path: &str, pipes: &[(String, String)]) -> bool {
+    path == "clock.now"
+        && pipes
+            .iter()
+            .any(|(name, arg)| name == "date" && (arg.trim() == "second" || arg.trim() == "time-seconds"))
 }
 
 /// Values whose custom property lull's page writes on its own hosts whatever a theme names (`--song-pos`,
@@ -49,9 +177,13 @@ fn dashed(path: &str) -> String {
     path.replace('.', "-")
 }
 
-/// The first segment of each path: `clock`, `song`...
-fn branches(model: &BTreeMap<String, Value>) -> BTreeSet<&str> {
-    model.keys().filter_map(|p| p.split('.').next()).collect()
+/// The first segment of each named path and every root: `clock`, `song`, `copy`...
+fn branches(m: &Model) -> BTreeSet<&str> {
+    m.values
+        .keys()
+        .filter_map(|p| p.split('.').next())
+        .chain(m.roots.keys().map(String::as_str))
+        .collect()
 }
 
 fn ident(c: char) -> bool {
@@ -153,37 +285,99 @@ pub(crate) fn named(files: &Files) -> Vec<String> {
             n.markup(text);
         }
     }
-    let model = model();
-    model
-        .iter()
-        .filter(|(path, value)| {
-            let css = format!("--{}", dashed(path));
-            let attr = format!("data-{}", dashed(path));
-            let state = value.kind == "state" || value.kind == "flag";
-            n.binds.contains(*path)
-                || (n.reads.contains(&css) && !n.sets.contains(&css) && !WRITTEN_ANYWAY.contains(&path.as_str()))
-                || (state && n.attrs.contains(&attr))
-        })
-        .map(|(path, _)| path.clone())
-        .collect()
+    let m = schema();
+    let mut out: BTreeSet<String> = BTreeSet::new();
+    for bind in &n.binds {
+        let (path, pipes) = piped(bind);
+        if m.knows(&path) {
+            if shows_seconds(&path, &pipes) {
+                out.insert("clock.second".to_owned());
+            }
+            out.insert(path);
+        }
+    }
+    for (path, value) in &m.values {
+        let css = format!("--{}", dashed(path));
+        let attr = format!("data-{}", dashed(path));
+        let state = value.kind == "state" || value.kind == "flag";
+        if (n.reads.contains(&css) && !n.sets.contains(&css) && !WRITTEN_ANYWAY.contains(&path.as_str()))
+            || (state && n.attrs.contains(&attr))
+        {
+            out.insert(path.clone());
+        }
+    }
+    // an open value read as a custom property (`--song-no`), or tested on the root (`[data-copy-where]`)
+    for name in n.reads.iter().filter(|r| !n.sets.contains(*r)) {
+        let dashed = name.trim_start_matches('-');
+        if let Some((path, _)) = m
+            .open_dashed(dashed, true)
+            .filter(|(_, t)| t != "date" && !m.values.contains_key(&dashed.replace('-', ".")))
+        {
+            out.insert(path);
+        }
+    }
+    for attr in &n.attrs {
+        let Some(dashed) = attr.strip_prefix("data-") else {
+            continue;
+        };
+        if m.values.contains_key(&dashed.replace('-', ".")) {
+            continue;
+        }
+        if let Some((path, _)) = m.open_dashed(dashed, false).filter(|(_, t)| t != "date" && t != "list") {
+            out.insert(path);
+        }
+    }
+    out.into_iter().collect()
 }
 
 /// A binding or a field that names a value in one of the model's branches must be one the model has,
 /// so a theme never ships a value that stays empty. Names outside the model's branches are the
 /// theme's own business, as they always were.
 pub(crate) fn check_slot(path: &str, html: &str) -> Result<()> {
-    let model = model();
-    let branches = branches(&model);
-    for name in binds(html).into_iter().chain(fields(html)) {
-        let Some((branch, _)) = name.split_once('.') else {
+    let m = schema();
+    let branches = branches(&m);
+    for written in binds(html).into_iter().chain(fields(html)) {
+        let (name, pipes) = piped(&written);
+        let branch = name.split_once('.').map(|(b, _)| b);
+        let in_model = branch.is_some_and(|b| branches.contains(b));
+        if !pipes.is_empty() && !in_model {
+            return Err(bad(format!(
+                "{path} turns {name} into words with a pipe; pipes work on the live model's values (song.title, clock.now...)"
+            )));
+        }
+        for (pipe, _) in &pipes {
+            if !m.pipes.contains_key(pipe) {
+                return Err(bad(format!(
+                    "{path} names the pipe {pipe}, which lull doesn't have; the pipes are {}",
+                    m.pipes.keys().map(String::as_str).collect::<Vec<_>>().join(", ")
+                )));
+            }
+        }
+        let Some(branch) = branch.filter(|_| in_model) else {
             continue;
         };
-        if branches.contains(branch) && !model.contains_key(&name) {
-            let has: Vec<&str> = model
+        if !m.knows(&name) {
+            let mut has: Vec<String> = m
+                .values
                 .keys()
                 .filter(|p| p.split('.').next() == Some(branch))
-                .map(String::as_str)
+                .cloned()
                 .collect();
+            if let Some(root) = m.roots.get(branch) {
+                let mut fields: Vec<String> = Vec::new();
+                let mut rec = Some(root.of.as_str());
+                while let Some(r) = rec {
+                    let Some(f) = m.records.get(r) else { break };
+                    fields.extend(f.keys().filter(|k| *k != "...").cloned());
+                    rec = f.get("...").map(String::as_str);
+                }
+                let at = if root.list {
+                    format!("{branch}.<n>.")
+                } else {
+                    format!("{branch}.")
+                };
+                has.extend(fields.into_iter().map(|f| format!("{at}{f}")));
+            }
             return Err(bad(format!(
                 "{path} names {name}, which lull's live model doesn't have; {branch} has {}",
                 has.join(", ")
@@ -300,6 +494,191 @@ mod tests {
         assert!(check_slot("slots/brand.html", "<b data-bind=\"my.thing\"></b>{{ a.b }}").is_ok());
     }
 
+    #[test]
+    fn any_field_of_a_root_is_a_value_by_path_and_pipes_turn_it_into_words() {
+        let got = named(&files(&[
+            (
+                "theme.css",
+                ".a { width: calc(var(--song-no) * 1px) } :root[data-copy-where=\"soulseek\"] .b { color: red } .c { content: var(--queue-3-title) }",
+            ),
+            (
+                "slots/brand.html",
+                "<b data-bind=\"copy.sizeBytes | size\"></b><i>{{ clock.now | date:weekday-short | upper }}</i><u>{{album.label}}</u>",
+            ),
+        ]));
+        assert_eq!(
+            got,
+            [
+                "album.label",
+                "clock.now",
+                "copy.sizeBytes",
+                "copy.where",
+                "queue.3.title",
+                "song.no"
+            ]
+        );
+        assert!(
+            check_slot(
+                "slots/brand.html",
+                "<b data-bind=\"song.duration | time\"></b>{{ queue.12.artist | upper }}"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_clock_shown_to_the_second_names_the_second() {
+        let got = named(&files(&[(
+            "slots/brand.html",
+            "<b data-bind=\"clock.now | date:time-seconds\"></b>",
+        )]));
+        assert_eq!(got, ["clock.now", "clock.second"]);
+    }
+
+    #[test]
+    fn an_open_name_the_model_has_no_field_for_names_nothing() {
+        // a theme's own properties and attributes that start like a root, as the built-ins' do
+        let got = named(&files(&[(
+            "theme.css",
+            ".a { gap: var(--album-gap); color: var(--player-ink) } [data-place] .b, [data-player] .c, [data-place-at] .d { color: red }",
+        )]));
+        assert!(got.is_empty(), "{got:?}");
+    }
+
+    #[test]
+    fn an_unknown_field_or_pipe_is_refused_by_name() {
+        let msg = check_slot("slots/brand.html", "<b data-bind=\"copy.peers\"></b>")
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(msg.contains("copy.peers") && msg.contains("copy.peer,"), "{msg}");
+        let msg = check_slot("slots/brand.html", "{{ song.title | shout }}")
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(msg.contains("shout") && msg.contains("upper"), "{msg}");
+        let msg = check_slot("slots/brand.html", "{{ title | upper }}")
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(msg.contains("song.title"), "{msg}");
+    }
+
+    /// The records a theme reads by path are lull's own types as the hub sends them: a field added to one reaches
+    /// every theme, and this fails until `web/designs/live.json` lists it.
+    #[test]
+    fn the_records_are_lulls_own_types() {
+        use lull_core::ids::{AlbumId, ArtistId, TrackId};
+        use lull_core::model::{Album, Artist, FileFacts, Playlist, Saved, Track};
+        let shape = |v: serde_json::Value| -> BTreeMap<String, String> {
+            v.as_object()
+                .map(|o| {
+                    o.iter()
+                        .map(|(k, v)| {
+                            let t = match v {
+                                serde_json::Value::String(_) => "text",
+                                serde_json::Value::Number(_) => "number",
+                                serde_json::Value::Bool(_) => "flag",
+                                serde_json::Value::Array(_) => "list",
+                                _ => "?",
+                            };
+                            (k.clone(), t.to_owned())
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let s = || "x".to_owned();
+        let track = Track {
+            id: TrackId(s()),
+            title: s(),
+            artist_id: ArtistId(s()),
+            artist: s(),
+            album_id: AlbumId(s()),
+            album: s(),
+            year: Some(1),
+            no: Some(1),
+            disc: Some(1),
+            duration: Some(1),
+            tags: vec![],
+            saved: true,
+            file: Some(FileFacts {
+                format: s(),
+                codec: s(),
+                lossless: true,
+                khz: Some(1.0),
+                bits: Some(1),
+                kbps: Some(1),
+                size_bytes: Some(1),
+            }),
+        };
+        let album = Album {
+            id: AlbumId(s()),
+            title: s(),
+            artist_id: ArtistId(s()),
+            artist: s(),
+            year: Some(1),
+            kind: Some(s()),
+            released: Some(s()),
+            label: Some(s()),
+            tags: vec![],
+            saved: Saved::All,
+            track_ids: vec![],
+            duration: Some(1),
+            musicbrainz_id: Some(s()),
+        };
+        let artist = Artist {
+            id: ArtistId(s()),
+            name: s(),
+            tags: vec![],
+            listeners: Some(1),
+            bio: Some(s()),
+            musicbrainz_id: Some(s()),
+        };
+        let playlist = Playlist {
+            id: s(),
+            name: s(),
+            description: s(),
+            track_ids: vec![],
+            created_at: 1,
+            updated_at: 1,
+        };
+        let records = schema().records;
+        for (name, value) in [
+            ("track", serde_json::to_value(&track)),
+            ("album", serde_json::to_value(&album)),
+            ("artist", serde_json::to_value(&artist)),
+            ("playlist", serde_json::to_value(&playlist)),
+        ] {
+            let want = shape(value.unwrap_or_default());
+            assert_eq!(records.get(name), Some(&want), "web/designs/live.json records.{name}");
+        }
+    }
+
+    #[test]
+    fn every_root_holds_a_record_and_every_field_a_type_lull_knows() {
+        let m = schema();
+        for (name, root) in &m.roots {
+            assert!(m.records.contains_key(&root.of), "root {name} holds {}", root.of);
+            assert!(
+                ["song", "press", "minute"].contains(&root.pace.as_str()),
+                "root {name}: pace {}",
+                root.pace
+            );
+        }
+        for (name, fields) in &m.records {
+            for (field, t) in fields {
+                let ok = if field == "..." {
+                    m.records.contains_key(t)
+                } else {
+                    ["text", "number", "flag", "list", "date"].contains(&t.as_str())
+                        || t.strip_prefix('@').is_some_and(|r| m.records.contains_key(r))
+                };
+                assert!(ok, "records.{name}.{field}: {t}");
+            }
+        }
+    }
+
     /// live.js publishes from its own copy of the model, one line; `LULL_WRITE_PACKAGES=1 cargo test -p
     /// lull-themes` writes it.
     #[test]
@@ -317,11 +696,25 @@ mod tests {
             })
             .collect();
         let line = format!("  var MODEL = {};", serde_json::to_string(&model).unwrap_or_default());
+        let m = schema();
+        let roots: BTreeMap<&String, serde_json::Value> = m
+            .roots
+            .iter()
+            .map(|(n, r)| (n, serde_json::json!([r.of, r.list, r.pace])))
+            .collect();
+        let pipes: Vec<&String> = m.pipes.keys().collect();
+        let open = format!(
+            "  var OPEN = {};",
+            serde_json::to_string(&serde_json::json!({ "roots": roots, "records": m.records, "pipes": pipes }))
+                .unwrap_or_default()
+        );
         let want = have
             .lines()
             .map(|l| {
                 if l.starts_with("  var MODEL = ") {
                     line.as_str()
+                } else if l.starts_with("  var OPEN = ") {
+                    open.as_str()
                 } else {
                     l
                 }
@@ -333,7 +726,7 @@ mod tests {
         }
         let have = std::fs::read_to_string(&path).unwrap_or_default();
         assert!(
-            have.contains(&format!("\n{line}\n")) && have == want,
+            have.contains(&format!("\n{line}\n")) && have.contains(&format!("\n{open}\n")) && have == want,
             "web/designs/live.js: MODEL is stale: run LULL_WRITE_PACKAGES=1 cargo test -p lull-themes"
         );
     }

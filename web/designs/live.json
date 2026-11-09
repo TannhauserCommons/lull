@@ -1,5 +1,5 @@
 {
-  "note": "lull's live model for themes (ADR-0101, docs/themes.md section 14). Each value is a dotted path; its type gives its forms: text and number are words in data-bind and a custom property (--path-with-dashes) on the live hosts, a state also an attribute on :root (data-path-with-dashes), a flag only that attribute (true, false) and a number 1 or 0. pace is how often it can change. The hub lists in a theme's manifest the values its CSS and slots name, and the page publishes only those. Adding a value keeps the theme api; renaming or removing one breaks it. After editing, LULL_WRITE_PACKAGES=1 cargo test -p lull-themes writes web/designs/live.js's copy.",
+  "note": "lull's live model for themes (ADR-0101, docs/themes.md section 14). Each value is a dotted path; its type gives its forms: text and number are words in data-bind and a custom property (--path-with-dashes) on the live hosts, a state also an attribute on :root (data-path-with-dashes), a flag only that attribute (true, false) and a number 1 or 0. pace is how often it can change. The hub lists in a theme's manifest the values its CSS and slots name, and the page publishes only those. Adding a value keeps the theme api; renaming or removing one breaks it. After editing, LULL_WRITE_PACKAGES=1 cargo test -p lull-themes writes web/designs/live.js's copy. Beyond the named values, any field of what lull holds is a path (the amendment of 2026-11-09): `roots` says what each root holds and how often it changes, `records` the fields of each record, and `pipes` the words a value can be turned into. records.track, .album, .artist and .playlist are lull's own types as the hub sends them, which cargo test -p lull-themes checks; the others are what live.js builds, which tests/web/live.test.mjs checks against them.",
   "values": {
     "clock.time": {
       "type": "text",
@@ -452,5 +452,174 @@
       "pace": "resize",
       "about": "each region's own height in px, on that region alone"
     }
+  },
+  "roots": {
+    "song": {
+      "of": "track",
+      "pace": "song",
+      "about": "the playing song"
+    },
+    "album": {
+      "of": "album",
+      "pace": "song",
+      "about": "the playing song's album"
+    },
+    "artist": {
+      "of": "artist",
+      "pace": "song",
+      "about": "the playing song's artist"
+    },
+    "copy": {
+      "of": "copy",
+      "pace": "song",
+      "about": "the copy of it that plays"
+    },
+    "next": {
+      "of": "queued",
+      "pace": "song",
+      "about": "the song after it"
+    },
+    "queue": {
+      "of": "queued",
+      "list": true,
+      "pace": "song",
+      "about": "the songs after it, by position: queue.1, queue.2..."
+    },
+    "player": {
+      "of": "player",
+      "pace": "press",
+      "about": "the player"
+    },
+    "place": {
+      "of": "place",
+      "pace": "song",
+      "about": "the place the song plays from"
+    },
+    "radio": {
+      "of": "radio",
+      "pace": "song",
+      "about": "the radio that adds songs, while there is one"
+    },
+    "clock": {
+      "of": "clock",
+      "pace": "minute",
+      "about": "the device's time"
+    }
+  },
+  "records": {
+    "track": {
+      "id": "text",
+      "title": "text",
+      "artistId": "text",
+      "artist": "text",
+      "albumId": "text",
+      "album": "text",
+      "year": "number",
+      "no": "number",
+      "disc": "number",
+      "duration": "number",
+      "tags": "list",
+      "saved": "flag",
+      "format": "text",
+      "codec": "text",
+      "lossless": "flag",
+      "khz": "number",
+      "bits": "number",
+      "kbps": "number",
+      "sizeBytes": "number"
+    },
+    "album": {
+      "id": "text",
+      "title": "text",
+      "artistId": "text",
+      "artist": "text",
+      "year": "number",
+      "type": "text",
+      "released": "text",
+      "label": "text",
+      "tags": "list",
+      "saved": "text",
+      "trackIds": "list",
+      "duration": "number",
+      "musicbrainzId": "text"
+    },
+    "artist": {
+      "id": "text",
+      "name": "text",
+      "tags": "list",
+      "listeners": "number",
+      "bio": "text",
+      "musicbrainzId": "text"
+    },
+    "playlist": {
+      "id": "text",
+      "name": "text",
+      "description": "text",
+      "trackIds": "list",
+      "createdAt": "number",
+      "updatedAt": "number"
+    },
+    "queued": {
+      "...": "track",
+      "group": "text"
+    },
+    "copy": {
+      "where": "text",
+      "name": "text",
+      "library": "text",
+      "saved": "flag",
+      "received": "number",
+      "format": "text",
+      "peer": "text",
+      "sizeBytes": "number",
+      "speed": "number",
+      "rank": "number",
+      "of": "number"
+    },
+    "player": {
+      "status": "text",
+      "statusText": "text",
+      "playing": "flag",
+      "shuffle": "flag",
+      "repeat": "text",
+      "volume": "number",
+      "muted": "flag",
+      "crossfading": "flag",
+      "private": "flag",
+      "duration": "number",
+      "durationKnown": "flag"
+    },
+    "place": {
+      "kind": "text",
+      "id": "text",
+      "name": "text",
+      "path": "text"
+    },
+    "radio": {
+      "name": "text",
+      "keepsAdding": "flag",
+      "steer": "number",
+      "error": "text",
+      "seed": "text"
+    },
+    "clock": {
+      "now": "date"
+    }
+  },
+  "pipes": {
+    "size": "a byte count as words: 32.8 MB",
+    "time": "seconds as a clock: 3:45, 1:02:03",
+    "length": "seconds as a length: 36 min, 1 h 12 min",
+    "date": "a time in the device's language, by its argument: weekday, weekday-short, weekday-narrow, month, month-short, day, year, date, date-short, time, time-seconds, hour, minute, second",
+    "upper": "in capitals",
+    "lower": "in small letters",
+    "pad": "a number with leading zeros to its argument's length: pad:2 makes 07",
+    "pct": "0 to 1 as a percentage: 42%",
+    "fixed": "a number with its argument's decimals: fixed:1",
+    "pick": "the first word for a true value (not 0, empty or false), else the second: pick:pause,play",
+    "map": "a value's own words by key: map:sun=SUNDAY,sat=SATURDAY; any other value stays as it is",
+    "or": "its argument when the value is empty, 0 or false: or:-",
+    "count": "how many things a list has",
+    "join": "a list's things joined by its argument (', ' if none)"
   }
 }
