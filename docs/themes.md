@@ -780,7 +780,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
 ### Now Playing
 
 - **The page:** `.now` (`data-tab`: `art` `lyrics` `queue` `details` on a phone; `data-page`: `now` `source` `save`), `data-sec` (which tab a section belongs to).
-- **The hero:** `.now-head`, `.now-acts`, `.now-dev` and `.now-devc` (the hero and its compact form), `data-now` (live parts of a hero, section 6), `data-like`, `.now-slide`, `.now-osd`, `.now-sbtn` (a button on the device screen).
+- **The hero:** `.now-head`, `.now-acts`, `.now-dev` and `.now-devc` (the hero and its compact form), `data-now` (live parts of a hero, section 6), `data-now-cover` (the hero's cover part, with the size it asked for), `data-like`, `.now-slide`, `.now-osd`, `.now-sbtn` (a button on the device screen).
 - **The cards:** `.now-ly` and `.now-lycard` (lyrics), `.now-q` and `.now-qcard` (the queue), `.now-next`, `.now-src` and `.now-srccard` (the source), `.now-seg` (the phone tabs).
 - **Pairs a design may lay out as one box:** `.now__intro` (`.now-head` and the actions after it) and `.now__side` (`.now-srccard` and `.now-lycard`). Each is `display: contents` until a design gives it a box, so the parts stay items of the page's grid; give it one to place the pair together and let the layout space them (lull stacks the lyrics over the source in `.now__side`; petal writes the title on the page with its actions under it in `.now__intro`), never fixed heights or offsets guessed from the other's size.
 

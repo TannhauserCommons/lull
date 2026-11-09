@@ -952,6 +952,14 @@
     $$('[data-now="next"], [data-now="queue"]').forEach(function (c) { c.setAttribute('data-meta', queueMeta()); });
     App.setMeta(App.fmt.formatLine(cur()));
   }
+  /* the covers a hero's slot placed (in a c-art wrapper or not): each is drawn again for the song at the size it asked
+     for, which its data-now-cover holds (designs.js heroCover) */
+  function refreshCovers(t) {
+    $$('[data-now-cover]').forEach(function (el) {
+      var sz = el.getAttribute('data-now-cover');
+      el.outerHTML = Designs.heroCover(t, /^\d+$/.test(sz) ? +sz : sz);
+    });
+  }
   function onPlayer(kind) {
     if (!onRoute()) return;
     var t = cur();
@@ -960,7 +968,10 @@
     if (kind === 'track') {
       $$('[data-now="screen"]').forEach(function (h) { slideSwap(h, function () { return slide(cur()); }); });
       $$('[data-now="c-screen"]').forEach(function (h) { slideSwap(h, function () { return compactSlide(cur()); }); });
-      $$('[data-now="c-art"]').forEach(function (h) { swap(h, t ? ui.cover(t, 56) : '<span class="now-dev__slot" aria-hidden="true"></span>'); });
+      $$('[data-now="c-art"]').forEach(function (h) {
+        if (!h.querySelector('[data-now-cover]')) swap(h, t ? ui.cover(t, 56) : '<span class="now-dev__slot" aria-hidden="true"></span>');
+      });
+      refreshCovers(t);
       $$('[data-now="b"]').forEach(function (h) { swap(h, likeBtn(52)); });
       $$('[data-now="cb"]').forEach(function (h) { swap(h, likeBtn(40)); });
       $$('[data-now="b-label"]').forEach(function (el) { App.setText(el, t && App.isLiked(t.id) ? 'liked' : 'like'); });

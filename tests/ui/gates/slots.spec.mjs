@@ -76,13 +76,16 @@ const HARD = {
     '<lull-part name="list" of="home.jump" count="4" label="Jump back in"><lull-row><lull-part name="play-button"></lull-part><b class="hd-j">{{item.title}}{{item.name}}</b></lull-row></lull-part>' +
     '<p class="hd-line"><span>Kasagumo</span>, <span>Night drive</span> · <span>1984</span></p></section>',
 };
+/* a hero that holds the song's cover as a print with its album under it, no hook of lull's around the cover: the
+   cover part is the hero's own, so it follows the song as the caption does (the Fuji themes' print) */
+const PRINTED = { 'nowHero.full': '<figure class="pr-print"><lull-part name="cover" size="240"></lull-part><figcaption data-now="album">{{album}}</figcaption></figure>' };
 const UPRIGHT_CSS = `#pbar > [data-slot="after.playerbar"] { position: fixed; right: 40px; bottom: 120px; }
 .tu-fader .seek[aria-orientation="vertical"] { width: 24px; min-width: 0; height: 160px; }`;
 
 let hub, dir;
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'lull-slots-'));
-  for (const [id, slots, css] of [['slotted', SLOTS, CSS], ['handed', HANDED, ''], ['parted', PARTED, ''], ['upright', UPRIGHT, UPRIGHT_CSS], ['owned', OWNED, ''], ['placed', PLACED, ''], ['hard', HARD, '']]) {
+  for (const [id, slots, css] of [['slotted', SLOTS, CSS], ['handed', HANDED, ''], ['parted', PARTED, ''], ['upright', UPRIGHT, UPRIGHT_CSS], ['owned', OWNED, ''], ['placed', PLACED, ''], ['hard', HARD, ''], ['printed', PRINTED, '']]) {
     mkdirSync(join(dir, id, 'slots'), { recursive: true });
     writeFileSync(join(dir, id, 'theme.json'), JSON.stringify({ ...MANIFEST, id, name: id }));
     writeFileSync(join(dir, id, 'theme.css'), css);
@@ -424,5 +427,29 @@ test('the contract theme, the walls found since: queue rows play in the queue, A
   const place = await page.locator('.hd-more lull-part[of="home.jump"] li.lull-list__row[data-place^="album:"]').first().getAttribute('data-place');
   await page.locator(`.hd-more li.lull-list__row[data-place="${place}"] [data-act="play-album"]`).click();
   await expect(page.locator(`.hd-more li.lull-list__row[data-place="${place}"]`)).toHaveClass(/is-playing-place/);
+  await ctx.close();
+});
+
+test('a hero\'s cover follows the song to another album, as the album under it does', async ({ browser }) => {
+  const ctx = await context(browser), page = await ctx.newPage();
+  await openScreen(page, `/playlist/${ids.longPlaylist}`, { design: 'printed' });
+  const [first, second] = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id'));
+    const album = (id) => App.data.track(id).albumId;
+    const other = rows.find((id) => album(id) !== album(rows[0]));
+    App.player.playList([rows[0], other], 0);
+    return [rows[0], other].map((id) => ({ albumId: album(id), album: App.data.track(id).album }));
+  });
+  await page.evaluate(() => { location.hash = '#/now'; });
+  // a cover is drawn for its album's key: the picture once the hub hands it out, until then a place for it
+  const print = page.locator('.now .pr-print');
+  const drawnFor = (album) => print.locator(`[data-art="${album}"], [data-wait-art="${album}"]`);
+  await expect(drawnFor(first.albumId)).toHaveCount(1);
+  await expect(print.locator('figcaption')).toHaveText(first.album);
+
+  await page.evaluate(() => App.player.next());
+  await expect(print.locator('figcaption'), 'the album under the print').toHaveText(second.album);
+  await expect(drawnFor(second.albumId), 'the print, the song\'s own cover').toHaveCount(1);
+  await expect(drawnFor(first.albumId), 'and no longer the last song\'s').toHaveCount(0);
   await ctx.close();
 });

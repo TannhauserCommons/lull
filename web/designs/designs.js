@@ -429,6 +429,12 @@
     if (cls && out) out = out.replace(/^(<[a-z]+[^>]*?\sclass=")/, '$1' + esc(cls) + ' ');
     return out;
   }
+  /* the cover a hero's slot places: the song's, or an empty place while nothing plays. It keeps the size the slot asked
+     for in data-now-cover, so Now Playing draws it again for the next song through here (now.js), at that size */
+  D.heroCover = function (track, sz) {
+    var out = track && window.App ? String(App.ui.cover(track, sz, { hero: true })) : '<span class="now-dev__slot" aria-hidden="true"></span>';
+    return out.replace(/^<([a-z]+)/, '<$1 data-now-cover="' + esc(sz) + '"');
+  };
   function ic(name, cls) { return window.icon ? String(window.icon(name, null, cls)) : ''; }
   function num(el, attr, dflt) { var v = parseFloat(el.getAttribute(attr)); return isNaN(v) ? dflt : v; }
   function size(el, dflt) { var v = el.getAttribute('size'); return !v ? dflt : /^\d+$/.test(v) ? +v : v; }
@@ -515,7 +521,7 @@
     cover: function (c, el, slot) {
       if (slot === 'miniPlayer') return c.parts.cover(num(el, 'size', 84));
       if (hasPart(c, 'cover')) return c.track ? c.parts.cover(c.track, size(el, 64)) : '';
-      return c.track && window.App ? App.ui.cover(c.track, size(el, 56), { hero: true }) : '<span class="now-dev__slot" aria-hidden="true"></span>';
+      return D.heroCover(c.track, size(el, 56));
     },
     seek: function () { return window.App ? App.ui.seekBar({ bind: 'player', label: 'Seek' }) : ''; },
     /* where the song plays from: the link Now Playing shows (App.ui.playingFrom), refreshed in place by now.js; label
