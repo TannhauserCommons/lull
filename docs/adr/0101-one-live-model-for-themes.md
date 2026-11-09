@@ -1,6 +1,6 @@
 # ADR-0101: One live model for themes, any value anywhere, markup in every region
 
-- Status: accepted (the owner approved it on 2026-11-08, and its amendment of 2026-11-09 on 2026-11-09)
+- Status: accepted (the owner approved it on 2026-11-08, and its amendments of 2026-11-09 the same day)
 - Date: 2026-11-08
 
 ## Context
@@ -481,3 +481,87 @@ queue.
 | 6. jump back in can't be placed | B: `home.jump` in any slot, its rows the theme's own |
 | 7. no room above the shell | C: `before.app` |
 | 8. contrast blind over masks | the check's own fix, above |
+
+## Amended again 2026-11-09: lull itself, not a menu
+
+The owner asked why every round of mockups still hit walls after "complete freedom", and decided: "hand out lull
+itself, modular clean composable documented code".
+
+**Why the walls kept coming.** Each round handed themes a bigger menu, but still a menu lull chose:
+- the roots a theme could read (`song`, `album`, `queue`...);
+- the lists and the sections, registered one at a time;
+- the parts, each bound to the playing song and never to an item;
+- the actions, only lull's own, with no state of a theme's own;
+- the contrast check, which judged a picture with the text's shadows taken out.
+
+A mockup that wanted anything off the menu hit a wall, and each fix closed only the wall it hit.
+
+### Decision: four general modules, and checks that judge only the outcome
+
+**1. Data: every record and every read lull makes (`web/designs/model.js`).** One module turns anything lull holds into
+a record a theme can read.
+- **Items from ids.** lull's ids carry their kind (`t-` a track, `al-` an album, `ar-` an artist, `pl-` a playlist), so
+  any id, or any object that names one (`{ trackId, at }`, `{ kind, id }`), is that record, with whatever the object
+  adds.
+- **Derived fields, in one place.** A track's `source` (where it would play from: `library`, `device`, `soulseek`) and
+  `liked`; the playing song's copy as `copy`.
+- **Any list.** `<lull-part name="list" read="/api/library/albums" key="items">` draws the ids or objects at `key` of
+  any GET read under `/api/` that lull's API documents (docs/context/api.md), fetched only where it is placed and drawn
+  again whenever lull reads it again. Named lists stay as shorthands: `queue`, `home.<feed key>`, `history`, `liked`.
+- **Paths.** The live model's paths reach the same records (`song.source`, `queue.2.source`, `item.source`).
+
+**2. Any part for any item.** Every part takes `for="<id>"`: `cover`, `play-button`, `like-button`, `save-button`,
+`source-badge`, `quality-chip`, `menu`. Inside a list's own row (`<lull-row>`), each part is bound to that row's item
+by itself. Without `for`, a part is the playing song's, as before.
+
+**3. Any piece of any screen.** `<lull-part name="screen" path="/home" pick='[data-region="jump"]'>` draws what that
+screen draws and keeps the piece `pick` names, in any slot. It is drawn again when the reads it made come back and at
+the player's changes. Nothing is registered: a screen lull adds, or a piece of one, is placeable the day it exists.
+`home.<shelf>`, `now.queue` and `now.source` stay as shorthands.
+
+**4. State for a theme's own markup, without script.** One action, `data-act="state"`:
+- `data-state="tab=lyrics"` sets a state;
+- `data-state="drawer"` toggles one;
+- `data-state="mode=a|b|c"` cycles one.
+
+The state is kept on the nearest element marked `data-states` (or the slot's box) as `name:value` words in its
+`data-state` attribute, so CSS follows it with `[data-state~="tab:lyrics"]`. An element marked
+`data-show="tab:lyrics"` is shown only in that state (`hidden` otherwise, so a screen reader skips it too). A button
+that sets a state says whether it is on (`aria-pressed`, or `aria-selected` inside a `role="tablist"`). A set state
+always has a value (the one the markup starts with), so one tab is always open. Tabs, docks, drawers, expanders and
+pagers are all this.
+
+**5. The checks judge what is drawn and whether it works.**
+- **Readability:** the contrast check measures text against what is drawn behind it, its own shadows included. A
+  dense shadow close to the letters backs them as readers see it; a faint one still fails.
+- **Features:** the features gate, every feature reachable.
+- **Speed:** the performance gates.
+- **Nothing about how a theme got there.**
+
+**6. A guard against the next wall.** A contract gate draws a theme built like the hardest mockups so far:
+- its own rows with covers, source marks and lengths;
+- tabs from state;
+- a piece of Now Playing on Home;
+- a list from any read;
+- a strip above the shell;
+- values by path.
+
+It must pass with no change to lull. A wall a mockup finds later is a bug in this contract, fixed here and added to
+that theme.
+
+### What stays lull's
+
+These are kept for safety and accessibility, not taste:
+- a theme runs no script (ADR-0004);
+- no outside links, forms or embeds (the sanitizer);
+- reads are GETs under `/api/` only;
+- every feature reachable and every text readable, as drawn.
+
+### Constraints
+
+The same as above:
+- **Additive:** `api` stays 1.
+- **Built-ins unchanged.**
+- **Pay for use:** `model.js` loads with `parts.js` or `live.js`, only for a theme that uses them.
+- **Nothing per frame:** a placed screen piece is drawn again at reads and player changes, never on a tick.
+- **Measured:** by the perf gates and the shipped-bytes budget.
