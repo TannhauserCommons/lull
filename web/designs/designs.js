@@ -379,6 +379,9 @@
     for (var i = 0; i < parts.length; i++) {
       var p = parts[i], n = p.getAttribute('name');
       if (catalogued(name, n) && window.App && App.parts && App.parts.has(n)) p.innerHTML = App.parts.draw(p);
+      /* the playing-from part a slot hands, between two comments: Now Playing redraws only what lies between them, so
+         a theme's own words beside it in the same element stay (now.js refreshFrom) */
+      else if (n === 'playing-from') p.outerHTML = '<!--playing-from-->' + part(name, p, ctx, made) + '<!--/playing-from-->';
       else p.outerHTML = part(name, p, ctx, made);
     }
     /* the catalogue's parts drew (each keeps its <lull-part>), or a theme's own bound keys: for app.js to set */

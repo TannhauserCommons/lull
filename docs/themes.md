@@ -427,6 +427,15 @@ if you put one in), `shuffle` and `mute` (pressed), `repeat` (pressed, and its l
 pressed while it is liked), `save` (the playing song: pressed, its label, disabled while nothing plays), and `xfade` (shown while songs crossfade). Section 15
 lists the actions a button of yours can name.
 
+**lull never writes over your markup.** In what your slots draw, lull changes only: a binding's words (`data-bind`), an
+attribute (pressed, a label, a song's id, a class lull's state gives), a custom property, what a part draws inside its
+own element, and the icon you placed (its `<use>`). Your own elements and your own words stay as you wrote them, beside
+lull's parts too: `<p class="now-head__from"><lull-part name="playing-from"></lull-part> FROM</p>` keeps FROM when Now
+Playing draws the place again. `data-now`, `data-dk-now`, `data-dk-vol` and the other `data-dk-*` hooks are lull's own
+pieces, which lull fills with its words: use one when you want lull's words there, or the live model's values with
+pipes (section 14) for your own. A gate (`tests/ui/gates/slots.spec.mjs`) plays, pauses, likes, shuffles, queues and
+moves between screens in a theme whose every own element says the words it holds, and fails any it finds changed.
+
 Every slot also takes the live model's values, by path, as fields (`{{clock.time}}`, as the slot is drawn) and as bindings that stay current (`<b data-bind="clock.time"></b>`): section 14. A field is the value when the slot was drawn; a binding is the value now.
 
 Keep the live hooks when you rebuild a hero: `data-now="title|artist|album|format|screen|c-screen|c-art|led|head|state|facts|osd"` and `data-act` / `data-bind` on transport buttons (`design/DESIGN.md` 3.5 lists them all). A custom mini player keeps `data-dk-player` and the `data-dk="..."` keys. `data-dk-now`, `data-dk-pos` and `data-dk-dur` are lull's own pieces, which lull fills with its markup and words: keep them for lull's song block, or leave them out and show the song with the live model's values (`<b data-bind="song.title"></b>`, section 14), which lull keeps current without touching your markup. The keys are `play-pause`, `previous`, `next`, `like`, `save` (saved: `aria-pressed="true"`), `shuffle`, `repeat`, `vol-up`, `vol-down`, `seek` (on the wave), `full` and `mini-close`, the names `web/desktop/mini-keys.json` lists. A key keeps your words: on `play-pause` and `like` lull points the icon in it at the one for the player's state (`<lull-part name="icon" icon="{{playIcon}}">`), and gives an empty key its icon, but never touches a key's own words (`<button data-dk="like">LIKE</button>` stays LIKE, pressed while the song is liked). The hub refuses a slot that names any other key, and says which keys there are, so a theme never ships a button that does nothing.

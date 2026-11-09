@@ -32,13 +32,26 @@ const UPRIGHT = {
   'after.playerbar': '<div class="tu-fader"><lull-part name="volume" orientation="vertical"></lull-part></div>',
   'nowHero.full': '<div class="tu-hero"><p class="now-head__from tu-from"><lull-part name="playing-from" label="out of"></lull-part></p><lull-part name="play-button" size="56"></lull-part></div>',
 };
+/* a theme whose every own element says, in data-own, the words it holds (ADR-0101 amended, D): beside lull's parts,
+   in keys lull keeps (data-bind), in a hero, Home's lead, a region and a screen */
+const OWNED = {
+  'nowHero.full': '<div class="ow-hero"><p class="now-head__from" data-own="FROM"><lull-part name="playing-from" label="out of"></lull-part>FROM</p>' +
+    '<lull-part name="play-button" size="56"></lull-part><button data-act="like" data-bind="like" data-own="LIKE">LIKE</button></div>',
+  'homeLead.playing': '<div class="ow-lead" data-own="LEAD">LEAD<lull-part name="state"></lull-part><lull-part name="play-button" size="48"></lull-part></div>',
+  'after.playerbar': '<div class="ow-bar" data-own="BAR">BAR<button data-act="play" data-bind="play" data-own="PLAY"><lull-part name="icon" icon="play"></lull-part>PLAY</button>' +
+    '<button data-act="shuffle" data-bind="shuffle" data-own="SHUF">SHUF</button><button data-act="repeat" data-bind="repeat" data-own="REP">REP</button>' +
+    '<button data-act="save" data-bind="save" data-own="SAVE">SAVE</button><button data-act="mute" data-bind="mute" data-own="MUTE">MUTE</button>' +
+    '<span data-own="NOW">NOW <b data-bind="song.title"></b></span><lull-part name="like-button"></lull-part><lull-part name="up-next" count="2"></lull-part></div>',
+  'before.home': '<p class="ow-home" data-own="HOME">HOME</p>',
+  'after.ctx': '<p class="ow-ctx" data-own="CTX">CTX<lull-part name="playing-from"></lull-part></p>',
+};
 const UPRIGHT_CSS = `#pbar > [data-slot="after.playerbar"] { position: fixed; right: 40px; bottom: 120px; }
 .tu-fader .seek[aria-orientation="vertical"] { width: 24px; min-width: 0; height: 160px; }`;
 
 let hub, dir;
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'lull-slots-'));
-  for (const [id, slots, css] of [['slotted', SLOTS, CSS], ['handed', HANDED, ''], ['parted', PARTED, ''], ['upright', UPRIGHT, UPRIGHT_CSS]]) {
+  for (const [id, slots, css] of [['slotted', SLOTS, CSS], ['handed', HANDED, ''], ['parted', PARTED, ''], ['upright', UPRIGHT, UPRIGHT_CSS], ['owned', OWNED, '']]) {
     mkdirSync(join(dir, id, 'slots'), { recursive: true });
     writeFileSync(join(dir, id, 'theme.json'), JSON.stringify({ ...MANIFEST, id, name: id }));
     writeFileSync(join(dir, id, 'theme.css'), css);
@@ -217,5 +230,54 @@ test('a vertical slider reads the pointer bottom to top, and the hero\'s "playin
   await page.evaluate(() => App.player.next());
   await expect(page.locator('.tu-from .from__label')).toHaveText('out of');
   await expect(page.locator('.tu-from .from__label')).toBeVisible();
+  await ctx.close();
+});
+
+/* every own element of the theme's on the page whose words aren't what its template gave it, and how many there are */
+const owned = (page) => page.evaluate(() => {
+  const els = [...document.querySelectorAll('[data-own]')];
+  return { count: els.length, changed: els.map((el) => [el.getAttribute('data-own'), [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.data).join('').trim()])
+    .filter(([want, got]) => want !== got) };
+});
+
+test('lull never writes over a theme\'s own markup: through play, keys, likes, the queue and every screen, its words stay', async ({ browser }) => {
+  const ctx = await context(browser), page = await ctx.newPage();
+  const check = async (where, count) => {
+    const o = await owned(page);
+    expect(o.changed, `${where}: a theme's own words lull changed`).toEqual([]);
+    if (count != null) expect(o.count, `${where}: the theme's own elements on the page`).toBe(count);
+  };
+  await openScreen(page, `/album/${ids.album}`, { design: 'owned' });
+  await check('an album, before playing');
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id'));
+    App.player.playTrack(rows[0], rows);
+  });
+  await page.waitForFunction(() => App.player.state.playing);
+  await check('playing');
+  for (const [what, act] of [['next', () => App.player.next()], ['shuffle', () => App.player.setShuffle()], ['repeat', () => App.player.cycleRepeat()],
+    ['pause', () => App.player.pause()], ['play', () => App.player.play()], ['play next', () => App.player.playNext([App.player.state.queue[App.player.state.queue.length - 1].trackId])],
+    ['volume', () => App.player.setVolume(0.3)], ['mute', () => App.player.toggleMute()]]) {
+    await page.evaluate(act);
+    await settle(page);
+    await check(what);
+  }
+  await page.locator('.ow-bar [data-act="like"]').first().click();
+  await settle(page);
+  await check('a like');
+  await page.evaluate(() => App.togglePanel('queue'));
+  await settle(page);
+  await check('the panel open');
+  await page.evaluate(() => { location.hash = '#/now'; });
+  await settle(page);
+  await expect(page.locator('.ow-hero .from__label')).toHaveText('out of');
+  await check('Now Playing');
+  await page.evaluate(() => App.player.next());
+  await settle(page);
+  await expect(page.locator('.ow-hero .from__label')).toHaveText('out of');
+  await check('Now Playing, another song');
+  await page.evaluate(() => { location.hash = '#/home'; });
+  await settle(page);
+  await check('Home');
   await ctx.close();
 });

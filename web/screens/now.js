@@ -246,8 +246,22 @@
     label = label || 'playing from';
     return ui.playingFrom('', label) || html`${icon('sparkle', null, 'ic-16')}<span>nothing queued</span>${label !== 'playing from' ? html`<span class="from__label" hidden>${label}</span>` : ''}`;
   }
+  /* each line again: lull's own whole; in a theme's element, only the part it handed, between its comments, so the
+     theme's own words beside it stay */
   function refreshFrom() {
-    $$('.now .now-head__from').forEach(function (el) { var l = $('.from__label', el); swap(el, fromLine(l && l.textContent)); });
+    $$('.now .now-head__from').forEach(function (el) {
+      var l = $('.from__label', el), markup = fromLine(l && l.textContent), from = null, to = null;
+      for (var n = el.firstChild; n; n = n.nextSibling) {
+        if (n.nodeType === 8 && n.data === 'playing-from') from = n;
+        else if (from && n.nodeType === 8 && n.data === '/playing-from') { to = n; break; }
+      }
+      if (!to) { swap(el, markup); return; }
+      rememberFocus(el);
+      while (from.nextSibling !== to) el.removeChild(from.nextSibling);
+      var tpl = document.createElement('template'); tpl.innerHTML = String(markup);
+      el.insertBefore(tpl.content, to);
+      restoreFocus(el);
+    });
   }
   /* why this song: its pick in the home feed (when Home has loaded it), or the artist radio it came from */
   function reasonFor(t) {
