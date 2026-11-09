@@ -322,22 +322,54 @@ fn fetch_tool(tool: &Tool) -> io::Result<()> {
     fs::write(&stamp, tool.sha256)
 }
 
+/// A release host that answers 5xx or drops the connection for a moment (GitHub's 504s) would
+/// otherwise fail every cold build, CI's and a listener's source build alike. Such answers are tried
+/// again after a pause; a 404 or a wrong hash isn't, and the bytes are checked by sha256 either way.
+const PAUSES: [u64; 3] = [5, 20, 60];
+
 fn download(url: &str) -> io::Result<Vec<u8>> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(600)))
         .build()
         .into();
+    let mut pauses = PAUSES.iter();
+    loop {
+        let err = match fetch(&agent, url) {
+            Ok(bytes) => return Ok(bytes),
+            Err(err) => err,
+        };
+        match pauses.next() {
+            Some(&secs) if passing(&err) => {
+                println!("cargo:warning={url}: {err}; trying again in {secs} s");
+                std::thread::sleep(std::time::Duration::from_secs(secs));
+            }
+            _ => return Err(io::Error::other(format!("{url}: {err}"))),
+        }
+    }
+}
+
+fn fetch(agent: &ureq::Agent, url: &str) -> Result<Vec<u8>, ureq::Error> {
     let mut bytes = Vec::new();
     agent
         .get(url)
-        .call()
-        .map_err(|e| io::Error::other(format!("{url}: {e}")))?
+        .call()?
         .into_body()
         .into_with_config()
         .limit(256 * 1024 * 1024)
         .reader()
         .read_to_end(&mut bytes)?;
     Ok(bytes)
+}
+
+/// The host's trouble, not the request's: worth one more try.
+fn passing(err: &ureq::Error) -> bool {
+    match err {
+        ureq::Error::StatusCode(code) => *code == 429 || *code >= 500,
+        ureq::Error::Io(_) | ureq::Error::Timeout(_) | ureq::Error::ConnectionFailed | ureq::Error::HostNotFound => {
+            true
+        }
+        _ => false,
+    }
 }
 
 fn extract(archive: &mut zip::ZipArchive<io::Cursor<Vec<u8>>>, entry: &str, to: &Path) -> io::Result<()> {
