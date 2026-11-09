@@ -1,0 +1,3 @@
+* On Windows, a theme can fill the corner under the window's minimise, maximise and close buttons
+* A theme's Now Playing cover changes with the song, at the size the theme chose
+* Theme checks show scrollbars as the app does and point out the ones a theme left plain
