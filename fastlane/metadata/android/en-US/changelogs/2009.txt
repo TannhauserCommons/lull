@@ -1,0 +1,3 @@
+* Theme checks report contrast as advice for the author and never reject a theme for it
+* In a theme's own rows, a queued song plays where it sits in the queue, playlists show their covers, and any list lull keeps (like Activity) can be drawn
+* Building lull from source rides out a moment of GitHub download errors
