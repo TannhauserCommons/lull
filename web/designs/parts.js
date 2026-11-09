@@ -104,8 +104,8 @@
         var t = P.current();
         return t ? ui.playerSave(t) : html`<button class="btn-icon btn-icon--bare" data-act="save" data-bind="save" aria-pressed="false" aria-label="Save to library (Shift+S)" data-tip="Save to library (Shift+S)" disabled>${icon('save')}</button>`;
       } },
-      seek: { make: function (a) { return ui.seekBar({ bind: 'player', label: a('label') || 'Seek' }); } },
-      volume: { make: function () { return ui.volume(); } },
+      seek: { make: function (a) { return ui.seekBar({ bind: 'player', label: a('label') || 'Seek', vertical: a('orientation') === 'vertical' }); } },
+      volume: { make: function (a) { return ui.volume({ vertical: a('orientation') === 'vertical' }); } },
       cover: { on: ['track'], make: function (a) { var t = P.current(); return t ? ui.cover(t, size(a('size'), 56), { hero: true }) : ''; } },
       /* Saved or Soulseek, as the player bar's (a YouTube copy has none there either) */
       'source-badge': { on: COPY, make: function () { var t = P.current(), c = copyNow(); return c && c.where !== 'youtube' ? ui.sourceBadge(t, { button: true }) : ''; } },

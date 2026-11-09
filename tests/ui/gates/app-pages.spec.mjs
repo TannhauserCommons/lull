@@ -228,3 +228,30 @@ test('the mini player says what changed, never the player it opened on', async (
   expect(await notes(), 'a volume press').toEqual(['volume 80%']);
   await expect.poll(() => page.evaluate(() => window.__announced)).toEqual(['volume 80%']);
 });
+
+// A theme's own mini player keys keep their words (docs/themes.md, section 6): on play-pause and like lull points the
+// icon in a key at the player's state, gives an empty key its icon, and never writes over the key's own words.
+test('a theme\'s mini player keys keep their own words; only lull\'s icon in them follows the player', async ({ page, browser }) => {
+  const main = await openMain(await browser.newPage());
+  const handed = await handedOver(main);
+  await main.close();
+  const mini = '<div class="km" data-dk-player><button class="km-like" data-dk="like" aria-label="Like">LIKE</button>' +
+    '<button class="km-play" data-dk="play-pause" aria-label="{{playLabel}}"><lull-part name="icon" icon="{{playIcon}}"></lull-part> PLAY</button>' +
+    '<button class="km-bare" data-dk="like" aria-label="Like"></button></div>';
+  const pkg = { ...handed, manifest: { ...handed.manifest, slots: [...(handed.manifest.slots || []), 'miniPlayer.device'] },
+    slots: { ...handed.slots, 'miniPlayer.device': mini } };
+  await openWrapper(page, 'view=mini&design=paper-moon&base=skydeck&theme=day&opaque=1', pkg);
+  await page.waitForSelector('.km[data-dk-player]');
+  const snap = (playing, liked) => ({ track: { id: 't', title: 'Song', artist: 'Artist' }, playing, liked, pos: 10, duration: 100,
+    durationKnown: true, buffered: [], received: 1, shuffle: false, repeat: 'off', volume: .5, status: 'playing', statusText: '' });
+  const keys = () => page.evaluate(() => ({
+    like: [document.querySelector('.km-like').textContent, document.querySelector('.km-like').getAttribute('aria-pressed')],
+    play: [document.querySelector('.km-play').textContent.trim(), document.querySelector('.km-play use')?.getAttribute('href')],
+    bare: document.querySelector('.km-bare use')?.getAttribute('href'),
+  }));
+  for (const [playing, liked] of [[true, true], [false, false], [true, false]]) {
+    await page.evaluate((s) => window.__bridge.fire('player', s), snap(playing, liked));
+    expect(await keys(), `playing ${playing}, liked ${liked}`).toEqual({
+      like: ['LIKE', String(liked)], play: ['PLAY', playing ? '#i-pause' : '#i-play'], bare: liked ? '#i-heart-fill' : '#i-heart' });
+  }
+});

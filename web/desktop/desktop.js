@@ -553,6 +553,13 @@
   }
   function playIcon() { return S.playing ? ic('pause') : ic('play', 'ic-play'); }
   function likeIcon() { return ic(S.liked ? 'heart-fill' : 'heart'); }
+  /* a key's icon follows the player, as the page's data-bind keys do: lull's icon in it is pointed at the new one; a key
+     with no icon and no words of its own gets lull's; a theme's own words (with or without an icon) are never touched */
+  function keyIcon(b, name, cls) {
+    var u = $('use', b), svg = $('svg.ic', b);
+    if (u) { if (u.getAttribute('href') !== '#i-' + name) u.setAttribute('href', '#i-' + name); if (svg) svg.classList.toggle('ic-play', cls === 'ic-play'); }
+    else if (!b.textContent.trim() && !b.firstElementChild) b.innerHTML = ic(name, cls);
+  }
   function volText() { return 'vol ' + Math.round(S.volume * 100) + '%'; }
 
   /* miniPlayer slot: a design.js may replace the window content. ctx = { style: 'device'|'strip', opaque,
@@ -642,11 +649,11 @@
       });
       $$('[data-dk="play-pause"]', el).forEach(function (b) {
         var label = S.playing ? 'Pause' : 'Play';
-        b.innerHTML = playIcon(); b.setAttribute('aria-label', label); b.setAttribute('data-tip', label);
+        keyIcon(b, S.playing ? 'pause' : 'play', S.playing ? '' : 'ic-play'); b.setAttribute('aria-label', label); b.setAttribute('data-tip', label);
       });
       $$('[data-dk-play-label]', el).forEach(function (n) { n.textContent = S.playing ? 'pause' : 'play'; });
       $$('[data-dk="like"]', el).forEach(function (b) {
-        b.innerHTML = likeIcon(); b.setAttribute('aria-pressed', String(S.liked)); b.classList.toggle('is-liked', S.liked);
+        keyIcon(b, S.liked ? 'heart-fill' : 'heart'); b.setAttribute('aria-pressed', String(S.liked)); b.classList.toggle('is-liked', S.liked);
         b.setAttribute('data-tip', S.liked ? 'Liked' : 'Like');
       });
       $$('[data-dk="save"]', el).forEach(function (b) {

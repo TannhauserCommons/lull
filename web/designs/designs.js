@@ -338,7 +338,7 @@
   /* sanitize: no scripts, event handlers, forms, embeds, <use>, and links only inside the app (#/...). DOMPurify checks
      every attribute value against ALLOWED_URI_REGEXP; the hook keeps that to links, so data-title="Error: x" stays. */
   var PURIFY = {
-    RETURN_DOM: true, ADD_TAGS: ['lull-part'], ADD_ATTR: ['pick', 'inner', 'size', 'bars', 'icon', 'cls', 'label', 'count', 'focusable'],
+    RETURN_DOM: true, ADD_TAGS: ['lull-part'], ADD_ATTR: ['pick', 'inner', 'size', 'bars', 'icon', 'cls', 'label', 'count', 'focusable', 'orientation', 'group', 'shelf'],
     FORBID_TAGS: ['style', 'form', 'input', 'textarea', 'select', 'iframe', 'object', 'embed', 'foreignobject'],
     FORBID_ATTR: ['src', 'srcset', 'action', 'formaction'],
     ALLOWED_URI_REGEXP: /^#/
@@ -512,10 +512,11 @@
       return c.track && window.App ? App.ui.cover(c.track, size(el, 56), { hero: true }) : '<span class="now-dev__slot" aria-hidden="true"></span>';
     },
     seek: function () { return window.App ? App.ui.seekBar({ bind: 'player', label: 'Seek' }) : ''; },
-    /* where the song plays from: the link Now Playing shows (App.ui.playingFrom), refreshed in place by now.js */
-    'playing-from': function (c) {
-      var from = c.track && window.App ? String(App.ui.playingFrom('', 'playing from')) : '';
-      return from || ic('sparkle', 'ic-16') + '<span>nothing queued</span>';
+    /* where the song plays from: the link Now Playing shows (App.ui.playingFrom), refreshed in place by now.js; label
+       is its words before the place's name */
+    'playing-from': function (c, el) {
+      var label = el.getAttribute('label'), from = c.track && window.App ? String(App.ui.playingFrom('', label || 'playing from')) : '';
+      return from || ic('sparkle', 'ic-16') + '<span>nothing queued</span>' + (label ? '<span class="from__label" hidden>' + esc(label) + '</span>' : '');
     },
     /* the playing song and up next, as a dense track list (homeLead) */
     'track-list': function (c, el) {

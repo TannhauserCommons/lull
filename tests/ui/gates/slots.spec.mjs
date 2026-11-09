@@ -27,11 +27,18 @@ const SLOTS = {
    Home lead takes a part only the catalogue draws there (Home hands no state) and one it never hands (next) */
 const HANDED = { 'nowHero.full': '<div class="th-hero"><lull-part name="play-button" size="56"></lull-part><lull-part name="facts"></lull-part><lull-part name="state"></lull-part></div>' };
 const PARTED = { homeLead: '<div class="tp-lead"><b class="tp-state"><lull-part name="state"></lull-part></b><lull-part name="next"></lull-part></div>' };
+/* a theme with an upright volume fader after the player bar, and a hero whose "playing from" has words of its own */
+const UPRIGHT = {
+  'after.playerbar': '<div class="tu-fader"><lull-part name="volume" orientation="vertical"></lull-part></div>',
+  'nowHero.full': '<div class="tu-hero"><p class="now-head__from tu-from"><lull-part name="playing-from" label="out of"></lull-part></p><lull-part name="play-button" size="56"></lull-part></div>',
+};
+const UPRIGHT_CSS = `#pbar > [data-slot="after.playerbar"] { position: fixed; right: 40px; bottom: 120px; }
+.tu-fader .seek[aria-orientation="vertical"] { width: 24px; min-width: 0; height: 160px; }`;
 
 let hub, dir;
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'lull-slots-'));
-  for (const [id, slots, css] of [['slotted', SLOTS, CSS], ['handed', HANDED, ''], ['parted', PARTED, '']]) {
+  for (const [id, slots, css] of [['slotted', SLOTS, CSS], ['handed', HANDED, ''], ['parted', PARTED, ''], ['upright', UPRIGHT, UPRIGHT_CSS]]) {
     mkdirSync(join(dir, id, 'slots'), { recursive: true });
     writeFileSync(join(dir, id, 'theme.json'), JSON.stringify({ ...MANIFEST, id, name: id }));
     writeFileSync(join(dir, id, 'theme.css'), css);
@@ -179,5 +186,36 @@ test('back on a built-in, the theme\'s boxes go', async ({ browser }) => {
   await page.evaluate(() => new Promise((ok) => { App.on('design', ok); App.setDesign('lull', true); }));
   await settle(page);
   expect(await page.evaluate(() => [document.querySelectorAll('.region-slot').length, document.querySelectorAll('lull-part').length])).toEqual([0, 0]);
+  await ctx.close();
+});
+
+test('a vertical slider reads the pointer bottom to top, and the hero\'s "playing from" keeps its own words', async ({ browser }) => {
+  const ctx = await context(browser), page = await ctx.newPage();
+  await openScreen(page, `/album/${ids.album}`, { design: 'upright' });
+  const bar = page.locator('.tu-fader .seek[data-seek="volume"]');
+  await expect(bar).toHaveAttribute('aria-orientation', 'vertical');
+  const box = await bar.boundingBox();
+  // a press near the top is loud, near the bottom quiet: the height in the bar, whatever the pointer's left
+  await page.mouse.click(box.x + 4, box.y + box.height * 0.1);
+  await expect.poll(() => page.evaluate(() => App.player.state.volume)).toBeGreaterThan(0.85);
+  await page.mouse.click(box.x + box.width - 4, box.y + box.height * 0.8);
+  await expect.poll(() => page.evaluate(() => App.player.state.volume)).toBeLessThan(0.25);
+  // the arrow keys work as before: up raises it
+  const was = await page.evaluate(() => App.player.state.volume);
+  await bar.press('ArrowUp');
+  expect(await page.evaluate(() => App.player.state.volume)).toBeGreaterThan(was);
+  // lull's own volume bar stays as it was
+  await expect(page.locator('#pbar > :not(.region-slot) .vol .seek[aria-orientation]')).toHaveCount(0);
+
+  // the hero says where the song plays from in the theme's words, and keeps them through another song and the queue
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id'));
+    App.player.playTrack(rows[0], rows);
+  });
+  await page.evaluate(() => { location.hash = '#/now'; });
+  await expect(page.locator('.tu-from .from__label')).toHaveText('out of');
+  await page.evaluate(() => App.player.next());
+  await expect(page.locator('.tu-from .from__label')).toHaveText('out of');
+  await expect(page.locator('.tu-from .from__label')).toBeVisible();
   await ctx.close();
 });

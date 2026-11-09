@@ -394,17 +394,24 @@ item of whatever holds it (a grid, a row), and a `display` of yours makes the bo
 | `shuffle`, `repeat` | the player bar's toggles, pressed or not (`aria-pressed`); repeat's label and icon say the mode | | never: kept by `data-bind` |
 | `like-button` | Like, for whatever plays | | never: kept by `data-bind="like"` |
 | `save-button` | the player's Save, for whatever plays, with its progress | | never: kept by `data-bind="save"` |
-| `seek` | the song's seek bar | `label` | never: kept by `data-seek="player"` |
-| `volume` | Mute and the volume slider (`.vol`) | | never: kept by `data-bind="mute"`, `data-seek="volume"` |
+| `seek` | the song's seek bar | `label`, `orientation="vertical"` | never: kept by `data-seek="player"` |
+| `volume` | Mute and the volume slider (`.vol`) | `orientation="vertical"` | never: kept by `data-bind="mute"`, `data-seek="volume"` |
 | `cover` | the playing song's cover | `size` (px, or a CSS length) | with the song |
 | `source-badge` | Saved or Soulseek, a button to the source details (none for a YouTube copy, as in the bar) | | with the song and its copy |
 | `quality-chip` | the copy's quality, a button to the source details | | with the song, its copy and its state |
-| `playing-from` | "Playing from" the place, a link that opens it at the song | `label` (the words before the name) | with the song and the queue |
+| `playing-from` | "Playing from" the place, a link that opens it at the song | `label` (the words before the name, in every slot) | with the song and the queue |
 | `facts` | the source badge, the quality chip and the stream's fact (peers, queue place, how much arrived), as Now Playing's screen has them | | with the song, its copy, its state and play or pause |
 | `state` | the player's state in a few words (`buffering`, `paused`) | | the same |
 | `up-next` | the next songs, as the queue's rows (a click plays from there), or "Nothing up next" with Start radio | `count` (1 to 20, 5 if absent), `label` | with the song and the queue |
 | `lyrics` | the song's lyrics as Now Playing's Lyrics card draws them: synced lines that follow the song, a click to jump, text size | | with the song and when its lyrics arrive |
 | `icon` | one of lull's icons | `icon`, `size="16"` | |
+
+**An upright slider.** `orientation="vertical"` makes the `seek` or `volume` part's slider (`.seek`) run bottom to top:
+it says so to a screen reader (`aria-orientation="vertical"`), a press or a drag reads the pointer's height in the bar,
+and the arrow keys work as before (up and right raise it). How it looks is yours. Either turn lull's bar upright, which
+keeps its fill and knob (`.vol .seek[aria-orientation="vertical"] { rotate: -90deg; }`, sized in the space you give it),
+or draw your own from `--pos`, the value from 0 to 1 that lull sets on `.seek` (a fill `height: calc(var(--pos) * 100%)`
+from the bottom).
 
 A part drawn again is redrawn in place, only where it changed, so focus and what didn't change stay. In `homeLead` and
 `nowHero` a part the slot hands itself is drawn as it always was (`cover`, `play-button`, `like-button`, `seek`,
@@ -422,7 +429,7 @@ lists the actions a button of yours can name.
 
 Every slot also takes the live model's values, by path, as fields (`{{clock.time}}`, as the slot is drawn) and as bindings that stay current (`<b data-bind="clock.time"></b>`): section 14. A field is the value when the slot was drawn; a binding is the value now.
 
-Keep the live hooks when you rebuild a hero: `data-now="title|artist|album|format|screen|c-screen|c-art|led|head|state|facts|osd"` and `data-act` / `data-bind` on transport buttons (`design/DESIGN.md` 3.5 lists them all). A custom mini player keeps `data-dk-player` and the `data-dk="..."` keys. `data-dk-now`, `data-dk-pos` and `data-dk-dur` are lull's own pieces, which lull fills with its markup and words: keep them for lull's song block, or leave them out and show the song with the live model's values (`<b data-bind="song.title"></b>`, section 14), which lull keeps current without touching your markup. The keys are `play-pause`, `previous`, `next`, `like`, `save` (saved: `aria-pressed="true"`), `shuffle`, `repeat`, `vol-up`, `vol-down`, `seek` (on the wave), `full` and `mini-close`, the names `web/desktop/mini-keys.json` lists. The hub refuses a slot that names any other key, and says which keys there are, so a theme never ships a button that does nothing.
+Keep the live hooks when you rebuild a hero: `data-now="title|artist|album|format|screen|c-screen|c-art|led|head|state|facts|osd"` and `data-act` / `data-bind` on transport buttons (`design/DESIGN.md` 3.5 lists them all). A custom mini player keeps `data-dk-player` and the `data-dk="..."` keys. `data-dk-now`, `data-dk-pos` and `data-dk-dur` are lull's own pieces, which lull fills with its markup and words: keep them for lull's song block, or leave them out and show the song with the live model's values (`<b data-bind="song.title"></b>`, section 14), which lull keeps current without touching your markup. The keys are `play-pause`, `previous`, `next`, `like`, `save` (saved: `aria-pressed="true"`), `shuffle`, `repeat`, `vol-up`, `vol-down`, `seek` (on the wave), `full` and `mini-close`, the names `web/desktop/mini-keys.json` lists. A key keeps your words: on `play-pause` and `like` lull points the icon in it at the one for the player's state (`<lull-part name="icon" icon="{{playIcon}}">`), and gives an empty key its icon, but never touches a key's own words (`<button data-dk="like">LIKE</button>` stays LIKE, pressed while the song is liked). The hub refuses a slot that names any other key, and says which keys there are, so a theme never ships a button that does nothing.
 
 ## 7. A full example: CSS and a slot
 

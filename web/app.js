@@ -1481,17 +1481,19 @@
   };
 
   /* seek bar bound to the player: every [data-seek="player"] updates live (pointer, keys, aria) */
+  /* opts.vertical: a slider that runs bottom to top (aria-orientation; the pointer reads it so, seekFrac), for a theme's
+     own fader (the seek and volume parts' orientation="vertical"); it draws as the theme's CSS has it */
   ui.seekBar = function (opts) {
     opts = opts || {};
-    return html`<div class="seek ${opts.cls || ''}" data-seek="${opts.bind || 'player'}" role="slider" tabindex="0" aria-label="${opts.label || 'Seek'}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="">
+    return html`<div class="seek ${opts.cls || ''}" data-seek="${opts.bind || 'player'}" role="slider" tabindex="0" aria-label="${opts.label || 'Seek'}" ${opts.vertical ? raw('aria-orientation="vertical"') : ''} aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="">
       <div class="seek__track"><div class="seek__xfer"></div><div class="seek__bufs"></div><div class="seek__played"></div></div>
       <div class="seek__rail"><div class="seek__knob"></div></div>
       <div class="seek__target" aria-hidden="true"></div>
       <div class="seek__tip" aria-hidden="true"></div>
     </div>`;
   };
-  ui.volume = function () {
-    return html`<div class="vol">${ui.iconButton('volume-2', 'Mute', { 'data-act': 'mute', 'data-bind': 'mute', cls: 'btn-icon--bare' })}${ui.seekBar({ bind: 'volume', label: 'Volume' })}</div>`;
+  ui.volume = function (opts) {
+    return html`<div class="vol">${ui.iconButton('volume-2', 'Mute', { 'data-act': 'mute', 'data-bind': 'mute', cls: 'btn-icon--bare' })}${ui.seekBar({ bind: 'volume', label: 'Volume', vertical: opts && opts.vertical })}</div>`;
   };
   /* waveform strip for the device screen; bound to the player like the seek bar */
   ui.wave = function (trackId, bars) {
@@ -3486,9 +3488,12 @@
 
   /* pointer + keyboard for every [data-seek] (player seek, waveform, volume) */
   var drag = null;
-  function seekFrac(el, x) {
+  /* where along the slider a pointer is, 0 to 1: left to right, or bottom to top for a vertical one (a bar a theme turns
+     upright with a rotation measures the same, by its box on screen) */
+  function seekFrac(el, e) {
     var t = $('.seek__track', el) || el, r = t.getBoundingClientRect();
-    return clamp((x - r.left) / r.width, 0, 1);
+    if (el.getAttribute('aria-orientation') === 'vertical') return clamp((r.bottom - e.clientY) / (r.height || 1), 0, 1);
+    return clamp((e.clientX - r.left) / (r.width || 1), 0, 1);
   }
   function applySeek(el, f) {
     if (el.getAttribute('data-seek') === 'volume') { P.setVolume(f); return; }
@@ -3500,24 +3505,24 @@
     e.preventDefault(); el.setAttribute('data-pointer', ''); el.focus({ preventScroll: true });
     drag = { el: el }; el.classList.add('is-scrubbing');   // not is-dragging: that class boxes a dragged row
     try { el.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events */ }
-    applySeek(el, seekFrac(el, e.clientX));
+    applySeek(el, seekFrac(el, e));
   });
   /* the hover tip showing, remembered: this runs on every pointer move anywhere, so it must not search the page */
   var tipOn = null, tipAt = 0;
   document.addEventListener('pointermove', function (e) {
-    if (drag) { applySeek(drag.el, seekFrac(drag.el, e.clientX)); return; }
+    if (drag) { applySeek(drag.el, seekFrac(drag.el, e)); return; }
     var el = e.target.closest && e.target.closest('.seek[data-seek="player"]');
     var tip = el && $('.seek__tip', el);
     if (tipOn && tipOn !== tip) { tipOn.classList.remove('is-on'); tipOn = null; }
     if (!tip) return;
-    var f = seekFrac(el, e.clientX);
+    var f = seekFrac(el, e);
     setText(tip, P.seekTip(f));
     tip.style.left = (f * 100) + '%'; tip.classList.add('is-on'); tipOn = tip; tipAt = f;
   });
   App.on('tick', function () { if (tipOn) setText(tipOn, P.seekTip(tipAt)); });   // what arrived moves on under a still pointer
   document.addEventListener('pointerup', function (e) {
     if (!drag) return;
-    applySeek(drag.el, seekFrac(drag.el, e.clientX));
+    applySeek(drag.el, seekFrac(drag.el, e));
     drag.el.classList.remove('is-scrubbing'); drag = null;
   });
   document.addEventListener('keydown', function (e) {

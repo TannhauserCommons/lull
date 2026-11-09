@@ -240,9 +240,14 @@
      3. Info stack: playing-from label, title block, chips, action row, source card, up next
      ===================================================================== */
   /* inside every .now-head__from (the info head, the phone sheet's top bar, a design's hero: the playing-from part):
-     "playing from <place>", a link that opens it at the song (App.goPlaying) */
-  function fromLine() {
-    return ui.playingFrom('', 'playing from') || html`${icon('sparkle', null, 'ic-16')}<span>nothing queued</span>`;
+     "playing from <place>", a link that opens it at the song (App.goPlaying). label: the words before the place's name,
+     a theme's own (the part's label attribute), kept in its .from__label (hidden while nothing plays) */
+  function fromLine(label) {
+    label = label || 'playing from';
+    return ui.playingFrom('', label) || html`${icon('sparkle', null, 'ic-16')}<span>nothing queued</span>${label !== 'playing from' ? html`<span class="from__label" hidden>${label}</span>` : ''}`;
+  }
+  function refreshFrom() {
+    $$('.now .now-head__from').forEach(function (el) { var l = $('.from__label', el); swap(el, fromLine(l && l.textContent)); });
   }
   /* why this song: its pick in the home feed (when Home has loaded it), or the artist radio it came from */
   function reasonFor(t) {
@@ -953,7 +958,7 @@
       swap($('[data-now="lyrics"]'), lyricsBlock('page'));
       swap($('[data-now="next"]'), upNext());
       swap($('[data-now="queue"]'), queueBlock());
-      $$('.now .now-head__from').forEach(function (el) { swap(el, fromLine()); });
+      refreshFrom();
       lyMountAll(); App.syncRows();
     } else if (kind === 'status' || kind === 'source' || kind === 'ended' || kind === 'state' || kind === 'play') {
       $$('[data-now="facts"]').forEach(function (el) { swap(el, factsLine()); });
@@ -966,7 +971,7 @@
     } else if (kind === 'queue') {
       swap($('[data-now="next"]'), upNext());
       swap($('[data-now="queue"]'), queueBlock());
-      $$('.now .now-head__from').forEach(function (el) { swap(el, fromLine()); });
+      refreshFrom();
       App.syncRows();
     } else if (kind === 'volume') {
       if (Date.now() - lastRender > 400) showOsd();
