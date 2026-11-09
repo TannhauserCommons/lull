@@ -461,7 +461,9 @@ export const gateFree = (el, check) => {
 // - With { seeThrough: true } (a window the desktop shows through) a see-through pixel is judged over black and over
 //   white, the worse of the two.
 // Not judged: text in form fields, in SVG and in generated content (::before, ::after), and text whose fill is a picture
-// (background-clip: text). Text shadows are taken out with the text and count for nothing.
+// (background-clip: text). A text's shadows stay in every picture: they paint whatever colour the text is, so what
+// they draw behind the letters is judged as what a reader sees there (a dense shadow close to the letters backs them;
+// a faint one doesn't).
 // Left out as decoration: text drawn at under half opacity (its own times its ancestors') and text a filter blurs (on it
 // or round it): a blurred, faded copy of a title behind it. Text a screen reader skips (aria-hidden) is still judged when
 // it shows: a sighted listener reads a visible label (Now Playing's "Devices") whatever the button's accessible name.
@@ -476,7 +478,7 @@ export async function contrast(page, { seeThrough = false } = {}) {
     } finally { if (style) await style.evaluate((s) => s.remove()); }
   };
   const inked = (c) => `*, *::before, *::after { color: ${c} !important; -webkit-text-fill-color: ${c} !important; ` +
-    `-webkit-text-stroke-color: ${c} !important; text-shadow: none !important; transition: none !important; }`;
+    `-webkit-text-stroke-color: ${c} !important; transition: none !important; }`;
   const probe = await shoot(inked('#f0f')), clear = await shoot(inked('transparent'));
   const unmasked = await shoot(inked('transparent') + ' *, *::before, *::after { -webkit-mask: none !important; mask: none !important; }');
   return page.evaluate(contrastWorst, { texts, probe, clear, unmasked, seeThrough });
@@ -587,13 +589,16 @@ const contrastWorst = async ({ texts, probe, clear, unmasked, seeThrough }) => {
   for (const t of texts) {
     const lines = t.rects.filter((r) => !hidden(t, r));
     const area = lines.reduce((s, r) => s + (r.right - r.left) * (r.bottom - r.top), 0);
-    const step = Math.max(1, Math.sqrt(area / 600));   // about 600 samples a text, at most
-    const spots = [];
+    // what is behind the letters themselves: the pixels the probe-coloured text inks (the gaps between letters, where
+    // a shadow close to them doesn't reach, aren't read against); all of the line's, when too few are inked to tell
+    const step = Math.max(1, Math.sqrt(area / 2400));   // about 2,400 samples a text, at most
+    const inked = (i) => dist(px(probed, i), px(behind, i)) >= 48, spots = [], all = [];
     for (const r of lines) for (let y = r.top + step / 2; y < r.bottom; y += step) for (let x = r.left + step / 2; x < r.right; x += step) {
       const i = at(x * k, y * k); if (t.masked && masked(i)) continue;
-      const pixel = px(behind, i), a = behind.data[i + 3] / 255;
-      for (const bg of a < 1 && seeThrough ? [over(pixel, a, [0, 0, 0]), over(pixel, a, [255, 255, 255])] : [pixel]) spots.push({ ratio: reads(t, bg), bg });
+      const pixel = px(behind, i), a = behind.data[i + 3] / 255, into = inked(i) ? spots : all;
+      for (const bg of a < 1 && seeThrough ? [over(pixel, a, [0, 0, 0]), over(pixel, a, [255, 255, 255])] : [pixel]) into.push({ ratio: reads(t, bg), bg });
     }
+    if (spots.length < 8) spots.push(...all);
     if (!spots.length) continue;
     spots.sort((p, q) => p.ratio - q.ratio);
     const worst = spots[Math.floor(spots.length * 0.05)], need = t.large ? 3 : 4.5;

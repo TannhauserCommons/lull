@@ -74,3 +74,16 @@ test('the contrast check judges text over a masked shape as drawn, and lets a ma
     </div></body>`);
   expect(await contrast(page), 'white text a mask fades over black').toBeNull();
 });
+
+// The contrast check counts a text's own shadows as drawn: white words on a pale sky read when a dense, close shadow
+// backs them, and still fall short with a faint one.
+test('the contrast check counts a text\'s shadow as what readers see behind it', async ({ page }) => {
+  const { contrast } = await import('../checks.mjs');
+  const sky = (shadow) => `<body style="margin:0;background:#cfe3f2"><p style="margin:0;padding:40px;font:600 18px sans-serif;color:#fff;text-shadow:${shadow}">white on the day sky</p></body>`;
+  await page.setContent(sky('none'));
+  expect(await contrast(page), 'no shadow').toMatch(/white on the day sky/);
+  await page.setContent(sky('0 0 1px #0b1828, 0 0 2px #0b1828, 0 0 3px #0b1828, 0 0 6px #0b1828e0'));
+  expect(await contrast(page), 'a dense shadow close to the letters').toBeNull();
+  await page.setContent(sky('0 2px 12px #0b182822'));
+  expect(await contrast(page), 'a faint shadow').toMatch(/white on the day sky/);
+});
