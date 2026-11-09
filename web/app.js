@@ -1752,9 +1752,12 @@
   var openPop = null, contextAt = null;
   function placeNear(el, anchor, at) {
     var r = at ? { left: at.x, right: at.x, top: at.y, bottom: at.y, width: 0 } : anchor.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
-    var left = clamp(at ? at.x : r.left + r.width / 2 - w / 2, 12, window.innerWidth - w - 12);
-    var top = r.bottom + (at ? 2 : 10);
-    if (top + h > window.innerHeight - 12) top = Math.max(12, r.top - h - (at ? 2 : 14));
+    /* its distance from the window's edge and the side it opens on with room: layout switches (ADR-0101) */
+    var m = App.layout ? parseFloat(App.layout.switch('popover-margin')) || 0 : 12, up = App.layout && App.layout.switch('popover-side') === 'above';
+    var left = clamp(at ? at.x : r.left + r.width / 2 - w / 2, m, window.innerWidth - w - m);
+    var below = r.bottom + (at ? 2 : 10), above = r.top - h - (at ? 2 : 14);
+    var top = up && above >= m ? above : below;
+    if (top + h > window.innerHeight - m) top = Math.max(m, above);
     el.style.left = left + 'px'; el.style.top = top + 'px';
   }
   App.closePopover = function (returnFocus) {
@@ -1835,8 +1838,9 @@
     var r = tipFor.getBoundingClientRect(); tipEl.classList.add('is-on');
     tipEl.style.left = '0px'; tipEl.style.top = '0px';
     var w = tipEl.offsetWidth, h = tipEl.offsetHeight;
-    var top = r.top - h - 8; if (top < 8) top = r.bottom + 8;
-    tipEl.style.left = clamp(r.left + r.width / 2 - w / 2, 8, window.innerWidth - w - 8) + 'px';
+    var g = App.layout ? parseFloat(App.layout.switch('tip-margin')) || 0 : 8;
+    var top = r.top - h - g; if (top < g) top = r.bottom + g;
+    tipEl.style.left = clamp(r.left + r.width / 2 - w / 2, g, window.innerWidth - w - g) + 'px';
     tipEl.style.top = top + 'px';
   }
   function hideTip() { clearTimeout(tipTimer); tipFor = null; tipAsked = false; if (tipEl) tipEl.classList.remove('is-on'); }
@@ -4145,6 +4149,17 @@
      ===================================================================== */
   var actions = {};
   App.action = function (name, fn) { actions[name] = fn; };
+  /* an action by name, from somewhere with no element of this page: a key in the desktop app's mini player windows
+     (desktop.js) names one with its data-* attributes, and it runs as from a button carrying them (ADR-0101 amended,
+     F: one vocabulary of actions in every window). False for a name lull doesn't have */
+  App.run = function (name, attrs) {
+    var fn = actions[name]; if (!fn) return false;
+    var el = document.createElement('button');
+    Object.keys(attrs || {}).forEach(function (k) { if (/^data-[a-z0-9-]+$/.test(k)) el.setAttribute(k, attrs[k]); });
+    el.setAttribute('data-act', name);
+    fn(el);
+    return true;
+  };
   function ids(el) { return (el.getAttribute('data-ids') || el.getAttribute('data-id') || '').split(',').filter(Boolean); }
   /* the songs a button names, else the one playing: a theme's own Like, Save or Add to playlist names none */
   function songIds(el) { var l = ids(el), cur = P.currentId(); return l.length ? l : cur ? [cur] : []; }

@@ -255,3 +255,32 @@ test('a theme\'s mini player keys keep their own words; only lull\'s icon in the
       like: ['LIKE', String(liked)], play: ['PLAY', playing ? '#i-pause' : '#i-play'], bare: liked ? '#i-heart-fill' : '#i-heart' });
   }
 });
+
+// One vocabulary of actions (ADR-0101 amended, F): a button of a theme's own with any of the page's actions, in the
+// mini player, runs in the main window as on the page, with its data-* attributes.
+test('a theme\'s own button with a page action in the mini player runs that action in the main window', async ({ page, browser }) => {
+  const main = await openMain(await browser.newPage());
+  const handed = await handedOver(main);
+  const mini = '<div class="ka" data-dk-player><button class="ka-shuf" data-act="shuffle">SHUF</button>' +
+    '<button class="ka-open" data-act="open-now" data-tab="queue">QUEUE</button><button data-dk="play-pause" aria-label="Play"></button></div>';
+  const pkg = { ...handed, manifest: { ...handed.manifest, slots: [...(handed.manifest.slots || []), 'miniPlayer.device'] },
+    slots: { ...handed.slots, 'miniPlayer.device': mini } };
+  await openWrapper(page, 'view=mini&design=paper-moon&base=skydeck&theme=day&opaque=1', pkg);
+  await page.waitForSelector('.ka[data-dk-player]');
+  await page.evaluate(() => {
+    const out = window.__sent = [];
+    const t = window.__TAURI__, emitTo = t.event.emitTo;
+    t.event.emitTo = (to, name, p) => { if (name === 'mini') out.push({ to, ...p }); return emitTo(to, name, p); };
+  });
+  await page.locator('.ka-shuf').click();
+  await page.locator('.ka-open').click();
+  expect(await page.evaluate(() => window.__sent)).toEqual([
+    { to: 'main', action: 'act', name: 'shuffle', attrs: { 'data-act': 'shuffle' } },
+    { to: 'main', action: 'act', name: 'open-now', attrs: { 'data-act': 'open-now', 'data-tab': 'queue' } },
+  ]);
+  // main runs it as the page would
+  const was = await main.evaluate(() => App.player.state.shuffle);
+  await main.evaluate(() => window.__bridge.fire('mini', { action: 'act', name: 'shuffle', attrs: { 'data-act': 'shuffle' } }));
+  await expect.poll(() => main.evaluate(() => App.player.state.shuffle)).toBe(!was);
+  await main.close();
+});

@@ -196,8 +196,19 @@ which would flip it back and forth.
 | `--layout-phone` | `off`, `on` (lull: under 640 px) | lull's phone behaviour: the queue opens on Now Playing's Queue tab and asking for the lyrics there goes to its Lyrics tab, the equaliser and Play on another device open as sheets, Esc on Now Playing goes back, Classic starts with its equaliser closed. Your CSS draws the phone's layout itself (lull's, under 640 px: the mini player and the tab bar); set this where it does |
 | `--layout-size-regular`, `--layout-size-wide`, `--layout-size-xwide`, `--layout-size-ultra` | any length: `640px`, `1100px`, `1600px`, `2200px` | the main area's width from which each size class starts (`.app[data-size]`); `wide` is also the room the Now column needs |
 | `--layout-height-short` | any length: `760px` | the window's height under which `.app[data-height]` is `short` |
+| `--layout-panel-min`, `--layout-panel-max` | any length: `280px`, `560px` | the docked panel's width the listener drags within (their own width is kept per device, held to these) |
+| `--layout-panel-h-min`, `--layout-panel-h-max` | any length: `200px`, `600px` | its height, when docked by its height |
+| `--layout-now-min`, `--layout-now-max`, `--layout-now-width` | any length: `300px`, `560px`, `360px` | the Now column's width the listener drags within, and its width until they do |
+| `--layout-strip` | any length: `60px` | a folded panel's or Now column's strip |
+| `--layout-nowcol-gap` | any length: `16px` | the gap lull counts beside the Now column when it measures the room the column takes: set it with your grid's gap there |
+| `--layout-popover-margin`, `--layout-tip-margin` | any length: `12px`, `8px` | how far a popover (a menu) and a tooltip keep from the window's edge |
+| `--layout-popover-side` | `below`, `above` | the side of its key a popover opens on when it has room there (else the other) |
 | `--fit-order` | `auto` (the part's `data-fit`), or a whole number | on a part that gives way: its order in its row, 1 first. Parts of one order give way together, and the row's `data-fit-gave` lists these orders |
 | `--fit-sides` | `mirror`, `none` | on a row in three columns (`#pbar`): `mirror` sizes both sides alike (`--fit-side`, as wide as the tools need), so the transport stays centred; `none` leaves the sides to your grid, and lull sets no `--fit-side` |
+
+The desktop app's mini player window takes its height from what your mini player draws, and its width from
+`--layout-mini-width` on `[data-dk-player]` (a length; the app's own when you set none: 340 px for the device, 540 for
+the strip), kept within the screen.
 
 The queue along the bottom, docked at every width from 1000 px and dragged by its height, a Now column that never
 folds, and Like and Save the last to give way, after the song's chips (`display: contents` on a wrapper hands its parts
@@ -1184,5 +1195,10 @@ for the playing song need no `data-id`.
 | `theme` | day or night |
 | `status` | the services' status, by the button |
 | `shortcuts`, `palette` | the keyboard shortcuts, the command palette |
+
+**One vocabulary, every window.** These actions work wherever your markup is: in any slot of lull's page, in a list
+part's row of yours (with the row's item: `data-act="play-track" data-id="{{item.id}}"`, section 6), and in the desktop
+app's mini player windows, where a button of yours with `data-act` runs in the main window as it would there (with
+its `data-*` attributes). The mini player's own keys (`data-dk`, section 6) stay as they are.
 
 Screens are links: `<a href="#/library">`, `#/search`, `#/now`, `#/settings/appearance`.

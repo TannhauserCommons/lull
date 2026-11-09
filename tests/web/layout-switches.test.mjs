@@ -34,15 +34,17 @@ const scripts = walk(WEB).filter((f) => f.endsWith('.js') && !f.endsWith('.min.j
 
 /* the measurements that decide no layout, by file and a piece of their line, each with why */
 const ALLOWED = [
-  { file: 'app.js', has: 'window.innerWidth - w - 12', why: 'a popover is kept inside the window, wherever its anchor is' },
-  { file: 'app.js', has: 'window.innerHeight - 12', why: 'a popover opens above its anchor when it would run off the window\'s foot' },
+  { file: 'app.js', has: 'window.innerWidth - w - m', why: 'a popover is kept inside the window, wherever its anchor is (m: --layout-popover-margin)' },
+  { file: 'app.js', has: 'window.innerHeight - m', why: 'a popover opens on its other side when it would run off the window (its side: --layout-popover-side)' },
   { file: 'app.js', has: 'var lastW = window.innerWidth', why: 'popovers close when the window really resizes, not when a phone\'s keyboard shows' },
   { file: 'app.js', has: 'if (window.innerWidth !== lastW)', why: 'the same: a change of width, compared with the last, never with a breakpoint' },
-  { file: 'app.js', has: 'window.innerWidth - w - 8', why: 'a tooltip is kept inside the window' },
+  { file: 'app.js', has: 'window.innerWidth - w - g', why: 'a tooltip is kept inside the window (g: --layout-tip-margin)' },
   { file: 'screens/now.js', has: 'bottom: innerHeight', why: 'dragging a queue row scrolls its list; the window is the box when the list has none' },
   { file: 'desktop/desktop.js', has: 'r.bottom + 6 + th > innerHeight', why: 'the mini player\'s tooltip opens above its key at the window\'s foot' },
   { file: 'desktop/desktop.js', has: 'innerWidth - tw - 4', why: 'the mini player\'s tooltip is kept inside its window' },
-  { file: 'desktop/desktop.js', has: 'h !== innerHeight', why: 'the mini player\'s window is sized to what it draws' },
+  { file: 'desktop/desktop.js', has: 'wd = width || innerWidth', why: 'the mini player\'s window is sized to what it draws, its width to --layout-mini-width' },
+  { file: 'desktop/desktop.js', has: 'h !== innerHeight || wd !== innerWidth', why: 'the window is resized only when what it draws differs from its size' },
+  { file: 'desktop/desktop.js', has: 'screen.availWidth || want', why: 'the width a theme asks for its mini player window is kept within the screen' },
   { file: 'designs/loops.js', has: 'r.top >= win.innerHeight', why: 'a loop off the screen is not checked (Theme Studio\'s loop advice)' },
 ];
 

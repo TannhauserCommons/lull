@@ -125,6 +125,8 @@ const THEMES = {
     @media (max-width: 1199px) { .app { --layout-nowcol: kept; } }
     .pbar__badges { display: contents; }
     .pbar__acts { --fit-order: 9; }`,
+  // the panel's own drag bounds and popovers that open above their key (ADR-0101 amended, E: no layout number in script)
+  bounds: `.app { --layout-panel-min: 320px; --layout-panel-max: 400px; --layout-popover-side: above; --layout-popover-margin: 24px; }`,
   // one capsule in the middle of the window, its parts side by side: lull's mirrored sides end
   capsule: `
     .pbar { --fit-sides: none; justify-self: center; width: min(100%, 980px); grid-template-columns: minmax(0, 1fr) auto auto; }`,
@@ -181,6 +183,30 @@ test.describe('a theme that sets switches', () => {
     await handle.focus(); await page.keyboard.press('ArrowDown'); await frames(page);
     expect(await page.evaluate(() => App.layout.get().panelHeight), 'the down arrow makes it shorter').toBe(384);
     expect(await page.evaluate(() => App.layout.get().panelWidth), 'its width is left as it was').toBe(null);
+    await close();
+  });
+
+  test('the panel drags within the theme\'s bounds, and a popover opens on the theme\'s side, its margin from the edge', async ({ browser }) => {
+    const { page, close } = await open(browser, 'bounds', { width: 1440, height: 900 });
+    await page.evaluate(() => App.openPanel('queue')); await frames(page);
+    const handle = page.locator('#ctx [data-resize="panel"]');
+    await expect(handle).toHaveAttribute('aria-valuemin', '320');
+    await expect(handle).toHaveAttribute('aria-valuemax', '400');
+    await handle.focus(); await handle.press('End'); await frames(page);
+    expect(await page.evaluate(() => App.layout.get().panelWidth), 'End: the theme\'s widest').toBe(400);
+    await handle.press('Home'); await frames(page);
+    expect(await page.evaluate(() => App.layout.get().panelWidth), 'Home: the theme\'s narrowest').toBe(320);
+    const placed = await page.evaluate(() => {
+      const a = document.createElement('button'); a.textContent = 'anchor';
+      Object.assign(a.style, { position: 'fixed', left: '4px', top: '400px' });
+      document.body.appendChild(a);
+      const pop = App.popover(a, '<p style="margin:0;width:120px;height:60px">menu</p>', { label: 'Test' });
+      const r = pop.el.getBoundingClientRect(), k = a.getBoundingClientRect();
+      pop.close();
+      return { above: r.bottom <= k.top, left: Math.round(r.left) };
+    });
+    expect(placed.above, 'above its key, with room there').toBe(true);
+    expect(placed.left, 'kept 24 px from the window\'s edge').toBe(24);
     await close();
   });
 

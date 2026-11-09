@@ -1098,6 +1098,21 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 @property --layout-size-xwide { syntax: "<length>"; inherits: false; initial-value: 1600px; }
 @property --layout-size-ultra { syntax: "<length>"; inherits: false; initial-value: 2200px; }
 @property --layout-height-short { syntax: "<length>"; inherits: false; initial-value: 760px; }
+/* the sizes a listener drags within (the panel by its width or its height, the Now column), the Now column's first
+   width, a folded panel's or column's strip and the column's gap; a popover's and a tooltip's distance from the
+   window's edge, and the side a popover opens on when there is room (ADR-0101 amended, E) */
+@property --layout-panel-min { syntax: "<length>"; inherits: false; initial-value: 280px; }
+@property --layout-panel-max { syntax: "<length>"; inherits: false; initial-value: 560px; }
+@property --layout-panel-h-min { syntax: "<length>"; inherits: false; initial-value: 200px; }
+@property --layout-panel-h-max { syntax: "<length>"; inherits: false; initial-value: 600px; }
+@property --layout-now-min { syntax: "<length>"; inherits: false; initial-value: 300px; }
+@property --layout-now-max { syntax: "<length>"; inherits: false; initial-value: 560px; }
+@property --layout-now-width { syntax: "<length>"; inherits: false; initial-value: 360px; }
+@property --layout-strip { syntax: "<length>"; inherits: false; initial-value: 60px; }
+@property --layout-nowcol-gap { syntax: "<length>"; inherits: false; initial-value: 16px; }
+@property --layout-popover-margin { syntax: "<length>"; inherits: false; initial-value: 12px; }
+@property --layout-popover-side { syntax: "below | above"; inherits: false; initial-value: below; }
+@property --layout-tip-margin { syntax: "<length>"; inherits: false; initial-value: 8px; }
 @media (max-width: 639px) { .app { --layout-phone: on; } }
 @media (min-width: 1100px) { .app { --layout-ctx-dismiss: outside; } }
 @media (min-width: 1360px) { .app { --layout-ctx: docked; } }

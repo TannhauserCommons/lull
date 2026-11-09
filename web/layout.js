@@ -34,9 +34,14 @@
   var DEFAULTS = { panelWidth: null, panelHeight: null, panelCollapsed: false, nowColumn: false, nowWidth: null, searchSplit: false, panelSplit: false };
   /* the bounds of what the listener drags, by dimension: the panel's width, its height (docked by its height), the
      column's width. The listener's own choice, kept per device whatever the theme, so it stays valid in every theme */
-  var LIMITS = { panel: [280, 560], 'panel-h': [200, 600], now: [300, 560] };
+  /* the bounds of each, from the layout switches (lull's: 280 to 560, 200 to 600, 300 to 560 px), read as they are */
+  var LIMIT = { panel: ['panel-min', 'panel-max'], 'panel-h': ['panel-h-min', 'panel-h-max'], now: ['now-min', 'now-max'] };
+  function lim(dim) { return [px(LIMIT[dim][0]), Math.max(px(LIMIT[dim][0]), px(LIMIT[dim][1]))]; }
+  var LIMITS = { get panel() { return lim('panel'); }, get 'panel-h'() { return lim('panel-h'); }, get now() { return lim('now'); } };
   var STORED = { panel: 'panelWidth', 'panel-h': 'panelHeight', now: 'nowWidth' };
-  var NOW_DEFAULT = 360, STRIP = 60, GAP = 16, KEY_STEP = 16;
+  var KEY_STEP = 16;
+  /* a length switch in px (each is registered as a <length>, so it reads as one) */
+  function px(name) { return parseFloat(S[name]) || 0; }
   var app = $('#app'), main = $('.main');
   var live = { panel: null, 'panel-h': null, now: null };   // a size being dragged: shown at once, saved when the drag ends
   var DRAG = { panel: '--ctx-drag', 'panel-h': '--ctx-h-drag', now: '--now-drag' };
@@ -45,9 +50,8 @@
   /* ---------- layout switches (ADR-0101; docs/themes.md, section 5, Layout switches) ----------
      Their values are registered in components.css, so each read is one of them. Read all at once from one computed
      style, before this pass writes anything */
-  var SWITCHES = ['--layout-ctx', '--layout-ctx-axis', '--layout-ctx-dismiss', '--layout-ctx-split', '--layout-search-split',
-    '--layout-nowcol', '--layout-phone', '--layout-size-regular', '--layout-size-wide', '--layout-size-xwide',
-    '--layout-size-ultra', '--layout-height-short'];
+  /* every --layout-* that components.css registers, one line (tests/web/layout-switches.test.mjs holds it to them) */
+  var SWITCHES = ['--layout-ctx', '--layout-ctx-axis', '--layout-ctx-dismiss', '--layout-ctx-split', '--layout-search-split', '--layout-nowcol', '--layout-phone', '--layout-size-regular', '--layout-size-wide', '--layout-size-xwide', '--layout-size-ultra', '--layout-height-short', '--layout-panel-min', '--layout-panel-max', '--layout-panel-h-min', '--layout-panel-h-max', '--layout-now-min', '--layout-now-max', '--layout-now-width', '--layout-strip', '--layout-nowcol-gap', '--layout-popover-margin', '--layout-popover-side', '--layout-tip-margin'];
   var S = {};   // by name without --layout-: S.ctx, S['size-wide']
   function readSwitches() {
     var cs = getComputedStyle(app), changed = false;
@@ -98,7 +102,7 @@
     at: function (name) { return rank(name) > 0 && rank(App.layout.size()) >= rank(name); },
     /* a layout switch's value, as the last pass read it: lull's script asks this, never the window */
     switch: function (name) { return S[name]; },
-    limits: LIMITS, defaults: { now: NOW_DEFAULT }
+    limits: LIMITS, defaults: { get now() { return px('now-width'); } }
   };
   function rank(name) { return CLASSES.indexOf(name) + 1; }
   /* the widest class whose width the main area reaches */
@@ -110,15 +114,15 @@
   /* ---------- applying: attributes and custom properties on .app, nothing measured ---------- */
   function docked() { return app.getAttribute('data-ctx') === 'docked'; }
   function nowShown() { var v = app.getAttribute('data-nowcol'); return v === 'open' || v === 'strip'; }
-  function nowOpen() { return live.now || L.nowWidth || NOW_DEFAULT; }
-  function nowWidth() { return L.nowColumn === 'strip' ? STRIP : L.nowWidth || NOW_DEFAULT; }
+  function nowOpen() { return live.now || L.nowWidth || px('now-width'); }
+  function nowWidth() { return L.nowColumn === 'strip' ? px('strip') : L.nowWidth || px('now-width'); }
   function panelExpanded() { return docked() && !L.panelCollapsed; }
   /* what the expanded panel takes from the main area's width beside its strip: nothing when docked by its height */
-  function panelCost() { return byWidth() ? current('panel') - STRIP : 0; }
+  function panelCost() { return byWidth() ? current('panel') - px('strip') : 0; }
   /* the main area's width with the Now column closed and the panel at its strip (no feedback loop: it doesn't change
      as either opens), and what the expanded panel takes from it */
   function freeWidth() {
-    var shownW = nowShown() ? (app.getAttribute('data-nowcol') === 'strip' ? STRIP : nowOpen()) + GAP : 0;
+    var shownW = nowShown() ? (app.getAttribute('data-nowcol') === 'strip' ? px('strip') : nowOpen()) + px('nowcol-gap') : 0;
     return mainW + shownW + (panelExpanded() ? panelCost() : 0);
   }
   function wideAt(w) { return rank(classOf(w)) >= rank('wide'); }
@@ -132,8 +136,8 @@
     prop(app, '--now-w', nowWidth() + 'px');
     /* the panel: its stored width (or height), or the icon strip while docked and collapsed */
     var strip = docked() && L.panelCollapsed;
-    prop(app, '--ctx', strip && byWidth() ? STRIP + 'px' : L.panelWidth ? L.panelWidth + 'px' : '');
-    prop(app, '--ctx-h', strip && !byWidth() ? STRIP + 'px' : L.panelHeight ? L.panelHeight + 'px' : '');
+    prop(app, '--ctx', strip && byWidth() ? px('strip') + 'px' : L.panelWidth ? L.panelWidth + 'px' : '');
+    prop(app, '--ctx-h', strip && !byWidth() ? px('strip') + 'px' : L.panelHeight ? L.panelHeight + 'px' : '');
     toggleAttr('data-panel', strip ? 'strip' : null);
     toggleAttr('data-panel-split', L.panelSplit && App.layout.at(S['ctx-split']) ? '' : null);
     showLive('panel'); showLive('panel-h'); showLive('now');

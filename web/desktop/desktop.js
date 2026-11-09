@@ -710,6 +710,14 @@
   function seekTo(fraction) { toMain('seek', { fraction: Math.min(1, Math.max(0, fraction)) }); }
 
   doc.addEventListener('click', function (e) {
+    /* any of the page's actions, on a key of a theme's own in the mini player (data-act, with its data-* attributes):
+       main runs it as the page would (App.run) */
+    var page = e.target.closest('[data-dk-player] [data-act]');
+    if (page && !page.closest('[data-dk]')) {
+      var attrs = {};
+      Array.prototype.forEach.call(page.attributes, function (a) { if (a.name.indexOf('data-') === 0) attrs[a.name] = a.value; });
+      return toMain('act', { name: page.getAttribute('data-act'), attrs: attrs });
+    }
     var el = e.target.closest('[data-dk]'); if (!el) return;
     var act = el.getAttribute('data-dk'), scope = el.closest('[data-dk-player]');
     if (scope && MINI_KEYS[act] === 'main') return toMain(act);
@@ -854,9 +862,12 @@
   function fitWindow(el) {
     if (fitting) fitting.disconnect();
     var w = currentWindow(), LogicalSize = (T.dpi || T.window).LogicalSize;
+    /* the width its theme's CSS asks for (--layout-mini-width on the player, ADR-0101 amended, E), within the screen */
+    var want = parseFloat(getComputedStyle(el).getPropertyValue('--layout-mini-width')) || 0;
+    var width = want ? Math.round(Math.min(Math.max(want, 200), screen.availWidth || want)) : 0;
     fitting = new ResizeObserver(function () {
-      var h = Math.ceil(el.getBoundingClientRect().height);
-      if (h && h !== innerHeight) w.setSize(new LogicalSize(innerWidth, h)).catch(logFailure('mini player size'));
+      var h = Math.ceil(el.getBoundingClientRect().height), wd = width || innerWidth;
+      if (h && (h !== innerHeight || wd !== innerWidth)) w.setSize(new LogicalSize(wd, h)).catch(logFailure('mini player size'));
     });
     fitting.observe(el);
   }
@@ -890,6 +901,7 @@
         case 'vol-up': return P.setVolume(ps.volume + .1);
         case 'vol-down': return P.setVolume(ps.volume - .1);
         case 'seek': return typeof detail.fraction === 'number' && P.seekFraction(detail.fraction);
+        case 'act': return typeof detail.name === 'string' && (App.run(detail.name, detail.attrs) || console.warn('lull desktop: unknown action', detail.name));
         case 'hello': miniOpen = true; return sendPlayer(true);
         case 'bye': miniOpen = false; return;            // also sent by the app when it destroys the mini player
         default: console.warn('lull desktop: unknown action', a);
