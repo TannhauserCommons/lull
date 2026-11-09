@@ -1,0 +1,6 @@
+* Themes can use anything lull knows, put any part or section anywhere, keep their own words and make their own tabs and drawers
+* A theme made for this lull won't install on an older one
+* Built-in designs look the same; each page loads about 3 KB more for this
+* Covers only Last.fm has show again
+* A busy moment no longer makes a save fail
+* Mini player and Settings fixes on mid-size windows and at 125% scaling
