@@ -1158,8 +1158,9 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .header__search { flex: 1 1 360px; max-width: 520px; min-width: 220px; }
 /* parts of the header that give way when it runs out of room (layout.js, data-fit), after the search has shrunk to its
    least: the "/" hint, the tray's long words, the full tray for the compact one, the nav pills' labels (their icons and
-   tooltips stay), the search's own least width and its placeholder, and last the compact tray's word */
-.header :is(.kbd, .tray__label-long, .tray--full, .tray__word)[data-fit-out], .header .nav-pill[data-fit-out] .nav-pill__label { display: none !important; }
+   tooltips stay), the search's own least width and its placeholder, the compact tray's word, and last the day and night
+   switch (still the T key, and Settings, Appearance) */
+.header :is(.kbd, .tray__label-long, .tray--full, .tray__word, [data-act="theme"])[data-fit-out], .header .nav-pill[data-fit-out] .nav-pill__label { display: none !important; }
 .header .tray--full[data-fit-out] ~ .tray--compact { display: inline-flex !important; }
 .header[data-fit-gave~="1"] .search-field .input { padding-right: 48px; }   /* the "/" hint gave way */
 .header .nav-pill[data-fit-out] { width: 44px; padding: 0; justify-content: center; }
@@ -1444,7 +1445,6 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
   :root[data-shell="dock"] .app, :root[data-shell="dock"] .app[data-ctx="docked"] { grid-template-areas: "head" "banner" "main" "bar" "dock"; }
   :root[data-shell="topnav"] .header__brand .wordmark, :root[data-shell="dock"] .header__brand .wordmark { font-size: 0; padding: 0; width: 28px; height: 28px; }
   :root[data-shell="topnav"] .header__brand .wordmark__spark, :root[data-shell="dock"] .header__brand .wordmark__spark { width: 26px; height: 26px; right: 1px; top: 1px; }
-  :root[data-shell="topnav"] .header__settings { display: none; }
   :root[data-shell="topnav"] .tray--full, :root[data-shell="dock"] .tray--full { display: none; }
   :root[data-shell="topnav"] .tray--compact, :root[data-shell="dock"] .tray--compact { display: inline-flex; }
 }

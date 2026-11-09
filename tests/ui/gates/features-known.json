@@ -1,11 +1,4 @@
 {
   "note": "Features a built-in design leaves with no control a click reaches, found when the features check arrived (2026-11-08), each with where and why: checks.mjs features passes these and fails any other. They wait on the owner's decision; fix one and delete its entry, never add one to get green. `widths` is an inclusive range in px; `screens` (optional) limits an entry.",
-  "known": [
-    {
-      "feature": "settings",
-      "designs": ["lull", "petal"],
-      "widths": [640, 1099],
-      "why": "The topnav shell (both designs use it) hides the header's Settings key from 640 to 1099 px (components.css: `:root[data-shell=\"topnav\"] .header__settings { display: none; }`) and has no rail or tab bar there, so no key, link or menu item reaches Settings on any screen. The only way in is the service status pill's popover, whose Soulseek row has a \"Settings\" button that opens Settings › Sources. Showing the key there, or listing Settings in a menu, changes how the header looks: the owner's call."
-    }
-  ]
+  "known": []
 }

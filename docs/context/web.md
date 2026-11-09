@@ -460,8 +460,10 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     step in Starlight).
   - What giving way means is the component's (components.css, `!important`, so a design draws it but can't undo it):
     the header drops the "/" hint (1), the tray's long words (2), the full tray for the compact one (4), the nav
-    pills' labels (5: Playlists, Stats; 6: Home, Library), lets the search narrow without its placeholder (7), and
-    last the compact tray's word (8); its buttons never go, for nothing else opens what they open. The bar's tools
+    pills' labels (5: Playlists, Stats; 6: Home, Library), lets the search narrow without its placeholder (7), the
+    compact tray's word (8), and last the day and night switch (9: the T key and Settings, Appearance still switch
+    it); its other buttons never go, for nothing else opens what they open (Settings among them: the topnav shell has
+    no rail or tab bar to reach it by). The bar's tools
     leave for the "…" menu: Device view (2), Classic (3), Lyrics (4), Devices (5); the volume slider (1) becomes a
     popover over its button, shown while the pointer is on either or the slider has focus (the button opens it from
     the keyboard, Escape goes back; the wheel over the button turns it). The song's chips drop the source (1),
