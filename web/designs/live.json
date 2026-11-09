@@ -569,7 +569,8 @@
       "kind": "text",
       "source": "text",
       "liked": "flag",
-      "group": "text"
+      "group": "text",
+      "qi": "number"
     },
     "copy": {
       "where": "text",
@@ -618,7 +619,9 @@
       "name": "text",
       "type": "text",
       "trackIds": "list",
-      "*": "text"
+      "*": "text",
+      "place": "text",
+      "entry": "@item"
     }
   },
   "pipes": {

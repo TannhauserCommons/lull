@@ -5,7 +5,8 @@
      object naming one ({ trackId, at }, { kind, id }) as that record, with what the object adds;
    - LullModel.record(kind, id): a record with the fields lull derives for it (DERIVE: a track's source and liked);
    - LullModel.list(spec): the items of a list, by a name (NAMED: the queue, Home's feed, history, liked) or of any GET
-     read under /api/ (spec.read, the array at spec.key), with where, sort and count; and what it reads and changes on.
+     read under /api/ (spec.read, the array at spec.key), or any list lull keeps in the page (App.store: activity,
+     playlists...), with where, sort and count; and what it reads and changes on.
    Loaded by designs.js before parts.js and live.js, only for a theme that uses them. It reads what the page already
    holds (App.data, the player); a read it names is lull's own (App.data.get), fetched once and shared with the screen
    that shows it. Without App (the desktop app's own pages) it holds nothing. */
@@ -35,23 +36,24 @@
   /* the fields lull works out for a record, beside those it holds: the one place a derived field is written */
   var DERIVE = {
     track: function (t) { return { kind: 'track', source: sourceOf(t), liked: App.isLiked(t.id) }; },
-    album: function () { return { kind: 'album' }; },
-    artist: function () { return { kind: 'artist' }; },
-    playlist: function () { return { kind: 'playlist' }; }
+    album: function (a) { return { kind: 'album', place: 'album:' + a.id }; },
+    artist: function (a) { return { kind: 'artist', place: 'artist:' + a.id }; },
+    playlist: function (p) { return { kind: 'playlist', place: 'playlist:' + p.id }; }
   };
   Model.record = function (kind, id) {
     if (!data() || !GET[kind] || id == null) return null;
     var r = GET[kind](id);
     return r ? Object.assign({}, r, DERIVE[kind](r)) : null;
   };
-  /* an id or an object as its record; the object's own fields (a play's `at`, a queued song's `group`) stay beside it */
+  /* an id or an object as its record; the object's own fields (a play's `at`, a queued song's `group`) stay beside it,
+     and the object itself is `entry` (an Activity row's own kind and state, where the record has fields of those names) */
   Model.item = function (x) {
     if (x == null) return null;
     if (typeof x !== 'object') { var k = kindOf(x); return (k && Model.record(k, x)) || { kind: 'text', id: String(x), name: String(x) }; }
     var id = x.trackId || x.albumId || x.artistId || x.playlistId || x.id;
     var kind = x.trackId ? 'track' : x.albumId ? 'album' : x.artistId ? 'artist' : x.kind || kindOf(id);
     var r = kind && id ? Model.record(kind, id) : null;
-    return r ? Object.assign({}, x, r) : Object.assign({ kind: kind || 'object' }, x);
+    return r ? Object.assign({}, x, r, { entry: x }) : Object.assign({ kind: kind || 'object' }, x);
   };
 
   /* ---------- lists ---------- */
@@ -60,7 +62,8 @@
   var NAMED = {
     queue: { on: ['track', 'queue', 'ended'], items: function () {
       var ps = App.player.state;
-      return (ps.queue || []).slice((ps.index || 0) + 1).map(function (q) { return { trackId: q.trackId, group: GROUPS[q.group] || q.group || '' }; });
+      /* qi: its place in the queue, which the queue's own actions take (now-q-jump, now-q-menu) */
+      return (ps.queue || []).map(function (q, qi) { return { trackId: q.trackId, group: GROUPS[q.group] || q.group || '', qi: qi }; }).slice((ps.index || 0) + 1);
     } },
     history: { read: function () { return '/api/history?tz=' + -new Date().getTimezoneOffset(); }, key: 'days.items' },
     liked: { read: '/api/likes', key: 'items' }
@@ -84,11 +87,17 @@
     var down = by.charAt(0) === '-', k = down ? by.slice(1) : by;
     return function (a, b) { var x = at(a, k), y = at(b, k); return (x > y ? 1 : x < y ? -1 : 0) * (down ? -1 : 1); };
   }
-  /* spec: { of, read, key, where, sort, count } -> { items, read (the path it reads, or null), on (player kinds) } */
+  /* a list lull keeps in the page by that name (App.store: activity, playlists...), drawn again when lull changes it */
+  function kept(name) {
+    return { items: function () { var v = App.store.get(name); return Array.isArray(v) ? v : []; }, on: ['store:' + name] };
+  }
+  /* spec: { of, read, key, where, sort, count } -> { items, read (the path it reads, or null), on (the kinds of change it
+     is drawn again at: the player's, a store key's 'store:<key>') } */
   Model.list = function (spec) {
     if (!data()) return { items: [], read: null, on: [] };
     var named = NAMED[spec.of], feed = /^home\.([\w-]+)$/.exec(spec.of || '');
-    var src = named || (feed ? { read: '/api/feed', key: feed[1] === 'jump' ? 'jumpBackIn' : feed[1] === 'new' ? 'newReleases' : feed[1] === 'radio' ? 'radioStarters' : feed[1] } : { read: spec.read, key: spec.key });
+    var src = named || (feed ? { read: '/api/feed', key: feed[1] === 'jump' ? 'jumpBackIn' : feed[1] === 'new' ? 'newReleases' : feed[1] === 'radio' ? 'radioStarters' : feed[1] }
+      : spec.of ? kept(spec.of) : { read: spec.read, key: spec.key });
     var read = typeof src.read === 'function' ? src.read() : src.read;
     if (read && !readable(read)) return { items: [], read: null, on: [] };
     var raw = src.items ? src.items() : read ? at(data().peek(read), src.key) : [];

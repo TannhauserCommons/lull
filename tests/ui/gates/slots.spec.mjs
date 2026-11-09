@@ -69,6 +69,12 @@ const HARD = {
     '<div class="hd-panel hd-a" data-show="tab:albums"><lull-part name="list" read="/api/library/albums" key="items" count="3" label="Albums"><lull-row>' +
       '<lull-part name="cover" size="40"></lull-part><b class="hd-al">{{item.title}}</b></lull-row></lull-part></div></div>' +
     '<lull-part name="screen" path="/home" pick=\'[data-region="jump"]\'></lull-part></section>',
+  // walls the Fuji themes found after the second amendment, each now part of the contract
+  'before.content': '<section class="hd-more" aria-label="More">' +
+    '<lull-part name="list" of="activity" count="5" label="Activity" empty="NO ACTIVITY"><lull-row><b class="hd-job">{{item.entry.kind}} {{item.state}}</b></lull-row></lull-part>' +
+    '<lull-part name="list" of="playlists" count="2" label="Playlists"><lull-row><lull-part name="cover" size="40"></lull-part><b class="hd-pl">{{item.name}}</b></lull-row></lull-part>' +
+    '<lull-part name="list" of="home.jump" count="4" label="Jump back in"><lull-row><lull-part name="play-button"></lull-part><b class="hd-j">{{item.title}}{{item.name}}</b></lull-row></lull-part>' +
+    '<p class="hd-line"><span>Kasagumo</span>, <span>Night drive</span> · <span>1984</span></p></section>',
 };
 const UPRIGHT_CSS = `#pbar > [data-slot="after.playerbar"] { position: fixed; right: 40px; bottom: 120px; }
 .tu-fader .seek[aria-orientation="vertical"] { width: 24px; min-width: 0; height: 160px; }`;
@@ -366,7 +372,7 @@ test('the contract theme: its own rows with lull\'s parts for each song, any rea
   await expect(first.locator('.hd-t')).toHaveText(want.title);
   await expect(first.locator('lull-part[name="cover"] .cover')).toHaveCount(1);
   await expect(first.locator('lull-part[name="like-button"] [data-act="like"]')).toHaveAttribute('data-id', want.id);
-  await expect(first.locator('lull-part[name="play-button"] [data-act="play-track"]')).toHaveAttribute('data-id', want.id);
+  await expect(first.locator('lull-part[name="play-button"] [data-act="now-q-jump"]'), 'a queued song plays where it is').toHaveAttribute('data-id', want.id);
   expect(['● LIB', '◆ SLSK', '▼ DEV']).toContain(await first.locator('.hd-s').textContent());
   await expect(first.locator('.hd-l')).toHaveText(`${Math.floor(want.duration / 60)}:${String(want.duration % 60).padStart(2, '0')}`);
   // its Like likes that song, and shows it
@@ -388,5 +394,35 @@ test('the contract theme: its own rows with lull\'s parts for each song, any rea
   await expect(page.locator('.hd-a li.lull-list__row').first().locator('.cover')).toHaveCount(1);
   // a piece of another screen, drawn as that screen draws it
   await expect(page.locator('.hd-side lull-part[name="screen"] [data-region="jump"]')).toHaveCount(1);
+  await ctx.close();
+});
+
+test('the contract theme, the walls found since: queue rows play in the queue, Activity and playlists follow lull, a playing place is marked', async ({ browser }) => {
+  const ctx = await context(browser), page = await ctx.newPage();
+  await openScreen(page, `/album/${ids.album}`, { design: 'hard' });
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id'));
+    App.player.playTrack(rows[0], rows);
+  });
+  // a queue row's play key plays that song where it is in the queue, and its menu is the queue's
+  const q = page.locator('.hd-q li.lull-list__row');
+  await expect(q.nth(2).locator('[data-act="now-q-jump"]')).toHaveCount(1);
+  const before = await page.evaluate(() => App.player.state.queue.map((e) => e.trackId).sort().join());
+  const target = await q.nth(2).getAttribute('data-id');
+  await q.nth(2).locator('[data-act="now-q-jump"]').click();
+  await expect.poll(() => page.evaluate(() => App.player.current().id)).toBe(target);
+  expect(await page.evaluate(() => App.player.state.queue.map((e) => e.trackId).sort().join()), 'the same songs queued, as lull\'s own queue row leaves them').toBe(before);
+  // Activity, as lull keeps it in the page: drawn again when lull changes it
+  await expect(page.locator('.hd-more lull-part[of="activity"]')).toContainText('NO ACTIVITY');
+  await page.evaluate(() => App.store.set('activity', [{ id: 'job-1', jobId: 'job-1', kind: 'transfer', trackId: App.player.current().id, state: 'transferring', pct: 40 }]));
+  await expect(page.locator('.hd-job').filter({ hasText: 'transfer transferring' })).toHaveCount(1);
+  // a playlist's own row: its mosaic cover
+  const pl = page.locator('.hd-more lull-part[of="playlists"] li.lull-list__row');
+  await expect(pl.first().locator('.mosaic')).toHaveCount(1);
+  // Home's list drawn after the feed came: the place the song plays from is marked at once
+  await expect(page.locator('.hd-more lull-part[of="home.jump"] li.lull-list__row').first()).toBeAttached();
+  const place = await page.locator('.hd-more lull-part[of="home.jump"] li.lull-list__row[data-place^="album:"]').first().getAttribute('data-place');
+  await page.locator(`.hd-more li.lull-list__row[data-place="${place}"] [data-act="play-album"]`).click();
+  await expect(page.locator(`.hd-more li.lull-list__row[data-place="${place}"]`)).toHaveClass(/is-playing-place/);
   await ctx.close();
 });

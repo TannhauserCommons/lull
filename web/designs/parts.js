@@ -10,7 +10,7 @@
   'use strict';
   function hook() {
     if (!window.App || !App.on || App.parts) return;
-    var P = App.player, ps = P.state, ui = App.ui, html = App.html, icon = App.icon, $ = App.$, $$ = App.$$, patch = App.patch;
+    var P = App.player, ps = P.state, ui = App.ui, html = App.html, raw = App.raw, icon = App.icon, $ = App.$, $$ = App.$$, patch = App.patch;
     function empty() { return ''; }
 
     /* ---------- edges: the theme's markup before and after any region, any screen, the whole shell ----------
@@ -169,14 +169,20 @@
        current as lull's rows are (App.syncRows: likes, saves). The ones a part draws for an item */
     function title(it) { return it.title || it.name || ''; }
     var PLAYS = { track: 'play-track', album: 'play-album', playlist: 'play-playlist' };
+    /* a song in the queue (qi, its place there) plays where it is, and its menu is the queue's */
+    function inQueue(it) { return it.qi != null && ps.queue[it.qi] && ps.queue[it.qi].trackId === it.id; }
     var ITEM = {
+      /* a song's or an album's cover, an artist's round, and a playlist's (or a tag's) mosaic of its songs' albums */
       cover: function (it, a) {
         var s = size(a('size'), 56);
-        return it.kind === 'artist' ? ui.cover(it.id, s, { round: true }) : it.kind === 'track' || it.kind === 'album' ? ui.cover(it, s) : '';
+        if (it.kind === 'artist') return ui.cover(it.id, s, { round: true });
+        if (it.kind === 'track' || it.kind === 'album') return ui.cover(it, s);
+        if (it.kind === 'playlist') return ui.playlistArt(it, s, '');   // its own picture, else its songs' mosaic
+        return it.trackIds ? ui.mosaic(it.trackIds, s, '') : '';
       },
       'play-button': function (it, a) {
-        var s = +a('size'), act = PLAYS[it.kind], label = (act ? 'Play ' : 'Start radio from ') + title(it);
-        return html`<button class="btn-gloss btn-gloss--${[40, 48, 52, 56, 64].indexOf(s) >= 0 ? s : 40}" data-act="${act || 'start-radio'}" data-kind="${it.kind}" data-id="${it.id}" aria-label="${label}" data-tip="${label}">${icon(act ? 'play' : 'radio', null, act ? 'ic-play' : '')}</button>`;
+        var s = +a('size'), q = inQueue(it), act = q ? 'now-q-jump' : PLAYS[it.kind], label = (act ? 'Play ' : 'Start radio from ') + title(it);
+        return html`<button class="btn-gloss btn-gloss--${[40, 48, 52, 56, 64].indexOf(s) >= 0 ? s : 40}" data-act="${act || 'start-radio'}" data-kind="${it.kind}" data-id="${it.id}" ${q ? raw('data-qi="' + it.qi + '"') : ''} aria-label="${label}" data-tip="${label}">${icon(act ? 'play' : 'radio', null, act ? 'ic-play' : '')}</button>`;
       },
       'like-button': function (it) { return it.kind === 'track' ? ui.likeButton(it.id) : ''; },
       'save-button': function (it) {
@@ -186,10 +192,24 @@
       'source-badge': function (it) { return it.kind === 'track' ? ui.sourceBadge(it) : ''; },
       'quality-chip': function (it) { return it.kind === 'track' && it.format ? ui.qualityChip(it.format) : ''; },
       menu: function (it) {
-        return it.kind === 'track' ? html`<button class="btn-icon btn-icon--bare" data-act="track-menu" data-id="${it.id}" aria-haspopup="menu" aria-label="More for ${title(it)}" data-tip="More">${icon('more')}</button>` : '';
+        if (it.kind !== 'track') return '';
+        var q = inQueue(it);
+        return html`<button class="btn-icon btn-icon--bare" data-act="${q ? 'now-q-menu' : 'track-menu'}" data-id="${it.id}" ${q ? raw('data-qi="' + it.qi + '"') : ''} aria-haspopup="menu" aria-label="More for ${title(it)}" data-tip="More">${icon('more')}</button>`;
       }
     };
-    function itemOf(el) { var id = el.getAttribute('for'); return id && Model ? Model.item(id) : null; }
+    /* the item a part is for: its record, with what its list row adds (a queued song's qi and group, a play's at) */
+    function itemOf(el) {
+      var id = el.getAttribute('for'), row = el.closest('.lull-list__row[data-entry]');
+      if (!id || !Model) return null;
+      var it = Model.item(id), own = row && row.getAttribute('data-id') === id ? JSON.parse(row.getAttribute('data-entry')) : null;
+      return it && own ? Object.assign({}, it, own) : it;
+    }
+    /* what a list adds to an item's record, kept on its row as JSON: its own plain fields but kind and id */
+    function entryOf(it) {
+      var own = {}, e = it.entry || {};
+      Object.keys(e).forEach(function (k) { var v = e[k]; if (k !== 'kind' && k !== 'id' && v !== null && typeof v !== 'object') own[k] = v; });
+      return JSON.stringify(own);
+    }
 
     /* ---------- reads: what a placed part reads is fetched once where it is placed, and drawn again each time lull
        reads it (App.data.onRead), as the screen that shows it would be ---------- */
@@ -229,8 +249,11 @@
         return html`<ul class="lull-list" role="list" aria-label="${label}">${items.map(function (it) { return html`<li class="lull-list__row"><a href="${linkOf(it)}">${title(it)}</a></li>`; })}</ul>`;
       }
       var box = document.createElement('template');
+      /* a row of an album, an artist or a playlist is marked while the song plays from it, as lull's own (data-place:
+         .is-playing-place, .is-playing-now, App.syncPlaces) */
       box.innerHTML = '<ol class="lull-list" role="list"' + (label ? ' aria-label="' + App.esc(label) + '"' : '') + '>' + items.map(function (it, i) {
-        return '<li class="lull-list__row" data-id="' + App.esc(it.id || '') + '" data-kind="' + App.esc(it.kind || '') + '" data-i="' + i + '">' + fill(tpl.innerHTML, it) + '</li>';
+        return '<li class="lull-list__row" data-id="' + App.esc(it.id || '') + '" data-kind="' + App.esc(it.kind || '') + '" data-i="' + i + '"' +
+          (it.place ? ' data-place="' + App.esc(it.place) + '"' : '') + ' data-entry="' + App.esc(entryOf(it)) + '">' + fill(tpl.innerHTML, it) + '</li>';
       }).join('') + '</ol>';
       Array.prototype.forEach.call(box.content.querySelectorAll('.lull-list__row'), function (li, i) {
         Array.prototype.forEach.call(li.querySelectorAll('lull-part'), function (p) {
@@ -238,6 +261,7 @@
           if (App.parts.has(p.getAttribute('name'))) p.innerHTML = App.parts.draw(p);
         });
       });
+      App.syncPlaces(box.content);
       return keep + box.innerHTML;
     } };
     function listOn(host) { var g = Model.list(spec(function (n) { return host.getAttribute(n); })); return { on: g.on.concat(['like', 'save']), read: g.read }; }
@@ -271,7 +295,7 @@
         App.$$kept('lull-part').forEach(function (host) {
           if (host.closest('lull-row')) return;
           var d = def(host.getAttribute('name'), host);
-          if (d && drawnOn(d, host, kind)) patch(host, App.parts.draw(host));
+          if (d && drawnOn(d, host, kind)) { patch(host, App.parts.draw(host)); App.syncPlaces(host); }
         });
       }
     };
@@ -279,6 +303,7 @@
     App.on('lyrics', function () { App.parts.redraw('lyrics'); });   // now.js, when a song's lyrics arrive
     App.on('like', function () { App.parts.redraw('like'); });
     App.on('save', function () { App.parts.redraw('save'); });
+    App.on('store', function (keys) { [].concat(keys).forEach(function (k) { App.parts.redraw('store:' + k); }); });
 
     /* ---------- state a theme's own markup keeps, without script: data-act="state" ----------
        data-set="tab=lyrics" sets a state, data-set="drawer" toggles one, data-set="mode=a|b|c" cycles one. The state is

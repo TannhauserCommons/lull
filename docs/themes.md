@@ -382,13 +382,17 @@ needs nothing added to lull:
 - `of="queue"`: the songs after the one playing, each with its `group` (`yours` for those the listener queued, `place`
   for the place it plays from, `radio`);
 - `of="home.jump"`, `home.new`, `home.picks`, `home.radio` (any key of Home's feed), `of="history"`, `of="liked"`;
+- `of="activity"`, `of="playlists"`, or any other list lull keeps in the page, drawn again whenever lull changes it (an
+  Activity row is its song, with the job's own `state`, `pct` and `peer`; `item.entry.kind` is the job's kind);
 - `read="<path>" key="<field>"`: the items at `key` of any read of lull's API under `/api/` (docs/context/api.md), as
   `read="/api/library/albums" key="items"` or `read="/api/search?q=city+pop" key="albums"` (`key` may go down through
   lists: `days.items`).
 
 An item is the record its id names (lull's ids say their kind: `t-` a song, `al-` an album, `ar-` an artist, `pl-` a
 playlist), with what the list adds beside it (a play's `at`, a queued song's `group`), and the fields lull works out: a
-song's `source` (where it would play from: `library`, `device`, `soulseek`) and `liked`. `where="group=yours"` keeps
+song's `source` (where it would play from: `library`, `device`, `soulseek`) and `liked`; an album's, an artist's or a
+playlist's `place`. A queued song has `qi`, its place in the queue. `item.entry` is the list's own entry as it came (a
+job's own `kind` where the song's record has its own). `where="group=yours"` keeps
 the items whose field says so (`group=place|radio` for either; several tests with commas; a field may go down:
 `seed.kind=artist`), `sort="title"` (or `-duration`, descending) orders them, `count` takes the first so many (50 if
 absent, at most 200), `label` names the list for a screen reader, `empty` says what shows when nothing is left. A read
@@ -407,8 +411,14 @@ with pipes (section 14), and every part inside the row is that item's (below):
 <lull-part name="list" of="queue" where="group=radio" count="4"></lull-part>
 ```
 
+A row of an album, an artist or a playlist is marked while the song plays from it, as lull's own rows are, the moment
+it is drawn: `.is-playing-place`, and `.is-playing-now` while it plays, with lull's mark (put `data-place-at` on the
+element of your row it belongs in).
+
 **2. Any part for any item.** `for="<id>"` makes a part that item's, anywhere; inside a list's row it is the row's
-item by itself. `cover` (`size`), `play-button` (plays the song, the album or the playlist; starts an artist's radio),
+item by itself, with what the list adds (a queued song plays where it is in the queue, and its menu is the queue's).
+`cover` (`size`; a playlist's own picture or its songs' mosaic), `play-button` (plays the song, the album or the
+playlist; starts an artist's radio),
 `like-button`, `save-button`, `source-badge`, `quality-chip` and `menu` (the song's "…") each draw lull's own control
 for it, wired and kept current as lull's own rows are. Without `for`, a part is the playing song's, as before.
 
@@ -812,6 +822,7 @@ lull's plumbing: these may change in any release.
 - **Built-in designs' own:** `.lull-*`, `.sd-*`, `.sl-*`, `.pt-*`, `.gh-*` classes, and the attributes only their slots set: `data-p`, `data-week`, `data-track`.
 - **Layout utilities:** `.cluster`, `.flow`, `.stacked`, `.spacer`, `.ellipsis`, `.vh`, `.num`, `.prose`, `.fg-2`.
 - **Boot:** `data-booting`.
+- **A list part's rows:** `data-entry`, what the list adds to a row's item (its queue place, a play's time), for the parts in the row.
 - **Home and Search parts:** `.disc-agg`, `.disc-aggl`, `.disc-alt`, `.disc-alts`, `.disc-cat`, `.disc-cloud`, `.disc-col`, `.disc-fallback`, `.disc-issue`, `.disc-more`, `.disc-note`, `.disc-pending`, `.disc-picker`, `.disc-recover`, `.disc-shead`, `.disc-sheet`, `.disc-steps`, `.disc-sugg`, `.disc-tile-open`, `.disc-why`, `.disc-why-pop`, `.is-all`, `.is-better`, `.is-down`, `.is-nosource`, `.is-stale`, `.is-wait`.
 - **Now Playing parts:** `.now-act`, `.now-fade`, `.is-in`, `.is-lifted`, `.is-ready`, `.is-sorting`.
 - **Library parts:** `.lib-adddesc`, `.lib-chips`, `.lib-cover`, `.lib-dl-storage`, `.lib-dropzone`, `.lib-facts`, `.lib-flist`, `.lib-foot`, `.lib-form`, `.lib-frow`, `.lib-help`, `.lib-hist`, `.lib-imp`, `.lib-import`, `.lib-kept`, `.lib-legend`, `.lib-link`, `.lib-link-card`, `.lib-linkrev`, `.lib-m3u`, `.lib-more`, `.lib-out`, `.lib-status`, `.lib-suggest`, `.lib-tagcard`, `.lib-tags`, `.lib-textarea`, `.lib-title`, `.lib-toggle`.
