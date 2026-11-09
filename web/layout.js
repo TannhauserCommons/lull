@@ -34,13 +34,12 @@
   var DEFAULTS = { panelWidth: null, panelHeight: null, panelCollapsed: false, nowColumn: false, nowWidth: null, searchSplit: false, panelSplit: false };
   /* the bounds of what the listener drags, by dimension: the panel's width, its height (docked by its height), the
      column's width. The listener's own choice, kept per device whatever the theme, so it stays valid in every theme */
-  /* the bounds of each, from the layout switches (lull's: 280 to 560, 200 to 600, 300 to 560 px), read as they are */
+  /* the bounds of each: layout switches */
   var LIMIT = { panel: ['panel-min', 'panel-max'], 'panel-h': ['panel-h-min', 'panel-h-max'], now: ['now-min', 'now-max'] };
   function lim(dim) { return [px(LIMIT[dim][0]), Math.max(px(LIMIT[dim][0]), px(LIMIT[dim][1]))]; }
   var LIMITS = { get panel() { return lim('panel'); }, get 'panel-h'() { return lim('panel-h'); }, get now() { return lim('now'); } };
   var STORED = { panel: 'panelWidth', 'panel-h': 'panelHeight', now: 'nowWidth' };
   var KEY_STEP = 16;
-  /* a length switch in px (each is registered as a <length>, so it reads as one) */
   function px(name) { return parseFloat(S[name]) || 0; }
   var app = $('#app'), main = $('.main');
   var live = { panel: null, 'panel-h': null, now: null };   // a size being dragged: shown at once, saved when the drag ends
@@ -50,7 +49,7 @@
   /* ---------- layout switches (ADR-0101; docs/themes.md, section 5, Layout switches) ----------
      Their values are registered in components.css, so each read is one of them. Read all at once from one computed
      style, before this pass writes anything */
-  /* every --layout-* that components.css registers, one line (tests/web/layout-switches.test.mjs holds it to them) */
+  /* every --layout-* components.css registers (tests/web/layout-switches.test.mjs) */
   var SWITCHES = ['--layout-ctx', '--layout-ctx-axis', '--layout-ctx-dismiss', '--layout-ctx-split', '--layout-search-split', '--layout-nowcol', '--layout-phone', '--layout-size-regular', '--layout-size-wide', '--layout-size-xwide', '--layout-size-ultra', '--layout-height-short', '--layout-panel-min', '--layout-panel-max', '--layout-panel-h-min', '--layout-panel-h-max', '--layout-now-min', '--layout-now-max', '--layout-now-width', '--layout-strip', '--layout-nowcol-gap', '--layout-popover-margin', '--layout-popover-side', '--layout-tip-margin'];
   var S = {};   // by name without --layout-: S.ctx, S['size-wide']
   function readSwitches() {

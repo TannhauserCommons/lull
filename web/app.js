@@ -1752,7 +1752,7 @@
   var openPop = null, contextAt = null;
   function placeNear(el, anchor, at) {
     var r = at ? { left: at.x, right: at.x, top: at.y, bottom: at.y, width: 0 } : anchor.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
-    /* its distance from the window's edge and the side it opens on with room: layout switches (ADR-0101) */
+    /* margin and side: layout switches */
     var m = App.layout ? parseFloat(App.layout.switch('popover-margin')) || 0 : 12, up = App.layout && App.layout.switch('popover-side') === 'above';
     var left = clamp(at ? at.x : r.left + r.width / 2 - w / 2, m, window.innerWidth - w - m);
     var below = r.bottom + (at ? 2 : 10), above = r.top - h - (at ? 2 : 14);
@@ -4149,9 +4149,7 @@
      ===================================================================== */
   var actions = {};
   App.action = function (name, fn) { actions[name] = fn; };
-  /* an action by name, from somewhere with no element of this page: a key in the desktop app's mini player windows
-     (desktop.js) names one with its data-* attributes, and it runs as from a button carrying them (ADR-0101 amended,
-     F: one vocabulary of actions in every window). False for a name lull doesn't have */
+  /* an action by name with its data-* attributes, as from a button: the mini player windows' (desktop.js) */
   App.run = function (name, attrs) {
     var fn = actions[name]; if (!fn) return false;
     var el = document.createElement('button');
