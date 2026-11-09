@@ -525,9 +525,9 @@ const contrastTexts = () => {
     const stroke = strokeWidth >= 0.5 && ink[3] > 5 ? { rgb: ink.slice(0, 3), alpha: (ink[3] / 255) * opacity, width: strokeWidth } : null;
     if (alpha < 0.02 && !stroke) continue;   // nothing drawn: transparent text
     const range = document.createRange(); range.selectNodeContents(t);
-    // the middle of each line, where the glyphs are: a line box set taller than its text reaches past what it sits on
+    // each line's whole box: its letters are found in it by their ink (a comma below the middle of the line too)
     const rects = [...range.getClientRects()].filter((x) => x.width >= 1 && x.height >= 1)
-      .map((x) => shows(el, { left: x.left, right: x.right, top: x.top + x.height * 0.25, bottom: x.bottom - x.height * 0.25 })).filter(Boolean);
+      .map((x) => shows(el, { left: x.left, right: x.right, top: x.top, bottom: x.bottom })).filter(Boolean);
     if (!rects.length) continue;
     // something that takes clicks laid over it hides it: the chrome check's business, not this one's (text that lets
     // clicks through can't be found by a click: the picture says whether it shows)
@@ -589,16 +589,19 @@ const contrastWorst = async ({ texts, probe, clear, unmasked, seeThrough }) => {
   for (const t of texts) {
     const lines = t.rects.filter((r) => !hidden(t, r));
     const area = lines.reduce((s, r) => s + (r.right - r.left) * (r.bottom - r.top), 0);
-    // what is behind the letters themselves: the pixels the probe-coloured text inks (the gaps between letters, where
-    // a shadow close to them doesn't reach, aren't read against); all of the line's, when too few are inked to tell
+    // what is behind the letters themselves: the pixels the probe-coloured text inks, anywhere in the line (the gaps
+    // between letters, where a shadow close to them doesn't reach, aren't read against; a comma's few pixels are its
+    // own); the middle of the line, where letters sit, only when none is inked at all
     const step = Math.max(1, Math.sqrt(area / 2400));   // about 2,400 samples a text, at most
-    const inked = (i) => dist(px(probed, i), px(behind, i)) >= 48, spots = [], all = [];
+    const inked = (i) => dist(px(probed, i), px(behind, i)) >= 48, spots = [], band = [];
     for (const r of lines) for (let y = r.top + step / 2; y < r.bottom; y += step) for (let x = r.left + step / 2; x < r.right; x += step) {
       const i = at(x * k, y * k); if (t.masked && masked(i)) continue;
-      const pixel = px(behind, i), a = behind.data[i + 3] / 255, into = inked(i) ? spots : all;
+      const mid = Math.abs(y - (r.top + r.bottom) / 2) <= (r.bottom - r.top) / 4;
+      const into = inked(i) ? spots : mid ? band : null; if (!into) continue;
+      const pixel = px(behind, i), a = behind.data[i + 3] / 255;
       for (const bg of a < 1 && seeThrough ? [over(pixel, a, [0, 0, 0]), over(pixel, a, [255, 255, 255])] : [pixel]) into.push({ ratio: reads(t, bg), bg });
     }
-    if (spots.length < 8) spots.push(...all);
+    if (!spots.length) spots.push(...band);
     if (!spots.length) continue;
     spots.sort((p, q) => p.ratio - q.ratio);
     const worst = spots[Math.floor(spots.length * 0.05)], need = t.large ? 3 : 4.5;

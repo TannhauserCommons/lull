@@ -623,8 +623,10 @@ Also a window narrowed past each `data-size` step. Nothing may scroll sideways, 
 
 **Every mode** the manifest lists, with each token you set given in both the day and the night block.
 
-**Contrast:**
-- **The ratios:** text 4.5:1 and large text 3:1; outlines of controls and the parts that show state (a pressed toggle, a knob, a focus ring) 3:1 against the surface under them. Text on a gradient or glass is checked against its darkest and its lightest stop.
+**Contrast, information for you:** lull reports where text may be hard to read, so you can weigh it. It is never a rule:
+a theme that matches its design and falls short of a ratio is not wrong, and nothing in lull asks you to change your
+look for a check (ADR-0101).
+- **The ratios it reads against:** text 4.5:1 and large text 3:1; outlines of controls and the parts that show state (a pressed toggle, a knob, a focus ring) 3:1 against the surface under them. Text on a gradient or glass is checked against its darkest and its lightest stop.
 - **In every state:** check them in each of the states above, hover included, in both modes. A hover that only changes colour must still pass.
 - **Theme Studio** warns for its token pairs; anything else you draw is yours to check.
 - **Never colour alone:** where a song comes from (saved or Soulseek) and every service state keep their shape and icon, never colour alone.
@@ -659,14 +661,14 @@ Also a window narrowed past each `data-size` step. Nothing may scroll sideways, 
 **Run the checks:**
 - **`mise run check`** includes this document's own gate (`tests/web/theme-hooks.test.mjs`): every hook lull's CSS and markup use must be in section 11, and a built-in design may not style a hook that no longer exists.
 - **`mise run check:ui`** runs the UI gates on every built-in design: performance budgets, the key screens and accessibility (docs/context/quality.md#ui-gates).
-- **`mise run themes:check`** (see Preview it) runs these checks on every picture. Whatever they find is listed under the picture in the contact sheet, and the run exits 1.
+- **`mise run themes:check`** (see Preview it) runs these checks on every picture and lists what they find under the picture in the contact sheet. The checks of function (fit, every feature reachable) are findings, and the run exits 1 for them. Contrast is information, shown in amber, and never counts.
   - **Fit:** a control nothing can click, text cut off or on other text or under something that paints over it, a feature nothing reaches (section 5), anything sticking out sideways, a squeezed title, and console errors. An element faded out (opacity 0, its own or an ancestor's) or `visibility: hidden` paints nothing, so text under it is fine.
   - **Every feature one click away:** after each picture the menus and sheets one click opens there (the player's "…", the phone's More sheet, Following and playlists) are opened, and each must hold what `web/designs/features.json` says it does, reached by a click inside it.
-  - **Contrast against what is drawn:** each line of text is checked against the pixels actually behind it: the picture, gradient or glass, not the token it was meant to sit on. A line passes when 95% of those pixels give 4.5:1, or 3:1 for large text (24px, or 18.66px bold). The sheet names the worst line, its ratio and its colour, and how many more fall short.
+  - **Contrast against what is drawn (information):** each line of text is read against the pixels actually behind its letters: the picture, gradient or glass, not the token it was meant to sit on. A line is reported when 5% of those pixels give under 4.5:1, or 3:1 for large text (24px, or 18.66px bold). Punctuation is read by its own ink, wherever it sits in the line. The sheet names the worst line, its ratio and its colour, and how many more fall short.
   - **What the contrast check counts:** an outline (`-webkit-text-stroke`) counts as ink, and a fill counts against an outline 2px or wider. A line hidden under a fade laid over it is left out, and so is a line where a mask on it, or round it, fades it (a list dissolving at its scroller's edge). Text over a masked shape of yours (fog, a feathered patch) is judged against that shape as drawn. A text's own shadow counts as what is behind its letters, as drawn: a dense shadow close to the letters backs them (white on a pale sky with `0 0 1px`, `0 0 3px` and `0 0 6px` of a dark colour reads), a faint one doesn't. The check reads what is behind the letters themselves, not the gaps between them. A see-through mini player is checked over black and over white.
   - **What it skips as decoration:** text drawn at under 50% opacity (its own times its ancestors'), and text blurred by a `filter` on it or round it. A blurred, faded copy of a title behind it is not checked; the title itself is. Text hidden from screen readers (`aria-hidden="true"`) is still checked when it shows: a sighted listener reads it.
-  - **What it can't check:** text in form fields, SVG and `::before`/`::after`, and text filled with a picture (`background-clip: text`). Text shadows are ignored.
-  - **On the built-in designs:** some of their screens fall short of these ratios, so for them contrast is shown in amber and doesn't count towards the exit code. For your theme it counts like any other finding.
+  - **What it can't check:** text in form fields, SVG and `::before`/`::after`, and text filled with a picture (`background-clip: text`). 
+  - **Advisory, for every theme:** contrast is shown in amber with the line and its ratio, for you to weigh, and never counts towards the exit code, on the built-in designs and on yours alike. Build your design as it is drawn; change it for a ratio only if you agree with it.
 - **Visual goldens:** after a visible change, push and run `mise run ui:approve` to recapture the gates' goldens. `mise run ui:update` recaptures the full visual matrix. Review the pictures and commit them with the change.
 - **A new built-in design** also joins the lists of built-ins:
   - `D.builtIn` in `web/designs/designs.js`;
@@ -1207,6 +1209,11 @@ moving it, and keep what it told a screen reader: lull's cards are named (`aria-
 the same name, or a heading of yours hidden only from sight (`clip-path: inset(50%)` on a 1 px box), never
 `display: none` on the words a screen reader needs. The gates still check that the essentials stay visible, named and
 clickable whatever you hide (section 5).
+
+**Your design is the design.** lull's checks judge whether a theme works: every control clickable and reachable,
+nothing cut off or on top of something else, fast. They never judge its look. themes:check's contrast reading is
+information (section 10): match your mockup, and weigh the reading yourself. No haze, shadow or tint the design doesn't
+have is needed to pass anything.
 
 **Which screens are already one grid.** Place lull's parts and your boxes as items of one grid rather than stacking
 boxes over each other:

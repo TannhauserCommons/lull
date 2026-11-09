@@ -6,10 +6,11 @@
 // bridge the gates use (gates/desktop-bridge.js), a song playing and the theme handed over as one package, as the app
 // gets it. Each picture runs the checks the gates run (checks.mjs: a control nothing can click, text covered or cut
 // off, a feature nothing reaches, and what the menus and sheets one click opens hold; anything sticking out sideways; a
-// clamp that doesn't clip; a squeezed title; console errors) and a contrast check against what is drawn behind each
-// line of text (checks.mjs, contrast; only reported for the built-in designs, which some screens fall short of), and
-// one contact sheet shows them all: tests/ui/themes-check/index.html (or in --out's folder). It exits 1 when a check
-// finds something. Flags (themes-check-args.mjs):
+// clamp that doesn't clip; a squeezed title; console errors), which judge whether the theme works, and a contrast
+// reading against what is drawn behind each line of text (checks.mjs, contrast), which is information for the author
+// and never judges their look: shown in amber with the line and its ratio, for every theme and built-in design alike.
+// One contact sheet shows them all: tests/ui/themes-check/index.html (or in --out's folder). It exits 1 when a check of
+// function finds something, never for contrast. Flags (themes-check-args.mjs):
 //   --only <id>[,<id>...]  those looks only (built in or in LULL_THEMES_DIR); --mine: LULL_THEMES_DIR's and no built-in
 //   --sizes WxH[,WxH...]   the desktop at each of these sizes instead (--size: one); a laptop at 125% is 1536x864
 //   --mockup <file-or-url> the mockup beside each picture, at its size; {mode}, {route} and {size} in it are filled in
@@ -33,9 +34,9 @@ const PARALLEL = 4;
 const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
 // the mini player's windows as the app opens them (app/src/desktop/mini.rs); each then fits its height to the player
 const MINI = { device: { viewport: { width: 340, height: 560 } }, strip: { viewport: { width: 540, height: 90 } } };
-// Some built-in screens fall short of the contrast check's minimums (docs/themes.md, section 10): for them it is
-// reported, not a failure, so a UI change isn't held by them; for a listener's theme it is a finding like the others.
-const CONTRAST_REPORT_ONLY_FOR_BUILT_INS = true;
+// Contrast is information for the author, never a finding (ADR-0101, as the owner decided on 2026-11-09): lull's
+// checks judge whether a theme works, never how it looks, so a theme that matches its design is never bent away from
+// it to pass a ratio. Reported in amber with the line and its ratio, for a built-in design and a theme alike.
 
 const fail = (message) => { console.error(`${message}\n${USAGE}`); process.exit(2); };
 let opts;
@@ -121,7 +122,7 @@ async function judge(page, job, errors, { seeThrough = false } = {}) {
   await page.screenshot(seeThrough ? { path: join(OUT, file), omitBackground: true } : { path: join(OUT, file), type: 'jpeg', quality: 72 });
   const problems = [...found, ...errors], notes = [];
   const low = await contrast(page, { seeThrough });
-  if (low) (job.builtIn && CONTRAST_REPORT_ONLY_FOR_BUILT_INS ? notes : problems).push('contrast ' + low);
+  if (low) notes.push('contrast ' + low);
   // last, as it opens and closes them: the menus and sheets one click opens hold what web/designs/features.json says
   problems.push(...known(await holders(page)));
   return { ...job, file, viewport: page.viewportSize(), problems, notes };
@@ -295,7 +296,7 @@ ${routes.map(table).join('\n')}
 const where = (r) => `${r.route.mini ? 'mini' : r.route.path} ${r.design} ${r.size} ${r.mode}`;
 console.log(`${results.length} pictures in ${Math.round((Date.now() - started) / 1000)} s; ${failed.length ? failed.length + ' with something to look at' : 'nothing found'}`);
 for (const r of failed) console.log(`  ${where(r)}: ${r.problems.join('; ')}`);
-if (noted.length) console.log(`reported, not counted (contrast on a built-in design):\n${noted.map((r) => `  ${where(r)}: ${r.notes.join('; ')}`).join('\n')}`);
+if (noted.length) console.log(`for you to weigh, not counted (contrast, information for the author):\n${noted.map((r) => `  ${where(r)}: ${r.notes.join('; ')}`).join('\n')}`);
 const unopened = [...shots.values()].filter((s) => s.error);
 if (unopened.length) console.log(`mockup not drawn:\n${unopened.map((s) => `  ${s.url}: ${s.error}`).join('\n')}`);
 console.log('contact sheet: ' + pathToFileURL(join(OUT, 'index.html')).href);

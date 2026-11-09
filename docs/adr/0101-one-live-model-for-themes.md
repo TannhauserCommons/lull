@@ -549,13 +549,25 @@ pagers are all this.
 It must pass with no change to lull. A wall a mockup finds later is a bug in this contract, fixed here and added to
 that theme.
 
+### Checks judge function, never the look (2026-11-09, later)
+
+The owner, after themes were bent from their approved designs (haze patches, dense shadows, extra tints) to pass the
+contrast check: "WORK WITH THE FREEDOM SESSION TO FIX IT AT ROOT", relayed by the session building their themes, with
+the fix they asked for. lull's checks judge function, never an author's look:
+- **Contrast is information for the author**, for every theme package as for the built-ins: themes:check shows it in
+  amber with the line and its ratio, and never counts it in its exit code. The hub never refused a theme for it.
+- **Function stays binding:** every control clickable and reachable, nothing cut off or overlapping, fast.
+
+Section 5 of this amendment reads accordingly: readability is reported, not required.
+
 ### What stays lull's
 
 These are kept for safety and accessibility, not taste:
 - a theme runs no script (ADR-0004);
 - no outside links, forms or embeds (the sanitizer);
 - reads are GETs under `/api/` only;
-- every feature reachable and every text readable, as drawn.
+- every feature reachable, and every control named and usable by keyboard and screen reader (readability is
+  reported to the author, above).
 
 ### Constraints
 

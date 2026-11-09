@@ -87,3 +87,14 @@ test('the contrast check counts a text\'s shadow as what readers see behind it',
   await page.setContent(sky('0 2px 12px #0b182822'));
   expect(await contrast(page), 'a faint shadow').toMatch(/white on the day sky/);
 });
+
+// Punctuation is judged by its own ink, wherever it sits in the line: a comma below the middle of the line, a colon,
+// a middle dot. Backed by the same close shadow as the words beside it, it reads; on bare pale sky, it doesn't.
+test('the contrast check judges punctuation by its own ink, wherever it sits in the line', async ({ page }) => {
+  const { contrast } = await import('../checks.mjs');
+  const line = (shadow) => `<body style="margin:0;background:#cfe3f2"><p style="margin:0;padding:40px;font:600 18px sans-serif;color:#fff;text-shadow:${shadow}"><b>Kasagumo</b>, <b>Night drive</b> · <b>1984</b></p></body>`;
+  await page.setContent(line('0 0 1px #0b1828, 0 0 2px #0b1828, 0 0 3px #0b1828, 0 0 6px #0b1828e0'));
+  expect(await contrast(page), 'words and punctuation, backed alike').toBeNull();
+  await page.setContent(line('none'));
+  expect(await contrast(page), 'none backed').not.toBeNull();
+});
