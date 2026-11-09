@@ -380,3 +380,39 @@ for (const design of designs) {
     expect([...found].map(([p, ws]) => `${p} at ${ws.join(', ')} px`), "the header in the desktop app's window").toEqual([]);
   });
 }
+
+// a theme that lays out round the window's buttons itself (--layout-window-controls: own, docs/themes.md section 5):
+// lull reserves no room, so the header runs to the window's edge under them; their box is in --window-controls-w and -h,
+// and they stay on top and clickable. At 1440 (the header's room) and 720 (the strip of their own above the shell)
+test('a theme owns the room under the desktop window\'s buttons', async ({ page }) => {
+  await page.addInitScript({ path: fileURLToPath(new URL('./desktop-bridge.js', import.meta.url)) });
+  await page.addInitScript(() => { window.__LULL_DESKTOP__ = { os: 'win', titlebar: 'win' }; });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openScreen(page, '/home', { design: 'lull' });
+  await page.waitForSelector('.dk-caption');
+  const read = () => page.evaluate(() => {
+    const app = document.querySelector('#app'), header = document.querySelector('.header'), hs = getComputedStyle(header);
+    const root = getComputedStyle(document.documentElement), c = document.querySelector('.dk-caption__btn--close').getBoundingClientRect();
+    const hit = document.elementFromPoint(c.left + c.width / 2, c.top + c.height / 2);
+    return {
+      own: app.getAttribute('data-window-controls'), pad: hs.paddingRight, margin: hs.marginRight, top: getComputedStyle(app).paddingTop,
+      w: root.getPropertyValue('--window-controls-w').trim(), h: root.getPropertyValue('--window-controls-h').trim(),
+      close: !!(hit && hit.closest('.dk-caption__btn--close')),
+    };
+  });
+  const before = await read();
+  expect(before.own).toBeNull();
+  expect(before).toMatchObject({ w: '138px', h: '32px', close: true });
+  expect(parseFloat(before.pad) + parseFloat(before.margin)).toBeGreaterThanOrEqual(138);
+  await page.addStyleTag({ content: '.app { --layout-window-controls: own; } .header { padding-right: 12px; }' });
+  await page.setViewportSize({ width: 1439, height: 900 });   // lull reads its switches again on a resize
+  await frames(page);
+  await expect.poll(async () => (await read()).own).toBe('own');
+  const after = await read();
+  expect(after).toMatchObject({ pad: '12px', margin: '0px', w: '138px', h: '32px', close: true });
+  await page.setViewportSize({ width: 720, height: 900 });
+  await frames(page);
+  const strip = await read();
+  expect(strip).toMatchObject({ own: 'own', close: true });
+  expect(strip.top, 'no strip of their own above the shell').not.toBe('32px');
+});

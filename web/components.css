@@ -1111,6 +1111,9 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 @property --layout-popover-margin { syntax: "<length>"; inherits: false; initial-value: 12px; }
 @property --layout-popover-side { syntax: "below | above"; inherits: false; initial-value: below; }
 @property --layout-tip-margin { syntax: "<length>"; inherits: false; initial-value: 8px; }
+/* the desktop app's window buttons on Windows: lull keeps the header clear of them (room), or the theme lays out round
+   them itself (own: .app[data-window-controls="own"], their box in --window-controls-w and -h; desktop.css) */
+@property --layout-window-controls { syntax: "room | own"; inherits: false; initial-value: room; }
 @media (max-width: 639px) { .app { --layout-phone: on; } }
 @media (min-width: 1100px) { .app { --layout-ctx-dismiss: outside; } }
 @media (min-width: 1360px) { .app { --layout-ctx: docked; } }

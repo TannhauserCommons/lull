@@ -50,7 +50,7 @@
      Their values are registered in components.css, so each read is one of them. Read all at once from one computed
      style, before this pass writes anything */
   /* every --layout-* components.css registers (tests/web/layout-switches.test.mjs) */
-  var SWITCHES = ['--layout-ctx', '--layout-ctx-axis', '--layout-ctx-dismiss', '--layout-ctx-split', '--layout-search-split', '--layout-nowcol', '--layout-phone', '--layout-size-regular', '--layout-size-wide', '--layout-size-xwide', '--layout-size-ultra', '--layout-height-short', '--layout-panel-min', '--layout-panel-max', '--layout-panel-h-min', '--layout-panel-h-max', '--layout-now-min', '--layout-now-max', '--layout-now-width', '--layout-strip', '--layout-nowcol-gap', '--layout-popover-margin', '--layout-popover-side', '--layout-tip-margin'];
+  var SWITCHES = ['--layout-ctx', '--layout-ctx-axis', '--layout-ctx-dismiss', '--layout-ctx-split', '--layout-search-split', '--layout-nowcol', '--layout-phone', '--layout-size-regular', '--layout-size-wide', '--layout-size-xwide', '--layout-size-ultra', '--layout-height-short', '--layout-panel-min', '--layout-panel-max', '--layout-panel-h-min', '--layout-panel-h-max', '--layout-now-min', '--layout-now-max', '--layout-now-width', '--layout-strip', '--layout-nowcol-gap', '--layout-popover-margin', '--layout-popover-side', '--layout-tip-margin', '--layout-window-controls'];
   var S = {};   // by name without --layout-: S.ctx, S['size-wide']
   function readSwitches() {
     var cs = getComputedStyle(app), changed = false;
@@ -139,6 +139,7 @@
     prop(app, '--ctx-h', strip && !byWidth() ? px('strip') + 'px' : L.panelHeight ? L.panelHeight + 'px' : '');
     toggleAttr('data-panel', strip ? 'strip' : null);
     toggleAttr('data-panel-split', L.panelSplit && App.layout.at(S['ctx-split']) ? '' : null);
+    toggleAttr('data-window-controls', S['window-controls'] === 'own' ? 'own' : null);
     showLive('panel'); showLive('panel-h'); showLive('now');
     $$('[data-resize]').forEach(function (h) {
       var d = dimOf(h.getAttribute('data-resize'));

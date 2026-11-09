@@ -95,6 +95,10 @@
     background: var(--bg); color: var(--fg);
   }
 
+  /* the desktop app's window buttons over the page's top right corner: their box, for a theme that lays out round them
+     (--layout-window-controls: own); nothing but on Windows, where desktop.css sets it */
+  :root { --window-controls-w: 0px; --window-controls-h: 0px; }
+
   /* ---------- scrollbars ----------
      One look for every scroll area (the page, panels, lists, shelves): a thin rounded thumb in the surface's quiet colour
      on a clear track, no arrow buttons. --scroll-thumb is set per surface, so a shelf on a cream card and the page on the
