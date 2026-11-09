@@ -45,13 +45,24 @@ const OWNED = {
   'before.home': '<p class="ow-home" data-own="HOME">HOME</p>',
   'after.ctx': '<p class="ow-ctx" data-own="CTX">CTX<lull-part name="playing-from"></lull-part></p>',
 };
+/* a theme that places lull's sections and lists anywhere, with rows of its own, and draws at the edges of the whole
+   shell and of a Home shelf (ADR-0101 amended, B and C) */
+const PLACED = {
+  'before.app': '<div class="pl-top">a strip above everything</div>',
+  'after.app': '<div class="pl-foot">and one below</div>',
+  'after.jump': '<p class="pl-jump-foot">after the shelf</p>',
+  'after.ctx': '<section class="pl-side" aria-label="Lists"><h3>Next up · yours</h3>' +
+    '<lull-part name="list" of="queue" where="group=yours" label="Yours"><lull-row><a class="pl-row" href="#/album/{{item.albumId}}" data-id="{{item.id}}">{{item.title | upper}}</a> <i class="pl-len">{{item.duration | time}}</i></lull-row></lull-part>' +
+    '<h3>Then</h3><lull-part name="list" of="queue" where="group=place|radio" count="2"></lull-part>' +
+    '<lull-part name="home.jump"></lull-part><lull-part name="list" of="home.jump" count="3"><lull-row><b class="pl-jump" data-kind="{{item.kind}}">{{item.title}}{{item.name}}</b></lull-row></lull-part></section>',
+};
 const UPRIGHT_CSS = `#pbar > [data-slot="after.playerbar"] { position: fixed; right: 40px; bottom: 120px; }
 .tu-fader .seek[aria-orientation="vertical"] { width: 24px; min-width: 0; height: 160px; }`;
 
 let hub, dir;
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'lull-slots-'));
-  for (const [id, slots, css] of [['slotted', SLOTS, CSS], ['handed', HANDED, ''], ['parted', PARTED, ''], ['upright', UPRIGHT, UPRIGHT_CSS], ['owned', OWNED, '']]) {
+  for (const [id, slots, css] of [['slotted', SLOTS, CSS], ['handed', HANDED, ''], ['parted', PARTED, ''], ['upright', UPRIGHT, UPRIGHT_CSS], ['owned', OWNED, ''], ['placed', PLACED, '']]) {
     mkdirSync(join(dir, id, 'slots'), { recursive: true });
     writeFileSync(join(dir, id, 'theme.json'), JSON.stringify({ ...MANIFEST, id, name: id }));
     writeFileSync(join(dir, id, 'theme.css'), css);
@@ -279,5 +290,47 @@ test('lull never writes over a theme\'s own markup: through play, keys, likes, t
   await page.evaluate(() => { location.hash = '#/home'; });
   await settle(page);
   await check('Home');
+  await ctx.close();
+});
+
+test('a theme places lull\'s sections and lists anywhere, with its own rows, and draws around the shell and a shelf', async ({ browser }) => {
+  const ctx = await context(browser), page = await ctx.newPage();
+  const feeds = [];
+  page.on('request', (r) => { if (/\/api\/feed(\?|$)/.test(r.url())) feeds.push(r.url()); });
+  await openScreen(page, `/album/${ids.album}`, { design: 'placed' });
+  // the whole shell's edges: siblings of .app, outside its grid
+  expect(await page.evaluate(() => [document.querySelector('#app').previousElementSibling?.getAttribute('data-slot'),
+    document.querySelector('#app').nextElementSibling?.getAttribute('data-slot')])).toEqual(['before.app', 'after.app']);
+  // Home's shelf and its list, away from Home: the feed is fetched for them, and they draw when it arrives
+  await expect(page.locator('.pl-side lull-part[name="home.jump"] .disc-jump').first()).toBeAttached();
+  await expect(page.locator('.pl-side li .pl-jump').first()).toBeAttached();
+  expect(feeds.length, 'the feed, asked once').toBe(1);
+  expect(await page.locator('.pl-side li .pl-jump').count()).toBeLessThanOrEqual(3);
+  // the queue's groups, the theme's own rows filled from each song, through pipes
+  const songs = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id'));
+    App.player.playTrack(rows[0], rows);
+    return rows.map((id) => App.data.track(id));
+  });
+  await expect(page.locator('.pl-side lull-part[of="queue"][where="group=place|radio"] .trow')).toHaveCount(2);
+  await expect(page.locator('li .pl-row')).toHaveCount(0);   // nothing queued by the listener yet
+  await page.evaluate((id) => App.player.playNext([id]), songs[songs.length - 1].id);
+  await expect(page.locator('li .pl-row')).toHaveCount(1);
+  const last = songs[songs.length - 1];
+  await expect(page.locator('li .pl-row')).toHaveText(last.title.toUpperCase());
+  await expect(page.locator('li .pl-row')).toHaveAttribute('data-id', last.id);
+  const mins = Math.floor(last.duration / 60), secs = String(last.duration % 60).padStart(2, '0');
+  await expect(page.locator('li .pl-len')).toHaveText(`${mins}:${secs}`);
+  // Home: the box after the jump-back-in shelf, kept when the shelf is drawn again
+  await page.evaluate(() => { location.hash = '#/home'; });
+  await settle(page);
+  await expect(page.locator('[data-region="jump"] > .region-slot[data-slot="after.jump"]')).toHaveCount(1);
+  await page.evaluate(() => App.emit('server:feed.updated', {}));
+  await settle(page);
+  await expect(page.locator('[data-region="jump"] > .region-slot[data-slot="after.jump"]')).toHaveCount(1);
+  // back on a built-in, every box goes, the shell's too
+  await page.evaluate(() => new Promise((ok) => { App.on('design', ok); App.setDesign('lull', true); }));
+  await settle(page);
+  expect(await page.evaluate(() => document.querySelectorAll('.region-slot').length)).toBe(0);
   await ctx.close();
 });

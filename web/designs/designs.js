@@ -338,7 +338,7 @@
   /* sanitize: no scripts, event handlers, forms, embeds, <use>, and links only inside the app (#/...). DOMPurify checks
      every attribute value against ALLOWED_URI_REGEXP; the hook keeps that to links, so data-title="Error: x" stays. */
   var PURIFY = {
-    RETURN_DOM: true, ADD_TAGS: ['lull-part'], ADD_ATTR: ['pick', 'inner', 'size', 'bars', 'icon', 'cls', 'label', 'count', 'focusable', 'orientation', 'group', 'shelf'],
+    RETURN_DOM: true, ADD_TAGS: ['lull-part', 'lull-row'], ADD_ATTR: ['pick', 'inner', 'size', 'bars', 'icon', 'cls', 'label', 'count', 'focusable', 'orientation', 'of', 'where', 'empty'],
     FORBID_TAGS: ['style', 'form', 'input', 'textarea', 'select', 'iframe', 'object', 'embed', 'foreignobject'],
     FORBID_ATTR: ['src', 'srcset', 'action', 'formaction'],
     ALLOWED_URI_REGEXP: /^#/
@@ -370,6 +370,7 @@
     /* a dotted field is a value of the live model as the slot is drawn ({{clock.time}}, {{copy.sizeBytes | size}}:
        live.js); a dotted name outside it stays as written, as it always did */
     var filled = tpl.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9]*(?:\.[a-zA-Z0-9-]+)*)\s*((?:\|[^|}]*)*)\}\}/g, function (all, k, pipes) {
+      if (/^item\./.test(k)) return all;           // a list part's row: filled for each item (parts.js)
       if (k.indexOf('.') > 0) return window.Live && Live.known(k) ? esc(Live.text(k, pipes ? Live.parse(k + pipes)[1] : null)) : all;
       if (!Object.prototype.hasOwnProperty.call(f, k)) { console.warn('[theme slot ' + name + '] unknown field', k); return ''; }
       return esc(f[k]);
@@ -651,7 +652,7 @@
     return ids.some(function (x) {
       var t = templates[x];
       return Object.keys(t).some(function (k) {
-        var slot = k.split('.')[0], re = /<lull-part\b[^>]*?\sname=["']?([\w-]+)/g, m;
+        var slot = k.split('.')[0], re = /<lull-part\b[^>]*?\sname=["']?([\w.-]+)/g, m;
         if (slot === 'before' || slot === 'after') return true;
         while ((m = re.exec(t[k]))) if (catalogued(slot, m[1])) return true;
       });

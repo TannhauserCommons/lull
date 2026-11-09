@@ -999,6 +999,9 @@
   /* what lull's catalogue of parts (designs/parts.js; docs/themes.md section 6) draws of Now Playing's, in any slot of
      the page: the hero's facts and state words, the next songs as the queue's rows, the lyrics as the Lyrics card */
   App.nowParts = { facts: factsLine, state: stateText, next: nextRows, lyrics: lyricsBlock };
+  /* Now Playing's cards, for a theme to place anywhere (designs/parts.js) */
+  App.sections['now.queue'] = { on: ['track', 'queue', 'ended', 'mode'], make: function () { return queueBlock(); } };
+  App.sections['now.source'] = { on: ['track', 'source', 'status'], make: function () { return P.current() ? sourceCard() : ''; } };
 
   /* =====================================================================
      8. Actions

@@ -141,11 +141,17 @@ window.LullData = (function () {
     return r;
   };
   M.peek = function (path) { var r = records[path]; return r && r.data; };
+  /* a read's data once it has some: for a part a theme placed away from its screen (designs/parts.js) */
+  M.whenRead = function (path) {
+    var r = M.get(path);
+    return r.data ? Promise.resolve(r.data) : new Promise(function (ok) { (r.waiting = r.waiting || []).push(ok); });
+  };
   function load(path, r) {
     var mine = r.seq = (r.seq || 0) + 1;
     M.api(path).then(function (data) {
       if (records[path] !== r || r.seq !== mine) return;
       r.loading = false; r.error = null; r.data = data;
+      if (r.waiting) r.waiting.splice(0).forEach(function (ok) { ok(data); });
       settled(r);
     }, function (err) {
       if (records[path] !== r || r.seq !== mine) return;

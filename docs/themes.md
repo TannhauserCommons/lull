@@ -355,13 +355,42 @@ Two more put markup of yours at the edges of any region or screen of lull's page
 
 | Slot | Where | Names (`slots/<slot>.<name>.html`) |
 |---|---|---|
-| `before` | the first thing inside a region or a screen | regions: `rail`, `header`, `content`, `ctx`, `nowcol`, `playerbar`, `mini`, `tabbar`; screens: `home`, `search`, `now`, `library`, `liked`, `downloads`, `history`, `following`, `album`, `artist`, `tag`, `playlists`, `playlist`, `outside`, `stats`, `settings` |
-| `after` | the last thing inside it | the same |
+| `before` | the first thing inside a region or a screen, or just before the whole shell | `app`; regions: `agg`, `aggs`, `content`, `ctx`, `details`, `folder`, `header`, `jump`, `lead`, `mini`, `new`, `nowcol`, `picks`, `playerbar`, `radio`, `rail`, `recents`, `rels`, `results`, `save`, `srcmeta`, `srcrows`, `sub`, `tabbar`, `tags`, `topnav`; screens: `home`, `search`, `now`, `library`, `liked`, `downloads`, `history`, `following`, `album`, `artist`, `tag`, `playlists`, `playlist`, `outside`, `stats`, `settings` |
+| `after` | the last thing inside it, or just after the whole shell | the same |
 
-- **A region slot** (`slots/after.playerbar.html`) is drawn in a box of its own, `<div class="region-slot" data-slot="after.playerbar">`, as the region's first child (`before`) or its last (`after`); the regions are the `[data-region]` hosts of section 5. lull draws it with the shell, when your theme loads or changes, and never again for a song or a state: what changes reaches it through the live model (section 14) and lull's parts (below), in place. Nothing lull draws in a region replaces it.
+- **A region slot** (`slots/after.playerbar.html`) is drawn in a box of its own, `<div class="region-slot" data-slot="after.playerbar">`, as the region's first child (`before`) or its last (`after`). A region is any element lull draws with `[data-region]`: the shell's (section 5), and the screens' own, Home's shelves (`picks`, `new`, `radio`, `jump`, `tags`) and lead among them, Search's results, a source's details. lull draws the box with the shell or with the screen that holds the region, and never again for a song or a state: what changes reaches it through the live model (section 14) and lull's parts (below), in place. Nothing lull draws in a region replaces it, also when lull draws that region again on its own (a shelf the feed refreshed): lull's redraw keeps every `.region-slot` where it is.
+- **The whole shell** (`slots/before.app.html`, `after.app.html`): a box just before or after `.app`, outside its grid, for a strip above or below everything. lull sets no layout for it, and `.app` keeps its full height: make room in your CSS (`body { display: flex; flex-direction: column; height: 100dvh; } .app { height: auto; flex: 1; min-height: 0; }`).
 - **A screen slot** (`slots/before.home.html`) is drawn in the same box inside the screen's own top container: Home's `.disc-home`, Now Playing's grid `.now__grid`, Search's `.disc-search`, the library's pages' `.view__inner` (Library, Liked, History, Following, Downloads, album, artist, tag, playlists, playlist, outside), Stats' `.sys-stats`, Settings' `.sys-settings`. It is drawn with the screen, each time lull draws it, so your box is an item of the screen's grid beside lull's parts, placed by the same grid.
 - **You place the box.** A region lays out its children its own way (the player bar is a grid of three columns, the mini player a row), so give the box a place there (`#pbar > [data-slot="after.playerbar"] { grid-column: 1 / -1; }`), take it out of the flow, or say `display: contents` to hand what's inside to the region's own layout. A box you don't place lands where that layout puts a new child. What CSS moves is still read in the markup's order: a `before` box is read, and tabbed through, before the region.
 - **A theme with none adds nothing**, not even the box. A `before` or `after` always names its region or screen: the hub refuses `slots/before.html` and a name lull doesn't have, and says which there are.
+
+**Lists, with rows of your own.** `<lull-part name="list" of="<list>">` draws a list lull holds: `queue` (the songs after
+the one playing, each with its `group`: `yours` for those the listener queued, `place` for the place it plays from,
+`radio`), and Home's `home.jump`, `home.new` and `home.picks`. `where="group=yours"` keeps the items whose field says so
+(`group=place|radio` for either; several tests with commas), `count` takes the first so many (20 if absent, at most 100),
+`label` names the list for a screen reader, and `empty` says what shows when nothing is left (else nothing). Without a
+row of yours the items are lull's own rows. With one, `<lull-row>` inside the part, each item is drawn in your markup, in
+an `<li class="lull-list__row" data-id data-kind>` of an `<ol class="lull-list">`, filled from the item's record by
+`{{item.<field>}}` with pipes (section 14): a `queued` song's fields for the queue, an album's or an artist's (with `kind`)
+for `home.jump`:
+```html
+<h3>Next up · yours</h3>
+<lull-part name="list" of="queue" where="group=yours" label="Your next songs">
+  <lull-row><a href="#/album/{{item.albumId}}">{{item.title | upper}}</a> <i>{{item.duration | time}}</i>
+    <button data-act="play-track" data-id="{{item.id}}" aria-label="Play {{item.title}}">PLAY</button></lull-row>
+</lull-part>
+<h3>Next from <b data-bind="radio.name"></b></h3>
+<lull-part name="list" of="queue" where="group=radio" count="4"></lull-part>
+```
+A list is drawn again when what it shows changes (the queue at the player's changes; Home's lists when the feed
+arrives or refreshes). A row of yours keeps every feature reachable the way lull's rows do: a `data-act` button with
+the item's id (section 15).
+
+**Sections, anywhere.** A section lull's screens draw is a part too: Home's shelves, `home.picks`, `home.new`,
+`home.radio`, `home.jump`, `home.tags`, and Now Playing's `now.queue` (the whole queue with its radio switch) and
+`now.source` (the source card). `<lull-part name="home.jump"></lull-part>` in `after.ctx` puts "jump back in" in the side
+panel, exactly as Home draws it and kept current the same way. A section that reads Home's feed fetches it only where
+you place one, once.
 
 A template is static HTML. Two things are live:
 

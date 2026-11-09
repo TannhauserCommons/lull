@@ -9,58 +9,91 @@
   'use strict';
   function hook() {
     if (!window.App || !App.on || App.parts) return;
-    var P = App.player, ps = P.state, ui = App.ui, html = App.html, icon = App.icon, $ = App.$, patch = App.patch;
+    var P = App.player, ps = P.state, ui = App.ui, html = App.html, icon = App.icon, $ = App.$, $$ = App.$$, patch = App.patch;
     function empty() { return ''; }
 
-    /* ---------- region slots ----------
-       slots/before.<region>.html and after.<region>.html, drawn as the region's first or last child in a
-       .region-slot[data-slot] box. lull never draws into a region's own element, only into the hosts inside it
-       (#pbar-now, #ctx-body, #rail-playlists...), so a box stays where it is; it is drawn again only with the shell (a
-       design or theme switch: app.js renderShell), which also takes its boxes away when the theme now in use has none.
-       The hub takes exactly these names (crates/themes package.rs EDGES). */
-    var REGIONS = ['rail', 'header', 'content', 'ctx', 'nowcol', 'playerbar', 'mini', 'tabbar'];
-    function regions() {
-      REGIONS.forEach(function (r) {
-        var region = $('#app > [data-region="' + r + '"]'); if (!region) return;
-        ['before', 'after'].forEach(function (edge) {
-          var name = edge + '.' + r, box = $(':scope > .region-slot[data-slot="' + name + '"]', region);
-          var markup = String(App.slot(name, {}, empty));   // nothing without a template
-          if (!markup) { if (box) box.remove(); return; }
-          if (!box) {
-            box = document.createElement('div'); box.className = 'region-slot'; box.setAttribute('data-slot', name);
-            region.insertBefore(box, edge === 'before' ? region.firstChild : null);
-          }
-          patch(box, markup);
-        });
-      });
-    }
-    /* ---------- screen slots ----------
-       slots/before.<screen>.html and after.<screen>.html, inside the screen's own top container (SLOTS_IN: Now Playing's
-       grid, beside the hero and the cards; else the first element it draws: .disc-home, .view__inner...), so the
-       theme's boxes are items of the screen's grid beside lull's parts. Drawn with the screen, into its markup (app.js
-       renderRoute), so a refresh keeps them as it keeps the rest (App.patch, by their data-key). Returns the markup as it
-       was when the theme has none for this screen. */
+    /* ---------- edges: the theme's markup before and after any region, any screen, the whole shell ----------
+       slots/before.<name>.html and after.<name>.html, drawn in a .region-slot[data-slot] box (keyed slot:<name>):
+       - a region, any element lull draws with [data-region="<name>"] (the shell's rail, header, player bar...; Home's
+         shelves, Search's results...): the box is its first or last child, drawn with the shell, with the screen that
+         holds it, and kept when lull draws the region again (App.patch keeps a theme's boxes: app.js patchChildren);
+       - a screen (SCREENS, as .app[data-screen] names it): inside its own top container (SLOTS_IN: Now Playing's grid;
+         else the first element it draws), so the box is an item of the screen's grid;
+       - `app`, the whole shell: the box is #app's sibling before or after it, outside its grid; the theme's CSS makes
+         room for it (lull sets no layout for any box).
+       The hub takes the names lull draws (crates/themes package.rs EDGES, held to this file and to the markup's regions
+       by its tests). A theme with none draws nothing here. */
     var SCREENS = ['home', 'search', 'now', 'library', 'liked', 'downloads', 'history', 'following', 'album', 'artist', 'tag',
       'playlists', 'playlist', 'outside', 'stats', 'settings'];
     var SLOTS_IN = { now: '.now__grid' };   // where a screen's slots go when it isn't the first element it draws
+    /* the edge slots of the design or theme in use, with what it extends */
+    function edgeSlots() {
+      var out = [], seen = {}, m = Designs.list[Designs.current];
+      while (m && !seen[m.id]) {
+        seen[m.id] = 1;
+        (m.slots || []).forEach(function (n) { if (/^(before|after)\./.test(n) && out.indexOf(n) < 0) out.push(n); });
+        m = m.extends ? Designs.list[m.extends] : null;
+      }
+      return out;
+    }
+    function edgeOf(slot) { var i = slot.indexOf('.'); return [slot.slice(0, i), slot.slice(i + 1)]; }
+    function makeBox(slot, inner) {
+      var box = document.createElement('div');
+      box.className = 'region-slot'; box.setAttribute('data-slot', slot); box.setAttribute('data-key', 'slot:' + slot);
+      box.innerHTML = inner;
+      return box;
+    }
+    /* a box at an element's edge: drawn when missing, its markup brought up to date when there */
+    function place(host, slot, before, markup) {
+      var box = null;
+      for (var n = host.firstElementChild; n; n = n.nextElementSibling) if (n.classList.contains('region-slot') && n.getAttribute('data-slot') === slot) box = n;
+      if (box) { patch(box, markup); return; }
+      host.insertBefore(makeBox(slot, markup), before ? host.firstChild : null);
+    }
+    /* the theme's boxes at every region's edges within `root` (and root itself), by the slots it has */
+    function within(root, slots) {
+      (slots || edgeSlots()).forEach(function (slot) {
+        var e = edgeOf(slot), name = e[1];
+        if (name === 'app' || SCREENS.indexOf(name) >= 0) return;
+        var hosts = Array.prototype.slice.call(root.querySelectorAll('[data-region="' + name + '"]'));
+        if (root.matches && root.matches('[data-region="' + name + '"]')) hosts.unshift(root);
+        if (!hosts.length) return;
+        var markup = String(App.slot(slot, {}, empty));
+        hosts.forEach(function (h) { if (!h.closest('.region-slot')) place(h, slot, e[0] === 'before', markup); });
+      });
+    }
+    /* with the shell (a design or theme switch: app.js renderShell): the boxes the theme in use no longer has go, the
+       shell's own edges are drawn, and every region's on the page */
+    function regions() {
+      var slots = edgeSlots(), app = $('#app');
+      $$('.region-slot').forEach(function (b) { if (slots.indexOf(b.getAttribute('data-slot')) < 0 && !b.parentNode.closest('.region-slot')) b.remove(); });
+      ['before', 'after'].forEach(function (edge) {
+        var slot = edge + '.app', box = document.querySelector('body > .region-slot[data-slot="' + slot + '"]');
+        if (slots.indexOf(slot) < 0 || !app) return;
+        var markup = String(App.slot(slot, {}, empty));
+        if (box) patch(box, markup);
+        else app.parentNode.insertBefore(makeBox(slot, markup), edge === 'before' ? app : app.nextSibling);
+      });
+      if (app) within(app, slots);
+    }
+    /* a screen's markup as it is drawn (app.js renderRoute): its own slots in its top container, and every region's
+       within it. Returns the markup as it was when the theme has none for this screen */
     function screen(markup, name) {
-      if (SCREENS.indexOf(name) < 0) return markup;
-      var slots = ['before.' + name, 'after.' + name].map(function (slot) { return [slot, String(App.slot(slot, {}, empty))]; })
-        .filter(function (s) { return s[1]; });
+      var slots = edgeSlots();
       if (!slots.length) return markup;
       var tpl = document.createElement('template');
       tpl.innerHTML = String(markup || '');
-      var host = SLOTS_IN[name] ? tpl.content.querySelector(SLOTS_IN[name]) : tpl.content.firstElementChild;
-      if (!host) return markup;
-      slots.forEach(function (s) {
-        var slot = s[0], inner = s[1], box = document.createElement('div');
-        box.className = 'region-slot'; box.setAttribute('data-slot', slot); box.setAttribute('data-key', 'slot:' + slot);
-        box.innerHTML = inner;
-        host.insertBefore(box, slot.indexOf('before.') === 0 ? host.firstChild : null);
-      });
+      if (SCREENS.indexOf(name) >= 0) {
+        var host = SLOTS_IN[name] ? tpl.content.querySelector(SLOTS_IN[name]) : tpl.content.firstElementChild;
+        ['before.' + name, 'after.' + name].forEach(function (slot) {
+          var inner = slots.indexOf(slot) >= 0 && host ? String(App.slot(slot, {}, empty)) : '';
+          if (inner) host.insertBefore(makeBox(slot, inner), slot.indexOf('before.') === 0 ? host.firstChild : null);
+        });
+      }
+      within(tpl.content, slots);
       return tpl.innerHTML;
     }
-    App.edges = { regions: regions, screen: screen };
+    App.edges = { regions: regions, screen: screen, within: within };
 
     /* ---------- the catalogue ----------
        Every <lull-part name> a slot of lull's page names that its slot doesn't hand itself (homeLead's and nowHero's
@@ -79,7 +112,7 @@
     /* a part keeps its <lull-part> as its box, out of the layout, so the part is an item of whatever holds it (a grid, a
        row); a theme that wants the box gives it a display (its layers come after base) */
     var css = document.createElement('style');
-    css.textContent = '@layer base { lull-part { display: contents; } }';
+    css.textContent = '@layer base { lull-part { display: contents; } lull-row { display: none; } }';
     document.head.appendChild(css);
     var defs = {
       'play-button': { make: function (a) { var s = +a('size'); return ui.playButton([40, 48, 52, 56, 64].indexOf(s) >= 0 ? s : 56); } },
@@ -123,18 +156,76 @@
       } },
       lyrics: { on: ['track', 'lyrics'], make: function () { return now().lyrics('slot'); } }
     };
+
+    /* ---------- sections and lists: what lull's screens register (ADR-0101 amended, B) ----------
+       App.sections[name] = { make(attr), on: [kinds], data: path }: a section a screen draws (Home's shelves, Now
+       Playing's queue and source card...), placed by a theme anywhere as <lull-part name="<name>">, drawn as its screen
+       draws it. App.lists[name] = { items(), on, data }: a list lull holds, by record (live.json records), for the list
+       part. A `data` path is fetched only where a part names it, and its parts are drawn again when it arrives. */
+    var sections = App.sections, lists = App.lists, asked = {};
+    function needs(path) {
+      if (!path || asked[path]) return;
+      asked[path] = 1;
+      App.data.whenRead(path).then(function () { asked[path] = 2; App.parts.redraw('data:' + path); });
+    }
+    lists.queue = { on: ['track', 'queue', 'ended'], items: function () {
+      var G = { next: 'yours', context: 'place', radio: 'radio' };
+      return (ps.queue || []).slice((ps.index || 0) + 1).map(function (q) {
+        var t = App.data.track(q.trackId); return t ? Object.assign({}, t, { group: G[q.group] || q.group || '' }) : null;
+      }).filter(Boolean);
+    } };
+    /* `where="group=yours,kind=album"`: every field equal (a value may list choices: group=place|radio) */
+    function matches(where) {
+      var tests = (where || '').split(',').map(function (w) { var i = w.indexOf('='); return i > 0 ? [w.slice(0, i).trim(), w.slice(i + 1).split('|')] : null; }).filter(Boolean);
+      return function (it) { return tests.every(function (t) { return t[1].indexOf(String(it[t[0]])) >= 0; }); };
+    }
+    /* a row of the theme's own (<lull-row>), each {{item.<field> | pipes}} filled from the item, escaped */
+    function fill(row, it) {
+      return row.replace(/\{\{\s*item((?:\.[a-zA-Z0-9-]+)+)\s*((?:\|[^|}]*)*)\}\}/g, function (all, path, pipes) {
+        var v = it; path.slice(1).split('.').forEach(function (k) { v = v == null ? v : v[k]; });
+        return App.esc(window.Live && Live.pipe ? Live.pipe(v, Live.parse('item' + pipes)[1]) : v == null ? '' : String(v));
+      });
+    }
+    function linkOf(it) { return it.kind === 'artist' ? '#/artist/' + it.id : it.kind === 'album' ? '#/album/' + it.id : '#/album/' + it.albumId; }
+    var list = { make: function (a, el) {
+      var src = lists[a('of')]; if (!src) return '';
+      needs(src.data);
+      /* the theme's row stays in the part, never shown (base layer below), so each drawing finds it */
+      var tpl = el.querySelector('lull-row'), row = tpl ? tpl.innerHTML : '', keep = tpl ? tpl.outerHTML : '';
+      var items = (src.items() || []).filter(matches(a('where'))).slice(0, App.clamp(parseInt(a('count'), 10) || 20, 1, 100));
+      var label = a('label') || '';
+      if (!items.length) return keep + (a('empty') ? html`<p class="lull-list__empty">${a('empty')}</p>` : '');
+      if (row) {
+        return keep + '<ol class="lull-list" role="list"' + (label ? ' aria-label="' + App.esc(label) + '"' : '') + '>' + items.map(function (it, i) {
+          return '<li class="lull-list__row" data-id="' + App.esc(it.id || '') + '" data-kind="' + App.esc(it.kind || 'track') + '" data-i="' + i + '">' + fill(row, it) + '</li>';
+        }).join('') + '</ol>';
+      }
+      if (items.every(function (it) { return !it.kind || it.kind === 'track'; })) return ui.trackList(items, { dense: true, label: label || 'Songs', showSources: false });
+      return html`<ul class="lull-list" role="list" aria-label="${label}">${items.map(function (it) { return html`<li class="lull-list__row"><a href="${linkOf(it)}">${it.title || it.name || ''}</a></li>`; })}</ul>`;
+    } };
+    function def(name) {
+      return Object.prototype.hasOwnProperty.call(defs, name) ? defs[name] : name === 'list' ? list : sections[name] || null;
+    }
+    /* what a part is drawn again on: its own kinds, its list's, and the arrival of the data it reads */
+    function drawnOn(d, host, kind) {
+      var src = d === list ? lists[host.getAttribute('of')] : d;
+      return !!src && ((src.on && src.on.indexOf(kind) >= 0) || (src.data && kind === 'data:' + src.data));
+    }
     App.parts = {
-      has: function (name) { return Object.prototype.hasOwnProperty.call(defs, name); },
+      has: function (name) { return !!def(name); },
       /* a <lull-part>'s markup, with its pick and cls; the part's own attributes are make()'s to read */
       draw: function (el) {
-        return Designs.finish(el, String(defs[el.getAttribute('name')].make(function (a) { return el.getAttribute(a); }) || ''));
+        var d = def(el.getAttribute('name'));
+        if (d.data) needs(d.data);
+        return Designs.finish(el, String(d.make(function (a) { return el.getAttribute(a); }, el) || ''));
       },
-      /* the parts drawn from what changed (a player change's kind, or Now Playing's own: 'lyrics'), drawn again where shown */
+      /* the parts drawn from what changed (a player change's kind, Now Playing's own: 'lyrics', data arriving:
+         'data:<path>'), drawn again where shown */
       redraw: function (kind) {
         if (!Designs.partsDrawn) return;
         App.$$kept('lull-part').forEach(function (host) {
-          var def = defs[host.getAttribute('name')];
-          if (def && def.on && def.on.indexOf(kind) >= 0) patch(host, App.parts.draw(host));
+          var d = def(host.getAttribute('name'));
+          if (d && drawnOn(d, host, kind)) patch(host, App.parts.draw(host));
         });
       }
     };

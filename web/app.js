@@ -9,6 +9,8 @@
 (function () {
   'use strict';
   var App = window.App = {};
+  /* what screens register for a theme to place (designs/parts.js; ADR-0101 amended): sections and lists */
+  App.sections = {}; App.lists = {};
   var M = window.LullData;
 
   /* =====================================================================
@@ -131,7 +133,8 @@
         parent.insertBefore(want, cur);         // moves it out of the template
       }
     }
-    for (n = parent.firstChild; n; n = k) { k = n.nextSibling; if (!used.has(n)) parent.removeChild(n); }
+    /* a theme's box at a region's edge (designs/parts.js) is the theme's, never lull's to take away */
+    for (n = parent.firstChild; n; n = k) { k = n.nextSibling; if (!used.has(n) && !(n.classList && n.classList.contains('region-slot'))) parent.removeChild(n); }
   }
   /* the next unclaimed, unkeyed old node from the cursor, if it is the same kind of node. A loading block (aria-busy:
      every skeleton) is never the content that replaces it: morphing one into the other made the content look as if it

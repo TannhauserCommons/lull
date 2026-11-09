@@ -238,7 +238,11 @@ screen's first or last child (`App.edges`), and every slot of lull's page takes 
 with Now Playing's own builders, `App.nowParts`), drawn into its `<lull-part>` box, kept current by the same `data-bind`
 and `data-seek` updates as lull's own copies, and drawn again in place when the song changes. Both are
 `designs/parts.js`, which loads only for a theme that uses them. The built-in designs use neither, so their pages gain
-nothing and fetch nothing more. docs/themes.md section 6 lists the slots and parts, and
+nothing and fetch nothing more. The edges are every `[data-region]` lull draws and the whole shell (`before.app`), and
+`App.patch` never removes a `.region-slot` when lull draws a region again. A screen registers what a theme may place
+from it: its sections in `App.sections` (Home's shelves, Now Playing's queue and source card) and its lists, by record,
+in `App.lists` (the list part, with the theme's `<lull-row>`); a section's data is fetched only where one is placed
+(`App.data.whenRead`). docs/themes.md section 6 lists the slots and parts, and
 section 15 builds a theme from a mockup with them and lists the actions (`data-act`) a theme's own buttons can name.
 
 ### 3.6 Adding a design

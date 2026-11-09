@@ -504,6 +504,11 @@
       "of": "clock",
       "pace": "minute",
       "about": "the device's time"
+    },
+    "item": {
+      "of": "item",
+      "pace": "song",
+      "about": "inside a list part's own row (<lull-row>): the row's item, filled as the row is drawn"
     }
   },
   "records": {
@@ -604,6 +609,13 @@
     },
     "clock": {
       "now": "date"
+    },
+    "item": {
+      "...": "queued",
+      "kind": "text",
+      "name": "text",
+      "type": "text",
+      "trackIds": "list"
     }
   },
   "pipes": {

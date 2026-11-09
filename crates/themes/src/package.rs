@@ -25,35 +25,54 @@ const SLOTS: &[(&str, &[&str])] = &[
     ("before", EDGES),
     ("after", EDGES),
 ];
-/// What a theme's markup goes before or after (ADR-0101, docs/themes.md section 6): each shell region, as
-/// `[data-region]` names it (`web/designs/parts.js` REGIONS), and each screen, as `.app[data-screen]` does (its
-/// SCREENS).
-/// `before` and `after` always name one: there is no slot before everything.
+/// What a theme's markup goes before or after (ADR-0101 and its amendment of 2026-11-09, docs/themes.md section 6):
+/// every region lull draws (`[data-region]`, the shell's and the screens' own, Home's shelves among them), each screen
+/// (`.app[data-screen]`, `web/designs/parts.js` SCREENS), and `app`, the whole shell. A test holds this list to the web
+/// code, so a region lull adds fails it until listed here.
 const EDGES: &[&str] = &[
-    "rail",
-    "header",
+    "agg",
+    "aggs",
+    "album",
+    "app",
+    "artist",
     "content",
     "ctx",
-    "nowcol",
-    "playerbar",
-    "mini",
-    "tabbar",
+    "details",
+    "downloads",
+    "folder",
+    "following",
+    "header",
+    "history",
     "home",
-    "search",
-    "now",
+    "jump",
+    "lead",
     "library",
     "liked",
-    "downloads",
-    "history",
-    "following",
-    "album",
-    "artist",
-    "tag",
-    "playlists",
-    "playlist",
+    "mini",
+    "new",
+    "now",
+    "nowcol",
     "outside",
-    "stats",
+    "picks",
+    "playerbar",
+    "playlist",
+    "playlists",
+    "radio",
+    "rail",
+    "recents",
+    "rels",
+    "results",
+    "save",
+    "search",
     "settings",
+    "srcmeta",
+    "srcrows",
+    "stats",
+    "sub",
+    "tabbar",
+    "tag",
+    "tags",
+    "topnav",
 ];
 
 const MAX_FILES: usize = 200;
@@ -678,6 +697,7 @@ pub(crate) fn bad(msg: impl Into<String>) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     fn package(css: &str, slots: &[(&str, &str)]) -> Files {
         let mut files = Files::from([
@@ -964,38 +984,67 @@ mod tests {
             "before",
             "after",
             "before.everything",
-            "after.topnav",
+            "after.nowhere",
             "before.home.playing",
         ] {
             let why = refused(&package("", &[(name, "<b></b>")]));
             assert!(
                 why.starts_with(&format!("slots/{name}.html is not a slot template"))
-                    && why.contains("rail, header, content"),
+                    && why.contains("album, app, artist"),
                 "{name}: {why}"
             );
         }
     }
 
-    /// `web/designs/parts.js` draws a region slot for each of its REGIONS and a screen slot for each of its SCREENS: the
-    /// names this crate takes, no more and no fewer.
+    /// The edges this crate takes are the regions lull's markup draws, Home's shelves, the screens `web/designs/parts.js`
+    /// draws slots for, and the whole shell: no more and no fewer.
     #[test]
-    fn parts_js_draws_the_region_and_screen_slots_this_crate_takes() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/designs/parts.js");
-        let parts = std::fs::read_to_string(&path).unwrap_or_default();
-        let list = |name: &str| -> Vec<String> {
-            let start = format!("var {name} = [");
-            let Some(at) = parts.find(&start) else {
-                return Vec::new();
-            };
-            let rest = &parts[at + start.len()..];
+    fn the_edges_are_the_regions_and_screens_lull_draws() {
+        let web = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web");
+        let read = |p: std::path::PathBuf| std::fs::read_to_string(p).unwrap_or_default();
+        let quoted = |text: &str, var: &str| -> Vec<String> {
+            let start = format!("var {var} = [");
+            let Some(at) = text.find(&start) else { return Vec::new() };
+            let rest = &text[at + start.len()..];
             rest[..rest.find(']').unwrap_or(0)]
                 .split(',')
                 .map(|s| s.trim().trim_matches('\'').to_owned())
                 .filter(|s| !s.is_empty())
                 .collect()
         };
-        let drawn = [list("REGIONS"), list("SCREENS")].concat();
-        assert_eq!(drawn, EDGES.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>());
+        let mut names: BTreeSet<String> = BTreeSet::new();
+        let mut files = vec![web.join("index.html")];
+        for dir in [web.clone(), web.join("screens")] {
+            for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                if entry.path().extension().is_some_and(|e| e == "js") {
+                    files.push(entry.path());
+                }
+            }
+        }
+        for f in files {
+            let text = read(f);
+            let mut rest = text.as_str();
+            while let Some(at) = rest.find("data-region=\"") {
+                rest = &rest[at + "data-region=\"".len()..];
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_lowercase() || *c == '-')
+                    .collect();
+                if rest[name.len()..].starts_with('"') && !name.is_empty() {
+                    names.insert(name);
+                }
+            }
+        }
+        names.extend(quoted(&read(web.join("screens/discover.js")), "MODULE_IDS"));
+        names.extend(quoted(
+            &read(web.join("designs/parts.js")).replace(['\n', '\r'], " "),
+            "SCREENS",
+        ));
+        names.insert("app".to_owned());
+        assert_eq!(
+            names.into_iter().collect::<Vec<_>>(),
+            EDGES.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>()
+        );
     }
 
     #[test]
