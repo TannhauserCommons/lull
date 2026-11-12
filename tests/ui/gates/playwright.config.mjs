@@ -2,7 +2,7 @@
 // (../fixture-hub), so they need only Node, Chromium and WebKit: `mise run check:ui`. docs/context/quality.md#ui-gates.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const port = +(process.env.FIXTURE_PORT || 8790);
@@ -13,6 +13,9 @@ const capture = process.env.UI_CAPTURE === '1';
 // (the chrome at every width: about half the gates' time, so CI gives it machines of its own), `rest` (every other
 // project, so a new gate runs in CI and in run.sh without being listed there), or, unset, all of them.
 const group = process.env.GATES;
+// a phone (iPhone 14/15 in CSS px): touch and the viewport meta read. No service worker unless a gate asks for one:
+// WebKit reports its first install as an update, and the note that brings would stand over what the gates measure (M14)
+const phone = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' };
 const inGroup = (p) =>
   group === 'perf' || group === 'fit' ? p.name === group : group === 'rest' ? p.name !== 'perf' && p.name !== 'fit' : true;
 
@@ -123,6 +126,10 @@ export default defineConfig({
     // masks draw as they should: none on an inline box in any design (computed style), and Petal's title heart in WebKit
     { name: 'masks', testMatch: 'masks.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     { name: 'masks-webkit', testMatch: 'masks.spec.mjs', grep: /title heart/, use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },
+    // lull on a phone, installed or in its browser: fit, notch, touch, install and lock screen, as Android (Chromium)
+    // and as an iPhone (WebKit). A test marked fixme names a known problem by its mobile audit id
+    { name: 'mobile', testMatch: /[\\/]mobile-[^\\/]*\.spec\.mjs$/, fullyParallel: true, use: { ...phone, userAgent: devices['Pixel 7'].userAgent } },
+    { name: 'mobile-webkit', testMatch: /[\\/]mobile-[^\\/]*\.spec\.mjs$/, fullyParallel: true, use: { ...phone, browserName: 'webkit', userAgent: devices['iPhone 14'].userAgent, launchOptions: {} } },
   ].filter(inGroup),
 });
 
