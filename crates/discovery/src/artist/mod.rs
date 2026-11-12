@@ -476,7 +476,7 @@ fn covers(releases: &[Entry]) -> Vec<String> {
 
 /// Releases as albums, remembered with their covers and the catalog album behind each, so their
 /// pages and pictures resolve.
-async fn remember(svc: &Service, hits: Vec<AlbumHit>) -> Result<Vec<lull_core::model::Album>> {
+pub(crate) async fn remember(svc: &Service, hits: Vec<AlbumHit>) -> Result<Vec<lull_core::model::Album>> {
     let albums = svc.store.albums(hits.iter().map(AlbumHit::release).collect()).await?;
     svc.store
         .remember_sources(

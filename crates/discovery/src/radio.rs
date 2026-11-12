@@ -10,12 +10,18 @@
 //! - **Then Last.fm** when ListenBrainz gave nothing (down, slow or empty): similar tracks, the
 //!   top tracks of the similar artists of an artist with an MBID, the similar tracks of the
 //!   listener's songs by one without, or the tag's top tracks.
+//! - **Then the artist's own songs** in the catalogs, by its exact ids there (Apple's and
+//!   Deezer's): a small artist no recommender knows yet still has a radio.
 //! - **Then the saved library:** songs matching the artist or tag.
+//! - **Last, the listener's own strongest tags:** tag radio, so a radio practically never ends.
+//! - A source counts only for the songs it gives that the radio can still play (not queued, not
+//!   by a hidden or held-back artist): one whose songs are all queued already leaves the next.
 //! - **About 8 s at most** in all. The answer is an error only when no source answered: 503 with
 //!   the reason, or 404 when they answered with nothing.
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 
 use lull_core::ids::{ArtistId, TrackId};
@@ -24,11 +30,16 @@ use lull_core::{Error, Result};
 use serde::Deserialize;
 use tokio::time::Instant;
 
+use crate::artist::discography;
 use crate::artist::identity::{self, IdRow, Ids, Source};
+use crate::artist::popular::song_key;
+use crate::search::catalog::Choice;
+use crate::search::merge::SongHit;
 use crate::sources::lastfm::LastFm;
 use crate::sources::listenbrainz::{Mode, Popularity};
 use crate::sources::{ArtistSource, Song};
 use crate::store::entities;
+use crate::taste::Taste;
 use crate::{Service, mix, taste};
 
 /// Tracks returned per call; the UI asks again as the queue drains.
@@ -46,6 +57,10 @@ const BUDGET: Budget = Budget {
 };
 /// Similar artists whose top tracks fill a radio without ListenBrainz.
 const LASTFM_SIMILAR: usize = 3;
+/// The listener's strongest tags a radio falls back on, when nothing knows its seed.
+const TASTE_TAGS: usize = 2;
+/// The steps' names, as `gather` reports which one gave the songs.
+const OWN_SONGS: &str = "the artist's own songs";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -72,6 +87,8 @@ struct Known {
     artist: Option<ArtistId>,
     /// The credited artist's exact ids (track and artist seeds; `artist::identity`).
     ids: Ids,
+    /// The name of the artist those ids are (a credit's first artist lull holds ids for).
+    anchor: Option<String>,
     /// The titles of the listener's songs by an artist without an MBID (artist seeds): Last.fm's
     /// radio starts from them, as no id of its names this artist there.
     songs: Vec<String>,
@@ -92,20 +109,34 @@ pub async fn next(
         listenbrainz: BUDGET.listenbrainz.saturating_sub(spent),
         total: BUDGET.total.saturating_sub(spent),
     };
-    let tracks = gather(
-        budget,
+    let mut steps = vec![Step::within(
+        "ListenBrainz",
+        budget.listenbrainz,
         from_listenbrainz(svc, &seed, steer),
-        svc.lastfm().map(|lastfm| from_lastfm(svc, lastfm, &seed, steer)),
-        from_library(svc, &seed),
-    )
-    .await?;
+    )];
+    if let Some(lastfm) = svc.lastfm() {
+        steps.push(Step::new("Last.fm", from_lastfm(svc, lastfm, &seed, steer)));
+    }
+    if seed.kind != SeedKind::Tag && (seed.ids.itunes().is_some() || seed.ids.deezer().is_some()) {
+        steps.push(Step::new(OWN_SONGS, own_songs(svc, &seed)));
+    }
+    steps.push(Step::local("the library", async { Ok(from_library(svc, &seed).await) }));
+    let tags = taste_tags(&taste);
+    if !tags.is_empty() {
+        steps.push(Step::new("the listener's tags", from_taste(svc, tags, steer)));
+    }
+    // Only songs the radio can still play count: what is queued, hidden or held back doesn't.
+    let playable =
+        |t: &Track| !exclude.contains(&t.id) && !taste.hidden.contains(&t.artist_id) && !taste.held_back(&t.artist_id);
+    let gathered = gather(budget.total, playable, steps).await?;
+    // The artist's own songs are all one artist's: the cap per artist would starve them.
+    let one_artist = gathered.by == OWN_SONGS;
 
     // Originals first: remixes and live takes only fill up, unless the seed is one.
     let versions_too = seed.title.as_deref().is_some_and(is_version);
-    let mut ranked: Vec<(f64, Track)> = tracks
+    let mut ranked: Vec<(f64, Track)> = gathered
+        .tracks
         .into_iter()
-        .filter(|t| !exclude.contains(&t.id) && !taste.hidden.contains(&t.artist_id))
-        .filter(|t| !taste.held_back(&t.artist_id))
         .enumerate()
         .map(|(i, t)| {
             // Shuffled order, nudged towards known artists when familiar and away when adventurous.
@@ -132,7 +163,7 @@ pub async fn next(
         .filter(|t| {
             let n = per_artist.entry(t.artist_id.clone()).or_default();
             *n += 1;
-            *n <= PER_ARTIST || seed.artist.as_ref() == Some(&t.artist_id)
+            *n <= PER_ARTIST || one_artist || seed.artist.as_ref() == Some(&t.artist_id)
         })
         .take(BATCH)
         .collect();
@@ -151,6 +182,7 @@ async fn known(svc: &Service, seed: Seed) -> Result<Known> {
             tags: Vec::new(),
             artist: None,
             ids: Ids::default(),
+            anchor: None,
             songs: Vec::new(),
         }),
         SeedKind::Artist => {
@@ -160,8 +192,11 @@ async fn known(svc: &Service, seed: Seed) -> Result<Known> {
                 .await?
                 .ok_or_else(|| Error::NotFound(format!("Artist {} is unknown to lull.", seed.id)))?;
             // ADR-0035: an artist's own ids, never those of others of its name.
-            let ids = match crate::namesakes::on(svc) {
-                true => crate::namesakes::artist_ids(svc, &artist.id).await?,
+            let (ids, anchor) = match crate::namesakes::on(svc) {
+                true => (
+                    crate::namesakes::artist_ids(svc, &artist.id).await?,
+                    Some(artist.name.clone()),
+                ),
                 false => credited_ids(svc, &artist.name).await,
             };
             let (songs, mut tags) = match ids.mbid() {
@@ -176,6 +211,7 @@ async fn known(svc: &Service, seed: Seed) -> Result<Known> {
                 tags,
                 artist: Some(artist.id),
                 ids,
+                anchor,
                 songs,
             })
         }
@@ -189,13 +225,17 @@ async fn known(svc: &Service, seed: Seed) -> Result<Known> {
                 true => crate::namesakes::song_artist(svc, &track).await?,
                 false => None,
             };
-            let ids = match placed {
-                Some(artist) => crate::namesakes::artist_ids(svc, &artist).await?,
+            let (ids, anchor) = match placed {
+                Some(artist) => {
+                    let name = svc.store.artist_ref(artist.clone()).await?.map(|a| a.name);
+                    (crate::namesakes::artist_ids(svc, &artist).await?, name)
+                }
                 None => credited_ids(svc, &track.artist).await,
             };
             Ok(Known {
                 kind: seed.kind,
                 ids,
+                anchor,
                 name: track.artist,
                 title: Some(track.title),
                 tags: track.tags,
@@ -206,22 +246,26 @@ async fn known(svc: &Service, seed: Seed) -> Result<Known> {
     }
 }
 
-/// The exact ids of the credit's first artist lull holds any for, within ListenBrainz's time.
-/// Ids not decided by then are none for this batch (their lookups are cached for the next).
-async fn credited_ids(svc: &Service, credit: &str) -> Ids {
+/// The exact ids of the credit's first artist lull holds any for, and that artist's name, within
+/// ListenBrainz's time. Ids not decided by then are none for this batch (their lookups are cached
+/// for the next).
+async fn credited_ids(svc: &Service, credit: &str) -> (Ids, Option<String>) {
     let names = credited_names(credit);
     let found = resolve(&names, |name| async move {
         let ids = identity::ids(svc, &ArtistId::of(&name)).await?;
-        Ok((!ids.is_empty()).then_some(ids))
+        Ok((!ids.is_empty()).then_some((ids, name)))
     });
     match tokio::time::timeout(BUDGET.listenbrainz, found).await {
-        Ok((ids, failure)) => {
+        Ok((found, failure)) => {
             if let Some(e) = failure {
                 tracing::info!(credit, error = %e, "radio without one artist's ids");
             }
-            ids.unwrap_or_default()
+            match found {
+                Some((ids, name)) => (ids, Some(name)),
+                None => (Ids::default(), None),
+            }
         }
-        Err(_) => Ids::default(),
+        Err(_) => (Ids::default(), None),
     }
 }
 
@@ -262,57 +306,105 @@ pub struct Budget {
     pub total: Duration,
 }
 
-/// The first of ListenBrainz, Last.fm (when configured) and the library to give tracks, within
-/// `budget`. Fails only when none did: with a source's error when none answered at all, else
-/// "nothing found".
-pub async fn gather<L, F, B>(budget: Budget, listenbrainz: L, lastfm: Option<F>, library: B) -> Result<Vec<Track>>
-where
-    L: Future<Output = Result<Vec<Track>>>,
-    F: Future<Output = Result<Vec<Track>>>,
-    B: Future<Output = Vec<Track>>,
-{
+/// A step of the radio's search: a source and how long it may take.
+pub struct Step<'a> {
+    pub service: &'static str,
+    limit: Limit,
+    songs: Pin<Box<dyn Future<Output = Result<Vec<Track>>> + Send + 'a>>,
+}
+
+#[derive(Clone, Copy)]
+enum Limit {
+    /// Its own limit, within the whole call's.
+    Within(Duration),
+    /// What is left of the whole call.
+    Rest,
+    /// Lull's own data: never cut short.
+    Local,
+}
+
+impl<'a> Step<'a> {
+    pub fn new(service: &'static str, songs: impl Future<Output = Result<Vec<Track>>> + Send + 'a) -> Self {
+        Step {
+            service,
+            limit: Limit::Rest,
+            songs: Box::pin(songs),
+        }
+    }
+
+    pub fn within(
+        service: &'static str,
+        limit: Duration,
+        songs: impl Future<Output = Result<Vec<Track>>> + Send + 'a,
+    ) -> Self {
+        Step {
+            limit: Limit::Within(limit),
+            ..Step::new(service, songs)
+        }
+    }
+
+    pub fn local(service: &'static str, songs: impl Future<Output = Result<Vec<Track>>> + Send + 'a) -> Self {
+        Step {
+            limit: Limit::Local,
+            ..Step::new(service, songs)
+        }
+    }
+}
+
+/// The songs a step gave, and which step.
+#[derive(Debug)]
+pub struct Gathered {
+    pub tracks: Vec<Track>,
+    pub by: &'static str,
+}
+
+/// The first step, in order, to give songs `playable` keeps, within `total`. A step whose songs
+/// are all queued already (or hidden) gave nothing: the next one is asked. Fails only when none
+/// gave any: with a source's error when no outside source answered at all, else "nothing found".
+pub async fn gather(total: Duration, playable: impl Fn(&Track) -> bool, steps: Vec<Step<'_>>) -> Result<Gathered> {
     let start = Instant::now();
     let mut failure = None;
     let mut answered = false;
-    let mut take = |service: &'static str,
-                    outcome: std::result::Result<Result<Vec<Track>>, tokio::time::error::Elapsed>,
-                    limit: Duration| match outcome {
-        Ok(Ok(tracks)) if !tracks.is_empty() => Some(tracks),
-        Ok(Ok(_) | Err(Error::NotFound(_))) => {
-            answered = true;
-            None
+    for step in steps {
+        let left = total.saturating_sub(start.elapsed());
+        let limit = match step.limit {
+            Limit::Within(own) => Some(own.min(left)),
+            Limit::Rest => Some(left),
+            Limit::Local => None,
+        };
+        let outcome = match limit {
+            Some(limit) => tokio::time::timeout(limit, step.songs).await.map_err(|_| limit),
+            None => Ok(step.songs.await),
+        };
+        match outcome {
+            Ok(Ok(mut tracks)) => {
+                // Lull's own data having nothing says nothing of the sources.
+                answered |= !matches!(step.limit, Limit::Local);
+                tracks.retain(|t| playable(t));
+                if !tracks.is_empty() {
+                    return Ok(Gathered {
+                        tracks,
+                        by: step.service,
+                    });
+                }
+            }
+            Ok(Err(Error::NotFound(_))) => answered |= !matches!(step.limit, Limit::Local),
+            Ok(Err(e)) => {
+                tracing::info!(error = %e, "radio goes on without {}", step.service);
+                failure = Some(e);
+            }
+            Err(limit) => {
+                tracing::info!(
+                    "radio goes on without {}: no answer within {} s",
+                    step.service,
+                    limit.as_secs()
+                );
+                failure = Some(Error::unavailable(
+                    step.service,
+                    format!("didn't answer within {} s", limit.as_secs()),
+                ));
+            }
         }
-        Ok(Err(e)) => {
-            tracing::info!(error = %e, "radio goes on without {service}");
-            failure = Some(e);
-            None
-        }
-        Err(_) => {
-            tracing::info!(
-                "radio goes on without {service}: no answer within {} s",
-                limit.as_secs()
-            );
-            failure = Some(Error::unavailable(
-                service,
-                format!("didn't answer within {} s", limit.as_secs()),
-            ));
-            None
-        }
-    };
-    let lb = tokio::time::timeout(budget.listenbrainz, listenbrainz).await;
-    if let Some(tracks) = take("ListenBrainz", lb, budget.listenbrainz) {
-        return Ok(tracks);
-    }
-    if let Some(lastfm) = lastfm {
-        let left = budget.total.saturating_sub(start.elapsed());
-        let found = tokio::time::timeout(left, lastfm).await;
-        if let Some(tracks) = take("Last.fm", found, left) {
-            return Ok(tracks);
-        }
-    }
-    let saved = library.await;
-    if !saved.is_empty() {
-        return Ok(saved);
     }
     match failure {
         Some(e) if !answered => Err(e),
@@ -436,6 +528,91 @@ async fn from_library(svc: &Service, seed: &Known) -> Vec<Track> {
     });
     mix::shuffle(&mut saved, mix::seed());
     saved
+}
+
+/// The artist's own songs, by its exact ids in the catalogs (Apple's, and Deezer's top where its
+/// catalog is open), as its artist page lists them: what keeps the radio of an artist no
+/// recommender knows yet going. Never by a name (ADR-0035). Each song once, the seed's own aside.
+async fn own_songs(svc: &Service, seed: &Known) -> Result<Vec<Track>> {
+    let Some(artist) = seed.anchor.as_deref() else {
+        return Ok(Vec::new());
+    };
+    let open = svc.catalog.choice() == Choice::Deezer;
+    let (from_itunes, from_deezer) = tokio::join!(
+        async {
+            match seed.ids.itunes() {
+                Some(id) => svc.itunes.artist_catalog(id).await.map(|c| c.songs),
+                None => Ok(Vec::new()),
+            }
+        },
+        async {
+            match seed.ids.deezer() {
+                Some(id) if open => svc.deezer.artist_top(id).await,
+                _ => Ok(Vec::new()),
+            }
+        },
+    );
+    let hits = match (from_deezer, from_itunes) {
+        (Err(e), Err(_)) => return Err(e),
+        (deezer, itunes) => {
+            let mut hits = deezer.unwrap_or_default();
+            hits.extend(itunes.unwrap_or_default());
+            hits
+        }
+    };
+    let mut hits = one_take_each(artist, seed.title.as_deref(), hits);
+    mix::shuffle(&mut hits, mix::seed());
+    hits.truncate(POOL);
+    // Their releases remembered, so their covers show.
+    crate::artist::remember(svc, hits.iter().filter_map(SongHit::album_hit).collect()).await?;
+    svc.store.tracks(hits.iter().map(SongHit::song).collect()).await
+}
+
+/// The catalog's songs credited to `artist`, each song once (its first take in the catalog's
+/// order, so every batch picks the same one) and never the seed's own song again.
+fn one_take_each(artist: &str, seed_title: Option<&str>, hits: Vec<SongHit>) -> Vec<SongHit> {
+    let mut seen: HashSet<String> = seed_title.map(song_key).into_iter().collect();
+    hits.into_iter()
+        .filter(|s| discography::credits(&s.artist, artist))
+        .filter(|s| seen.insert(song_key(&s.title)))
+        .collect()
+}
+
+/// The listener's strongest specific tags: where a radio nothing else knows anything around goes.
+fn taste_tags(taste: &Taste) -> Vec<String> {
+    taste
+        .top_tags(usize::MAX)
+        .map(|(tag, _)| tag)
+        .filter(|tag| taste::is_specific(tag))
+        .take(TASTE_TAGS)
+        .cloned()
+        .collect()
+}
+
+/// Tag radio of the listener's strongest tags (ListenBrainz, else Last.fm's top tracks of the
+/// first): the radio's last resort, so it practically never ends.
+async fn from_taste(svc: &Service, tags: Vec<String>, steer: f64) -> Result<Vec<Track>> {
+    let mut failure = None;
+    for tag in &tags {
+        match svc.lb.tag_radio(tag, popularity(steer), 50).await {
+            Ok(mut mbids) if !mbids.is_empty() => {
+                mix::shuffle(&mut mbids, mix::seed());
+                mbids.truncate(POOL);
+                let songs = svc.lb.songs(&mbids).await?;
+                offer(svc, &songs, "ListenBrainz radio").await;
+                return svc.store.tracks(songs).await;
+            }
+            Ok(_) => {}
+            Err(e) => failure = Some(e),
+        }
+    }
+    if let (Some(lastfm), Some(tag)) = (svc.lastfm(), tags.first()) {
+        let mut songs = lastfm.tag_top_tracks(tag).await?;
+        mix::shuffle(&mut songs, mix::seed());
+        songs.truncate(POOL);
+        return svc.store.tracks(songs).await;
+    }
+    Err(failure.unwrap_or_else(|| Error::NotFound("No radio for the listener's tags yet.".into())))
 }
 
 /// Recordings for an artist radio on the seed's confirmed artist, else tag radio on its own
@@ -566,7 +743,8 @@ mod tests {
     use lull_core::ids::{AlbumId, ArtistId, TrackId};
     use lull_core::model::Track;
 
-    use super::{Budget, credited_names, gather, is_version, resolve};
+    use super::{OWN_SONGS, Step, credited_names, gather, is_version, one_take_each, resolve};
+    use crate::search::merge::SongHit;
 
     fn track(title: &str) -> Track {
         Track {
@@ -586,58 +764,169 @@ mod tests {
         }
     }
 
-    const QUICK: Budget = Budget {
-        listenbrainz: Duration::from_millis(50),
-        total: Duration::from_millis(150),
-    };
+    const LB: Duration = Duration::from_millis(50);
+    const TOTAL: Duration = Duration::from_millis(150);
+    fn any(_: &Track) -> bool {
+        true
+    }
+    fn titles(found: &lull_core::Result<super::Gathered>) -> Option<Vec<String>> {
+        found
+            .as_ref()
+            .ok()
+            .map(|g| g.tracks.iter().map(|t| t.title.clone()).collect())
+    }
 
     #[tokio::test]
     async fn with_listenbrainz_hanging_last_fm_fills_the_radio_in_time() {
         // Live, tag radio hung 61 s on ListenBrainz and then answered 503.
         let started = std::time::Instant::now();
         let found = gather(
-            QUICK,
-            std::future::pending(),
-            Some(async { Ok(vec![track("Paper Moon Static")]) }),
-            async { Vec::new() },
+            TOTAL,
+            any,
+            vec![
+                Step::within("ListenBrainz", LB, std::future::pending()),
+                Step::new("Last.fm", async { Ok(vec![track("Paper Moon Static")]) }),
+            ],
         )
         .await;
-        assert_eq!(found.ok().map(|t| t.len()), Some(1));
+        assert_eq!(titles(&found), Some(vec!["Paper Moon Static".into()]));
         assert!(started.elapsed() < Duration::from_millis(500));
     }
 
     #[tokio::test]
     async fn with_listenbrainz_failing_and_no_last_fm_saved_songs_play() {
         let found = gather(
-            QUICK,
-            async { Err(Error::unavailable("ListenBrainz", "error sending request")) },
-            None::<std::future::Ready<lull_core::Result<Vec<Track>>>>,
-            async { vec![track("Satellite Porch")] },
+            TOTAL,
+            any,
+            vec![
+                Step::within("ListenBrainz", LB, async {
+                    Err(Error::unavailable("ListenBrainz", "error sending request"))
+                }),
+                Step::local("the library", async { Ok(vec![track("Satellite Porch")]) }),
+            ],
         )
         .await;
-        assert_eq!(found.ok().map(|t| t[0].title.clone()), Some("Satellite Porch".into()));
+        assert_eq!(titles(&found), Some(vec!["Satellite Porch".into()]));
     }
 
     #[tokio::test]
     async fn it_is_503_only_when_no_source_answered() {
         let down = gather(
-            QUICK,
-            async { Err(Error::unavailable("ListenBrainz", "error sending request")) },
-            Some(std::future::pending()),
-            async { Vec::new() },
+            TOTAL,
+            any,
+            vec![
+                Step::within("ListenBrainz", LB, async {
+                    Err(Error::unavailable("ListenBrainz", "error sending request"))
+                }),
+                Step::new("Last.fm", std::future::pending()),
+                Step::local("the library", async { Ok(Vec::new()) }),
+            ],
         )
         .await;
         assert!(matches!(down, Err(Error::Unavailable { .. })), "{down:?}");
         let empty = gather(
-            QUICK,
-            async { Err(Error::unavailable("ListenBrainz", "error sending request")) },
-            Some(async { Ok(Vec::new()) }),
-            async { Vec::new() },
+            TOTAL,
+            any,
+            vec![
+                Step::within("ListenBrainz", LB, async {
+                    Err(Error::unavailable("ListenBrainz", "error sending request"))
+                }),
+                Step::new("Last.fm", async { Ok(Vec::new()) }),
+                Step::local("the library", async { Ok(Vec::new()) }),
+            ],
         )
         .await;
         assert!(
             matches!(empty, Err(Error::NotFound(_))),
             "Last.fm answered, with nothing: {empty:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_source_whose_songs_are_all_queued_leaves_the_next_one() {
+        // A radio whose first source gives only the song playing (or songs queued already) asked
+        // nobody else: the answer was empty and the radio stalled with nothing after this song.
+        let queued = |t: &Track| t.title != "Metaphor";
+        let found = gather(
+            TOTAL,
+            queued,
+            vec![
+                Step::within("ListenBrainz", LB, async { Ok(vec![track("Metaphor")]) }),
+                Step::new("Last.fm", async { Ok(vec![track("Red Hearts")]) }),
+            ],
+        )
+        .await;
+        assert_eq!(titles(&found), Some(vec!["Red Hearts".into()]));
+    }
+
+    #[tokio::test]
+    async fn a_small_artist_no_recommender_knows_plays_its_own_songs() {
+        // Live: "Metaphor" by Marlon Funaki, an artist lull knows only by its Apple id. ListenBrainz
+        // had nothing to go on (no MBID, no tags), Last.fm no similar tracks, the library nothing:
+        // "No music source has anything for this radio yet." Apple lists more of the artist's songs.
+        let playing = |t: &Track| t.title != "Metaphor";
+        let found = gather(
+            TOTAL,
+            playing,
+            vec![
+                Step::within("ListenBrainz", LB, async {
+                    Err(Error::NotFound(
+                        "No music source knows Marlon Funaki well enough".into(),
+                    ))
+                }),
+                Step::new("Last.fm", async { Ok(Vec::new()) }),
+                Step::new(OWN_SONGS, async {
+                    Ok(vec![track("Red Hearts"), track("Murphy's Law")])
+                }),
+                Step::local("the library", async { Ok(Vec::new()) }),
+            ],
+        )
+        .await;
+        assert_eq!(found.as_ref().map(|g| g.by).ok(), Some(OWN_SONGS), "{found:?}");
+        assert_eq!(titles(&found).map(|t| t.len()), Some(2));
+    }
+
+    #[tokio::test]
+    async fn with_nothing_around_the_seed_the_listeners_own_tags_carry_the_radio() {
+        let found = gather(
+            TOTAL,
+            any,
+            vec![
+                Step::within("ListenBrainz", LB, async { Err(Error::NotFound("no tags".into())) }),
+                Step::new("Last.fm", async { Ok(Vec::new()) }),
+                Step::local("the library", async { Ok(Vec::new()) }),
+                Step::new("the listener's tags", async { Ok(vec![track("Lanterns")]) }),
+            ],
+        )
+        .await;
+        assert_eq!(titles(&found), Some(vec!["Lanterns".into()]));
+    }
+
+    #[test]
+    fn an_artists_own_songs_are_its_credits_each_once_and_never_the_seed_again() {
+        let hit = |title: &str, artist: &str, album: &str| SongHit {
+            title: title.into(),
+            artist: artist.into(),
+            album: album.into(),
+            ..SongHit::default()
+        };
+        let hits = vec![
+            hit("Metaphor", "Marlon Funaki", "Metaphor"),
+            hit("Red Hearts", "Marlon Funaki", "Red Hearts"),
+            hit("Red Hearts", "Marlon Funaki", "Monterey Village"),
+            hit("Sundown", "Someone Else feat. Marlon Funaki", "Sundown"),
+            hit("Unrelated", "Someone Else", "Unrelated"),
+        ];
+        let kept: Vec<(String, String)> = one_take_each("Marlon Funaki", Some("Metaphor"), hits)
+            .into_iter()
+            .map(|s| (s.title, s.album))
+            .collect();
+        assert_eq!(
+            kept,
+            [
+                ("Red Hearts".to_owned(), "Red Hearts".to_owned()),
+                ("Sundown".to_owned(), "Sundown".to_owned()),
+            ]
         );
     }
 
