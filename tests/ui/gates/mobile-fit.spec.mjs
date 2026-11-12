@@ -44,7 +44,11 @@ const underInsets = () => {
     const x = at.includes('left') ? mid(Math.max(r.left, 0), Math.min(r.right, s.left)) : at.includes('right') ? mid(Math.max(r.left, s.right), Math.min(r.right, W)) : mid(r.left, r.right);
     const y = at.includes('top') ? mid(Math.max(r.top, 0), Math.min(r.bottom, s.top)) : at.includes('bottom') ? mid(Math.max(r.top, s.bottom), Math.min(r.bottom, H)) : mid(r.top, r.bottom);
     const hit = document.elementFromPoint(x, y);
-    if (!hit || !(el === hit || el.contains(hit) || hit.contains(el))) continue;
+    // a box round it (a link round its words) counts; the page, or a box that clips it on the way (a scroller it runs
+    // out of), means it is cut off there, not drawn there
+    const clips = (box) => { for (let e = el.parentElement; e; e = e.parentElement) { if (getComputedStyle(e).overflow !== 'visible') return true; if (e === box) return false; } return false; };
+    const reaches = hit && (el === hit || el.contains(hit) || (hit.contains(el) && hit !== document.body && hit !== document.documentElement && !clips(hit)));
+    if (!reaches) continue;
     out.push(`${el.tagName.toLowerCase()}.${[...el.classList].slice(0, 2).join('.')} "${(el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 30)}" under the ${at.join('+')} inset`);
   }
   return out;
@@ -101,7 +105,6 @@ test.describe('a phone held sideways', () => {
   for (const design of designs) {
     test(`nothing to read or tap beside the notch / ${design}`, async ({ page, browser }) => {
       test.skip(isWebkit(browser), 'WebKit takes no safe-area insets from a test');
-      test.fixme(true, 'M06: nothing pads for safe-area-inset-left/right, so the header, rail and player bar run under the notch');
       await insets(page, { bottom: 21, left: 47, right: 47 });
       await withSong(page, design);
       for (const route of ['/home', `/album/${ids.album}`, '/now']) {
