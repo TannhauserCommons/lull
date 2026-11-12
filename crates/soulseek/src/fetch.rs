@@ -1278,9 +1278,7 @@ impl Fetcher {
 
     async fn run(self, f: Arc<Fetch>, pick: Option<SourceRef>) {
         let outcome = self.attempts(&f, pick).await;
-        if let Ok(path) = &outcome {
-            self.check_soulseek_copy(&f, path);
-        }
+        let arrived = outcome.as_ref().ok().cloned();
         let youtube_failed = f.youtube_failed.get().cloned();
         self.update(&f, |p| match outcome {
             Ok(path) => {
@@ -1329,6 +1327,11 @@ impl Fetcher {
             && let Some(live) = beside
         {
             self.better_later(&live);
+        }
+        // Checked once the maps say where the copy stands: a better copy beside the song that
+        // isn't the song gives its place to the next.
+        if let Some(path) = arrived {
+            self.check_soulseek_copy(&f, &path);
         }
     }
 
@@ -1933,27 +1936,31 @@ impl Fetcher {
 
     /// A Soulseek copy that arrived is checked by its sound, out of the way (ADR-0016): one that
     /// isn't the song is never offered for it again and leaves the cache. The play goes on.
-    fn check_soulseek_copy(&self, f: &Fetch, path: &std::path::Path) {
+    /// When it is the better copy beside the song the player streams, it leaves that place and
+    /// the next copy worth switching to is fetched (`better_later`). Before (2026-11-11), it
+    /// held the song's one upgrade: the hub went on offering a copy it knew wasn't the song, and
+    /// a right copy shared by other peers was never fetched during the play.
+    fn check_soulseek_copy(&self, f: &Arc<Fetch>, path: &std::path::Path) {
         let Some(copy) = f.now().source.map(|s| s.source_ref()) else {
             return;
         };
         if youtube::is_youtube(&copy) {
             return;
         }
-        let (youtube, sources, cache, track, path) = (
-            self.youtube.clone(),
-            self.sources.clone(),
-            self.cache.clone(),
-            f.track.clone(),
-            path.to_owned(),
-        );
+        let (this, f, path) = (self.clone(), f.clone(), path.to_owned());
         tokio::spawn(async move {
-            if youtube.check_file(&track, &path).await == Some(false) {
-                tracing::info!(track = %track.id, peer = copy.user, path = copy.path, "a Soulseek copy isn't the song by its sound");
-                sources.mark_wrong(&track.id, &copy);
-                if let Err(e) = cache.forget(&copy).await {
-                    tracing::warn!(error = %e, "dropping a Soulseek copy that isn't the song");
-                }
+            let track = &f.track;
+            if this.youtube.check_file(track, &path).await != Some(false) {
+                return;
+            }
+            tracing::info!(track = %track.id, peer = copy.user, path = copy.path, "a Soulseek copy isn't the song by its sound");
+            this.sources.mark_wrong(&track.id, &copy);
+            if let Err(e) = this.cache.forget(&copy).await {
+                tracing::warn!(error = %e, "dropping a Soulseek copy that isn't the song");
+            }
+            if let Some(live) = this.played_beside(&f) {
+                this.forget(&f);
+                this.better_later(&live);
             }
         });
     }
@@ -3650,6 +3657,79 @@ mod tests {
                 assert!(fetcher.event(&yt)["upgrade"].is_null(), "offered a tiny gain");
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
+            Ok(())
+        }
+
+        /// YouTube's AAC 128 found at once; a Soulseek file in a remaster's folder isn't the song
+        /// by its sound (ADR-0016), any other is.
+        struct RefusesRemasters;
+
+        #[async_trait]
+        impl Youtube for RefusesRemasters {
+            async fn find(&self, _: &Track, _: Want) -> Result<Option<Found>> {
+                Ok(Some(Found {
+                    source: upload("rightupload"),
+                    title: "Song".into(),
+                    channel: "Artist - Topic".into(),
+                    official: true,
+                }))
+            }
+            async fn download(&self, _: &SourceRef, dest: &std::path::Path) -> Result<()> {
+                std::fs::write(dest, vec![7u8; SIZE as usize]).map_err(|e| Error::internal(e.to_string()))
+            }
+            async fn check_file(&self, _: &Track, path: &std::path::Path) -> Option<bool> {
+                Some(!path.to_string_lossy().contains("Remaster"))
+            }
+        }
+
+        #[tokio::test]
+        async fn a_better_copy_that_isnt_the_song_gives_way_to_the_next() -> Result<()> {
+            // Live (2026-11-11): TLC's "No Scrubs" started on YouTube; Soulseek's side brought a
+            // peer's "re-mastered version", which the player couldn't line up and the sound check
+            // then refused. It kept the song's one upgrade, so the hub went on offering it and
+            // never fetched the copies other peers shared, which line up with YouTube's.
+            const REMASTER: &str = "Music\\Artist\\Album (Remaster)\\01 - Song.mp3";
+            let remaster: Vec<u8> = vec![3u8; 300_000];
+            let right: Vec<u8> = vec![5u8; 300_000];
+            let (_fake, fetcher) = racing(
+                HashMap::from([
+                    (REMASTER.to_owned(), remaster.clone()),
+                    (REMOTE.to_owned(), right.clone()),
+                ]),
+                start_fast_rules(),
+                Arc::new(RefusesRemasters),
+            )
+            .await?;
+            // The remaster's peer is the faster, so Soulseek's side takes it first.
+            let mut fast = shared("remasterer", REMASTER, remaster.len() as u64, "mp3", Some(320), false);
+            fast.upload_speed = 8_000_000;
+            let other = shared("peer", REMOTE, right.len() as u64, "mp3", Some(320), false);
+            fetcher.sources.add(HashMap::from([(track().id, vec![fast, other])]));
+            fetcher.sources.mark_searched(&track().id);
+
+            let yt = fetcher.stream(track(), None).await?;
+            let (chunk, _) = first_bytes(&yt).await?;
+            assert!(chunk.iter().all(|b| *b == 7), "YouTube's copy plays");
+            let up = fetcher
+                .upgrade(&track().id)
+                .ok_or_else(|| Error::internal("Soulseek's copy stopped"))?;
+            assert_eq!(up.now().source.map(|s| s.user).as_deref(), Some("remasterer"));
+            assert_eq!(ended(&up).await?.status, Status::Done);
+
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+            let offer = loop {
+                let event = fetcher.event(&yt);
+                let right_ready = event["upgrade"]["peer"] == "peer" && event["upgrade"]["ready"] == true;
+                if right_ready || tokio::time::Instant::now() > deadline {
+                    break event;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            };
+            assert_eq!(
+                offer["upgrade"]["peer"], "peer",
+                "the copy that isn't the song is still offered: {offer}"
+            );
+            assert_eq!(offer["upgrade"]["ready"], true, "{offer}");
             Ok(())
         }
 
