@@ -783,6 +783,8 @@ async fn r18_a_peer_cancelled_three_times_today_is_not_raced() -> Result<()> {
         ],
     )
     .await?;
+    // Each song's search finds only its own file (the stand-in matches as Soulseek does), so
+    // every song starts on its lesser copy and races the same two peers.
     for title in titles {
         let f = play_low(&h, title).await?;
         let (_, offer) = first_offer(&h, &f, SECS(25))

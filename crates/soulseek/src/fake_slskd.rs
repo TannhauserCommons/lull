@@ -11,7 +11,8 @@
 //! (`peer` shares them), after `SEARCH_TAKES`.
 //!
 //! For the better-copy race (ADR-0018) it also stands in for many peers (`Fake::start_peers`):
-//! each answers searches with its own slot, queue, reported speed and files, and behaves as a
+//! each answers a search (with the files whose path holds every word of it, as Soulseek matches)
+//! with its own slot, queue, reported speed and files, and behaves as a
 //! real peer did in the measurements (`Behaviour`: sends, stays silent, queues, queues then
 //! sends, bursts then crawls). Every request is logged with when it began and ended, so tests
 //! can count lanes, requests per peer and cancels. Time is tokio's, as lull's is.
@@ -342,8 +343,38 @@ fn shared_files(s: &Shared) -> Vec<(&String, &Vec<u8>)> {
     s.files.iter().filter(|(path, _)| !path.contains('|')).collect()
 }
 
+/// What search `n` (1-based) finds among `answers`, as Soulseek matches: a file whose path holds
+/// every word of the search text; a peer with no such file doesn't answer.
+fn found(s: &Shared, n: usize) -> Vec<(&Answer, Vec<&(String, Option<u32>)>)> {
+    let text = s
+        .searches
+        .lock()
+        .ok()
+        .and_then(|all| all.get(n.wrapping_sub(1)).map(|(text, _)| text.to_lowercase()))
+        .unwrap_or_default();
+    s.answers
+        .iter()
+        .map(|a| {
+            let files = a
+                .files
+                .iter()
+                .filter(|(path, _)| {
+                    let path = path.to_lowercase();
+                    text.split_whitespace().all(|w| path.contains(w))
+                })
+                .collect::<Vec<_>>();
+            (a, files)
+        })
+        .filter(|(_, files)| !files.is_empty())
+        .collect()
+}
+
+fn search_no(id: &str) -> Result<usize, StatusCode> {
+    id.trim_start_matches('s').parse().map_err(|_| StatusCode::NOT_FOUND)
+}
+
 async fn search(State(s): State<Arc<Shared>>, UrlPath(id): UrlPath<String>) -> Result<axum::Json<Value>, StatusCode> {
-    let n: usize = id.trim_start_matches('s').parse().map_err(|_| StatusCode::NOT_FOUND)?;
+    let n = search_no(&id)?;
     let started = s
         .searches
         .lock()
@@ -355,7 +386,10 @@ async fn search(State(s): State<Arc<Shared>>, UrlPath(id): UrlPath<String>) -> R
             let files = shared_files(&s).len();
             (usize::from(files > 0), files)
         }
-        false => (s.answers.len(), s.answers.iter().map(|a| a.files.len()).sum()),
+        false => {
+            let found = found(&s, n);
+            (found.len(), found.iter().map(|(_, files)| files.len()).sum())
+        }
     };
     Ok(axum::Json(if started.elapsed() >= SEARCH_TAKES {
         json!({ "id": id, "state": "Completed, Succeeded", "responseCount": responses, "fileCount": files,
@@ -365,15 +399,14 @@ async fn search(State(s): State<Arc<Shared>>, UrlPath(id): UrlPath<String>) -> R
     }))
 }
 
-async fn responses(State(s): State<Arc<Shared>>) -> axum::Json<Value> {
+async fn responses(State(s): State<Arc<Shared>>, UrlPath(id): UrlPath<String>) -> axum::Json<Value> {
     if !s.answers.is_empty() {
-        let answers: Vec<Value> = s
-            .answers
-            .iter()
-            .map(|a| {
-                let files: Vec<Value> = a
-                    .files
-                    .iter()
+        let n = search_no(&id).unwrap_or(0);
+        let answers: Vec<Value> = found(&s, n)
+            .into_iter()
+            .map(|(a, files)| {
+                let files: Vec<Value> = files
+                    .into_iter()
                     .filter_map(|(path, kbps)| {
                         let size = s
                             .files
