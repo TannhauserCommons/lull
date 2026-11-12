@@ -1394,15 +1394,24 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
   position: relative; grid-area: mini; align-items: center; gap: 2px; height: var(--mini-h); margin: 0 8px 8px; padding: 0 calc(var(--mini-inset) - (var(--hit) - 20px) / 2) 0 var(--mini-inset);
   border: var(--stroke) solid var(--edge); border-radius: 16px; touch-action: pan-y;
 }
-.mini > .seek--line { position: absolute; left: 12px; right: 12px; top: 0; pointer-events: auto; }
-/* the progress line is a seek bar: drag along it. Its touch area is --hit tall, centred on the line, and reaches past the
-   bar's edge, where nothing else is; the bar's own parts (positioned after it, so drawn and hit above it) keep every tap */
-.mini > .seek--line::before { content: ""; position: absolute; left: -12px; right: -12px; top: calc(1px - var(--hit) / 2); height: var(--hit); }
+/* the progress line is a seek bar: drag along it. Its own box is its touch area, so what measures the slider (a screen
+   reader's frame, axe's target size) measures what a finger gets: a transparent border reaching --seek-up above the line,
+   --seek-down below it (--hit tall, centred on a 2 px line) and 12 px past its ends, which a negative margin takes back so
+   the line is drawn where the design puts it (its track sits in the padding box). It reaches past the bar's edge, where
+   nothing else is; the bar's own parts (positioned after it, so drawn and hit above it) keep every tap */
+.mini > .seek--line {
+  --seek-up: calc(var(--hit) / 2 - 1px); --seek-down: calc(var(--hit) / 2 - 1px);
+  position: absolute; left: 12px; right: 12px; top: 0; pointer-events: auto; box-sizing: content-box;
+  border: 0 solid transparent; border-width: var(--seek-up) 12px var(--seek-down); margin: calc(0px - var(--seek-up)) -12px calc(0px - var(--seek-down));
+}
 .mini > :not(.seek--line) { position: relative; }
 .mini .btn-icon { width: var(--hit); height: var(--hit); }
 .mini .btn-gloss { --size: var(--hit); }
 .mini .bezel-thumb { padding: 3px; border-radius: 8px 8px 14px 8px; }
 .mini .bezel-thumb .cover { --cover-size: 40px; border-radius: 5px; }
+/* the cover opens Now Playing: on a touch screen its ::before reaches --hit round it however small a design draws it, as an
+   icon key's does (a design keeps the bar's cover's ::before free) */
+@media (pointer: coarse) { .mini .bezel-thumb::before { content: ""; position: absolute; inset: min(0px, calc((100% - var(--hit)) / 2)); } }
 .mini__text { flex: 1; min-width: 0; display: grid; text-align: left; margin: 0 6px; --fit-keep: 100px; }
 .mini__title { font: 800 .9375rem/1.25 var(--f-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini__sub { font: 600 .8125rem/1.3 var(--f-ui); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

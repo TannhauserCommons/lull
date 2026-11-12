@@ -1806,8 +1806,10 @@
   :root[data-design="lull"] .banner-slot { padding: 0 10px; }
   :root[data-design="lull"] .main { margin: 0 10px 10px; }
   :root[data-design="lull"] .view { padding: 16px 14px 24px; }
+  /* 10 px off the tab bar, as off the screen's sides: the progress line's touch area (below) needs the room between the keys
+     and the tab bar's tiles to be a target of its own, 24 px tall */
   :root[data-design="lull"] .mini {
-    margin: 0 10px 8px; height: 64px; background: var(--l-chassis); border: var(--stroke) solid var(--l-edge); border-radius: 22px;
+    margin: 0 10px 10px; height: 64px; background: var(--l-chassis); border: var(--stroke) solid var(--l-edge); border-radius: 22px;
     box-shadow: inset 0 2px 0 var(--l-bevel-hi), inset 0 -3px 0 var(--l-bevel-lo), 0 8px 16px -10px rgba(43, 38, 80, .6);
   }
   :root[data-design="lull"] .mini .bezel-thumb .cover { --cover-size: 42px; border-radius: 8px; }
@@ -1853,9 +1855,9 @@
   :root[data-design="lull"] .now-lycard .now-ly__scroll { padding: 0 12px 0 30px; }
   :root[data-design="lull"] .now-lycard .now-ly__head { position: static; justify-content: flex-end; margin-bottom: 4px; }
   /* mini player: a thin progress line along its foot and a stream chip beside the artist */
-  :root[data-design="lull"] .mini > .seek--line { top: auto; bottom: 3px; left: 12px; right: 12px; }
-  /* the line is at the bar's foot: its touch area reaches down over the gap above the tab bar's tiles, not up */
-  :root[data-design="lull"] .mini > .seek--line::before { top: calc(13px - var(--hit)); }
+  /* the line is at the bar's foot: its touch area reaches down to the tab bar's tiles (3 px under the line, the 10 px gap,
+     the tab bar's 5 px inset) and the rest of --hit up, under the keys */
+  :root[data-design="lull"] .mini > .seek--line { top: auto; bottom: 3px; left: 12px; right: 12px; --seek-up: calc(var(--hit) - 20px); --seek-down: 18px; }
   :root[data-design="lull"] .mini > .seek--line .seek__track { height: 3px; margin-top: 0; }
   :root[data-design="lull"] .mini__text { grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-items: center; }
   :root[data-design="lull"] .mini__title { grid-column: 1 / -1; }

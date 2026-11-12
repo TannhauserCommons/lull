@@ -96,7 +96,7 @@ for (const design of designs) {
         const queue = await playOnBar(page, design, width);
         const line = await page.evaluate(() => {
           const seek = document.querySelector('#mini .seek[data-seek="player"]'), track = seek.querySelector('.seek__track').getBoundingClientRect();
-          const zone = getComputedStyle(seek, '::before');
+          const zone = seek.getBoundingClientRect();   // its touch area is its own box
           // where on the bar a touch lands on the line (any key or the song's words in front of it take theirs)
           const x = track.left + track.width * 0.2, ys = [];
           for (let y = 0; y < innerHeight; y++) if (document.elementFromPoint(x, y)?.closest('[data-seek="player"]') === seek) ys.push(y);

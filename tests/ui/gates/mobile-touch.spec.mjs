@@ -42,7 +42,6 @@ for (const design of designs) {
   });
 
   test(`the mini player's controls are big enough for a thumb / ${design}`, async ({ page }) => {
-    test.fixme(true, 'M08: the mini player\'s keys are 36-40 px (fix-phone-bar gives them --hit)');
     await withSong(page, design, '/home');
     expect(await page.evaluate(tooSmall, MINI), 'under 44x44').toEqual([]);
   });
