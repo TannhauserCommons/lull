@@ -2262,6 +2262,14 @@ impl Fetcher {
         for _ in 0..MAX_ATTEMPTS {
             let next = self.next_source(f, pick.as_ref(), &tried, &mut stop).await?;
             tried.push(next.source_ref());
+            // A copy a race (or another fetch's start) holds is not taken: the claim is kept for
+            // the whole transfer, so no lane rewrites or deletes the file this fetch plays. The
+            // listener's own pick and a save's named copy are theirs and go ahead regardless.
+            let claim = self.lanes.claim(&next.user, &next.path);
+            if claim.is_none() && patience == Patience::Brisk && !youtube::is_youtube(&next.source_ref()) {
+                tracing::debug!(peer = %next.user, "a copy another fetch holds is passed over");
+                continue;
+            }
             // Counted across sources (YouTube included): a reader of an older attempt has the
             // wrong file.
             let attempt = f.now().attempt + 1;
@@ -2294,6 +2302,7 @@ impl Fetcher {
                 self.legs(f, attempt, &next, faster, patience, None, lane, &mut stop)
                     .await
             };
+            drop(claim);
             match got {
                 Ok(path) => return Ok(path),
                 Err(Ok(skip)) => {

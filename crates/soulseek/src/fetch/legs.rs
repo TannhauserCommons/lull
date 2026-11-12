@@ -194,7 +194,7 @@ impl Fetcher {
         // Each leg starts where a reader waits, else at the first byte missing: after a jump
         // reaches the end, the gap it left fills from its start.
         let mut jump = None;
-        let mut legs_run = 0;
+        let at_entry = copy.ranges.total();
         let outcome = loop {
             let leg = match first.take() {
                 Some(leg) => leg,
@@ -208,9 +208,14 @@ impl Fetcher {
                     }
                 }
             };
-            // Only the first leg is a request lull chose: later ones follow the listener's seeks.
-            let patience = if legs_run == 0 { patience } else { Patience::Patient };
-            legs_run += 1;
+            // Until this request's first byte every leg of it follows the 6 s rule (a seek before
+            // the first byte leaves a silent peer too); after real bytes a later leg never
+            // switches peer.
+            let patience = if copy.ranges.total() > at_entry {
+                Patience::Patient
+            } else {
+                patience
+            };
             let ended = self
                 .run_leg(f, source, &mut copy, leg, faster, patience, &mut lane, stop)
                 .await;
@@ -393,7 +398,10 @@ impl Fetcher {
             let waiting = f.asked().map(|(byte, since)| (byte, since.elapsed()));
             // A reader far ahead: another peer with the same file starts there, beside this
             // leg; with none, this peer starts over there, when that is worth its slot.
+            // A leg that has sent nothing is not jumped from: the 6 s rule moves on from it.
+            let sent = leg.front > leg.start;
             if copy.side_leg.is_none()
+                && sent
                 && self.seeks_ahead(copy)
                 && let Some(at) = jump(waiting, &copy.arrived(), &leg, speed, JUMP_S)
                 && let Some(other) = self.other_peer(f, source, copy)
@@ -412,6 +420,7 @@ impl Fetcher {
                 }
             }
             if copy.side_leg.is_none()
+                && sent
                 && self.jumps_allowed(source, copy)
                 && let Some(at) = jump(waiting, &copy.arrived(), &leg, speed, JUMP_SAME_S)
             {
