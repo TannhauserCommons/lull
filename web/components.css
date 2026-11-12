@@ -916,7 +916,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 @media (pointer: coarse) {
   :is(.btn-icon, .btn-icon--sm, .trow .btn-icon, .tile__play)::before { inset: min(-2px, calc((100% - var(--hit)) / 2)); }
   .tray--compact { position: relative; }
-  :is(.tray--compact, .dpad__btn)::before { content: ""; position: absolute; inset: min(0px, calc((100% - var(--hit)) / 2)); }
+  :is(.tray--compact, .dpad__btn)::before { content: ""; position: absolute; inset: min(-3px, calc((100% - var(--hit)) / 2)); }
 }
 .device__ab { position: relative; height: 132px; }
 .device__key { position: absolute; display: grid; justify-items: center; gap: 6px; font: var(--t-px); color: var(--indigo); }
