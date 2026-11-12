@@ -418,18 +418,23 @@
     if (max && v > max) c['sources.stream.maxKbps'] = v;
     save(c); if (c['sources.stream.maxKbps'] != null) App.refresh();
   } };
-  /* formats as toggle chips: none pressed means any format */
+  /* formats as toggle chips, each pressed while it counts. The hub stores none for any format, shown as every chip
+     pressed: before (2026-11-12) "any" showed every chip off, so FLAC read as switched off while it still counted. At
+     least one stays pressed. */
   function formatChips(path) {
-    var on = get(path) || [];
+    var on = get(path) || [], any = !on.length;
     return html`<div class="cluster sys-formats" role="group" aria-label="Formats that count" data-formats="${path}">${SOURCE_FORMATS.map(function (f) {
-      return html`<button type="button" class="chip" aria-pressed="${on.indexOf(f) >= 0 ? 'true' : 'false'}" data-format="${f}">${icon('check', null, 'chip__check')}${f.toUpperCase()}</button>`;
+      return html`<button type="button" class="chip" aria-pressed="${any || on.indexOf(f) >= 0 ? 'true' : 'false'}" data-format="${f}">${icon('check', null, 'chip__check')}${f.toUpperCase()}</button>`;
     })}</div>`;
   }
   document.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('[data-formats] [data-format]'); if (!b) return;
     var g = b.closest('[data-formats]'), path = g.getAttribute('data-formats');
-    b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
-    setVal(path, $$('[data-format][aria-pressed="true"]', g).map(function (x) { return x.getAttribute('data-format'); }));
+    var was = b.getAttribute('aria-pressed') === 'true';
+    if (was && $$('[data-format][aria-pressed="true"]', g).length === 1) return;
+    b.setAttribute('aria-pressed', was ? 'false' : 'true');
+    var on = $$('[data-format][aria-pressed="true"]', g).map(function (x) { return x.getAttribute('data-format'); });
+    setVal(path, on.length === SOURCE_FORMATS.length ? [] : on);
   });
   function profileRows(kind) {
     var base = 'sources.' + kind, ll = !!get(base + '.minimum.losslessOnly');
@@ -438,7 +443,7 @@
       ${row('Minimum bitrate', 'Lossy files below this aren\'t good enough. Lossless always is.', choice(base + '.minimum.kbps', 'Minimum bitrate', [[128, '128'], [192, '192'], [256, '256'], [320, '320']]), { when: kind + '-kbps', hidden: ll, cls: 'sys-row--sub' })}
       ${kind === 'stream' && lookup('sources.stream.maxKbps') != null ? row('Maximum bitrate', 'Streaming prefers copies at or under this, to save data: lossless counts as over any cap. Saving is never capped.',
         choice('sources.stream.maxKbps', 'Maximum bitrate', [[0, 'No cap'], [128, '128'], [192, '192'], [256, '256'], [320, '320']], 'sys-seg--wrap')) : ''}
-      ${row('Formats', 'Only these count. With none picked, any format does.', formatChips(base + '.minimum.formats'), { cls: 'sys-row--stack' })}
+      ${row('Formats', kind === 'stream' ? 'A format switched off never streams, unless you pick its copy yourself.' : 'Only the formats switched on count.', formatChips(base + '.minimum.formats'), { cls: 'sys-row--stack' })}
       ${row('Which copy', 'Among the copies that are good enough.', choice(base + '.pick', 'Which copy', [['fastest', 'Fastest'], ['highest', 'Highest quality']]))}
       ${row('If none is good enough', kind === 'stream' ? 'Playing the best one marks it as below your minimum.' : 'Saving the best one marks it, and auto-upgrade replaces it later.',
         choice(base + '.below', 'If none is good enough', BELOW[kind], 'sys-seg--wrap'), { cls: 'sys-row--stack' })}`;

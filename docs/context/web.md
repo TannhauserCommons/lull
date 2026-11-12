@@ -639,7 +639,8 @@ Copies that don't line up (other masters, edits, loops) never switch mid-song: S
     `/api/soulseek/search`.
 - **Settings > Sources.**
   - Two profiles, `sources.stream` and `sources.save`. Each has: lossless only or a minimum bitrate, format chips
-    (none means any), which copy, and what to do if none is good enough.
+    (each pressed while it counts; all pressed stores none, which means any; at least one stays pressed), which copy,
+    and what to do if none is good enough. A streaming format switched off never streams (soulseek.md#source-rules).
   - Saving adds `autoUpgrade` and `upgradeEveryH`. Then come the peer limits and "Switch to a better copy while a song plays" (`switchToBetter`, shown when the hub has it).
   - Each control PATCHes only its own key, and the hub merges objects.
   - A hub without the profiles shows a sentence instead.
