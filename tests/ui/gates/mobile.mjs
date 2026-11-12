@@ -23,11 +23,16 @@ export async function withSong(page, design, route = `/album/${ids.album}`) {
   if (route !== `/album/${ids.album}`) await go(page, route);
 }
 
-/* another screen, as a tap on a link reaches it, once it has settled (Now Playing and sheets slide up) */
+/* another screen, as a tap on a link reaches it, once it has settled and arrived: Now Playing and sheets slide up, and
+   mid-way they are still below the screen. Every animation that ends has ended (loops and scroll-driven ones never
+   do): a fixed wait isn't enough, as Linux's WebKit can hold a page's animations unstarted for 2 s before it draws */
 export async function go(page, route) {
   await page.evaluate((r) => { location.hash = '#' + r; }, route);
   await settle(page);
-  await page.waitForTimeout(400);
+  await page.evaluate(() => Promise.race([
+    Promise.all(document.getAnimations().filter((a) => Number.isFinite(a.effect?.getComputedTiming().endTime)).map((a) => a.finished.catch(() => {}))),
+    new Promise((r) => setTimeout(r, 5000)),
+  ]));
 }
 
 /* Chromium takes a notch's insets from the DevTools protocol; WebKit can't be given any from a test */
