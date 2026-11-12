@@ -284,3 +284,33 @@ test('a theme\'s own button with a page action in the mini player runs that acti
   await expect.poll(() => main.evaluate(() => App.player.state.shuffle)).toBe(!was);
   await main.close();
 });
+
+// Only main's own page is the app's. lull's page in a frame of it (the picture lull draws of a listener's theme, Theme
+// Studio's previews) gets the app's scripts too on Windows (WebView2 runs them in every frame, as addInitScript does
+// here), but it is a view: it tells the app nothing and hears none of its events. As the app's page, the picture's frame
+// told the app its design, and the mini player switched to the theme being drawn; it answered the mini player's keys too.
+test('a theme\'s picture drawn in the app\'s window tells the app nothing and answers none of its keys', async ({ page }) => {
+  await page.addInitScript({ path: bridge });
+  await page.addInitScript(() => { window.__LULL_DESKTOP__ = { os: 'win', titlebar: 'win' }; });
+  // what a frame's page sends the app or listens for, gathered in the window's own page
+  await page.addInitScript(() => {
+    if (window.top === window) return;
+    const t = window.__TAURI__, seen = (what) => (window.top.__fromFrames = window.top.__fromFrames || []).push(what);
+    const { emit, emitTo, listen } = t.event, invoke = t.core.invoke;
+    t.event.emit = (n, p) => { seen('emit ' + n); return emit(n, p); };
+    t.event.emitTo = (to, n, p) => { seen('emit ' + n); return emitTo(to, n, p); };
+    t.event.listen = (n, fn) => { seen('listen ' + n); return listen(n, fn); };
+    t.core.invoke = (n, p) => { seen('invoke ' + n); return invoke(n, p); };
+  });
+  await page.addInitScript(() => localStorage.setItem('lull:prefs', JSON.stringify({ design: 'lull', theme: 'day' })));
+  await page.goto(`${hub.url}/#/home`);
+  await page.waitForFunction(() => window.App && App.server && App.server.checked && Designs.current === 'lull');
+  const drawn = page.waitForRequest((r) => r.method() === 'PUT' && r.url().includes('/api/theme-pictures/paper-moon/'), { timeout: 60_000 });
+  await page.evaluate(() => Designs.refresh().then(() => App.needScript('screens/theme-pictures.js', 'theme pictures')).then(() => {
+    const m = App.designs['paper-moon'];
+    App.makeThemePictures({ id: m.id, rev: m.rev, label: m.label }, ['day']);
+  }));
+  await drawn;
+  expect(await page.evaluate(() => window.__fromFrames || []), 'what the picture\'s frame said to the app or listened for').toEqual([]);
+  expect(await page.evaluate(() => window.__bridge.last.appearance), 'the design main last told the app').toMatchObject({ design: 'lull' });
+});

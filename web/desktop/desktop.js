@@ -34,8 +34,13 @@
   'use strict';
   var D = window.LullDesktop = {};
   var doc = document, root = doc.documentElement;
-  var T = window.__TAURI__ || null;
-  var W = window.__LULL_DESKTOP__ || null;      // only in the wrapper's main window
+  /* Only a window's own page is the app's. lull's page in a frame of it (a theme's picture, Theme Studio's previews)
+     is a view: on Windows it gets the app's scripts too (WebView2 runs them in every frame), and as the app's page it
+     would tell the app its design (the mini player and the app's pages would switch to the theme it draws), ask for the
+     window's glass, report what it plays, and answer the tray and the mini player's keys with a player of its own. */
+  var own = window.top === window;
+  var T = own && window.__TAURI__ || null;
+  var W = own && window.__LULL_DESKTOP__ || null;      // only in the wrapper's main window
   // The Android app also has Tauri, but none of the desktop's windows; it brings window.LullNative instead.
   D.inWrapper = !!T && !window.LullNative;
 
