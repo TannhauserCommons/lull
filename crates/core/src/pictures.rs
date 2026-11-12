@@ -396,6 +396,15 @@ impl Pictures {
         NONE_FOR.checked_sub(age).filter(|left| !left.is_zero())
     }
 
+    /// Stops believing "the source has none" for `id`: a source for it became known (search
+    /// recorded its cover), so it is asked for again at once instead of after `NONE_FOR`. The
+    /// cached sizes stay.
+    pub async fn forget_none(&self, id: &str) {
+        if is_id(id) {
+            let _ = tokio::fs::remove_file(self.none_file(id)).await;
+        }
+    }
+
     /// Removes every cached size of `id`, and "none".
     pub async fn forget(&self, id: &str) {
         if !is_id(id) {
