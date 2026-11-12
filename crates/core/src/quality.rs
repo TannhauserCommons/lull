@@ -191,6 +191,58 @@ impl Default for SaveProfile {
     }
 }
 
+/// The kbps from which a lossy copy is in the high band: V0 counts with 320 (ADR-0018).
+pub const HIGH_LOSSY_KBPS: u32 = 220;
+
+/// A coarse quality band; a higher band is a better copy, a copy in the same band is not
+/// (ADR-0018). A race tries the highest allowed band first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Band {
+    LowerLossy,
+    HighLossy,
+    Lossless,
+}
+
+impl Band {
+    /// The band of a copy. A bitrate lull only estimated (size / length) counts one band down;
+    /// lossless is known by its format and never moves.
+    pub fn of(q: Quality, estimated: bool) -> Band {
+        if q.lossless {
+            Band::Lossless
+        } else if q.kbps >= HIGH_LOSSY_KBPS && !estimated {
+            Band::HighLossy
+        } else {
+            Band::LowerLossy
+        }
+    }
+}
+
+impl StreamProfile {
+    /// The bands this profile streams, highest first: with a cap lossless is never one, a band
+    /// needs a format the profile leaves on, and the lower lossy band only when the minimum is
+    /// under `HIGH_LOSSY_KBPS`.
+    pub fn bands(&self) -> Vec<Band> {
+        const LOSSLESS: [&str; 3] = ["flac", "wav", "aiff"];
+        const LOSSY: [&str; 5] = ["m4a", "aac", "mp3", "ogg", "opus"];
+        let min = &self.minimum;
+        let any = |formats: &[&str]| formats.iter().any(|f| min.allows(f));
+        let uncapped = self.max_kbps == 0;
+        let mut bands = Vec::new();
+        if uncapped && any(&LOSSLESS) {
+            bands.push(Band::Lossless);
+        }
+        if !min.lossless_only && any(&LOSSY) {
+            if uncapped || self.max_kbps >= HIGH_LOSSY_KBPS {
+                bands.push(Band::HighLossy);
+            }
+            if min.kbps < HIGH_LOSSY_KBPS {
+                bands.push(Band::LowerLossy);
+            }
+        }
+        bands
+    }
+}
+
 /// The copy the saving profile picks for a song (`Transfers::save_candidate`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaveCandidate {
