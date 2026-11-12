@@ -148,3 +148,66 @@ impl Lanes {
 fn today() -> i64 {
     lull_core::now() / 86_400
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    async fn within<T>(f: impl std::future::Future<Output = T>) -> Option<T> {
+        tokio::time::timeout(Duration::from_millis(500), f).await.ok()
+    }
+
+    #[tokio::test]
+    async fn four_lanes_at_once_and_the_playing_song_asks_before_a_preload() {
+        let lanes = Lanes::default();
+        let mut held = Vec::new();
+        for _ in 0..LANES {
+            held.push(lanes.acquire(Priority::Race).await);
+        }
+        assert!(
+            within(lanes.acquire(Priority::Start)).await.is_none(),
+            "a fifth lane waits"
+        );
+        let later = tokio::spawn({
+            let lanes = lanes.clone();
+            async move { lanes.acquire(Priority::Later).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let start = tokio::spawn({
+            let lanes = lanes.clone();
+            async move { lanes.acquire(Priority::Start).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        // One lane frees: the song's start, which asked last, still goes before the preload.
+        held.pop();
+        let got = within(start).await;
+        assert!(got.is_some(), "the playing song takes the lane first");
+        assert!(!later.is_finished(), "the preload waits");
+        later.abort();
+    }
+
+    #[tokio::test]
+    async fn a_wait_given_up_leaves_no_lane_behind() {
+        let lanes = Lanes::default();
+        let held: Vec<Permit> = futures_util::future::join_all((0..LANES).map(|_| lanes.acquire(Priority::Race))).await;
+        assert!(within(lanes.acquire(Priority::Race)).await.is_none());
+        drop(held);
+        assert!(
+            within(lanes.acquire(Priority::Race)).await.is_some(),
+            "the lanes are free again"
+        );
+    }
+
+    #[test]
+    fn a_peer_cancelled_three_times_while_sending_is_not_raced_today() {
+        let lanes = Lanes::default();
+        for _ in 0..CANCELS_A_DAY {
+            assert!(lanes.polite("peer"));
+            lanes.cancelled("peer");
+        }
+        assert!(!lanes.polite("peer"));
+        assert!(lanes.polite("other"));
+    }
+}

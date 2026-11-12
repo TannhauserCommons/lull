@@ -16,8 +16,11 @@
 | `albums.rs` | `Transfers::album_available`: whether peers share an album, remembered |
 | `rules.rs` | The streaming and saving profiles, the source presets and which one each device uses, and peer limits, from the `settings` event |
 | `sources.rs` | Every known peer file per song (pooled across folders), in a profile's order on read |
-| `rank.rs` | The score and its factors. The format factor (`sound`) scales toward the streaming cap wherever streaming ranks copies; better copies are ranked by it alone |
-| `policy.rs` | The streaming policy: what a song starts on and what it switches to, from the streaming profile alone, for a copy of any source (ADR-0012, ADR-0013). Pure: the fetch code gathers copies and asks it |
+| `rank.rs` | The score and its factors. The format factor (`sound`) scales toward the streaming cap wherever streaming ranks copies; better copies are placed by quality band first (`Band`), then by it |
+| `policy.rs` | The streaming policy: what a song starts on and what it switches to (a copy in a higher quality band, `lull_core::quality::Band`), from the streaming profile alone, for a copy of any source (ADR-0012, ADR-0013, ADR-0018). Pure: the fetch code gathers copies and asks it |
+| `fetch/plan.rs` | The better copy's fetch: reads the device's preset and orders the candidates into rounds, a band each, highest first (ADR-0018). The only race piece that knows settings |
+| `fetch/race.rs` | The race mechanics: up to 3 lanes of distinct peers, the 6 s first-byte rule, the speed gate on lull's own bytes at `OUTRUN`, losers cancelled and forgotten, one queue kept (ADR-0018). Knows no settings |
+| `fetch/lanes.rs` | The hub-wide lane budget (4, a song's start before a better copy's race before preloads) and the per-peer cancel count that keeps lull polite (3 sending uploads a day) |
 | `peers.rs` | Peers that stalled recently (`soulseek_peers`) |
 | `share.rs` | Sharing checks and rescans |
 | `recover.rs` | When to ask slskd for a fresh login (stale sessions) |
@@ -148,6 +151,7 @@ A peer that stalled on lull in the last 7 days loses 25 points (`factors.stalled
 - **What ranking expects:** the measured rate. With none, the peer's own figure, scaled by the median of measured over reported across peers with both (once 5 have).
 - **The picker:** a measured speed shows plainly with when in its tip, and an unmeasured one as "~8.6 MB/s", the peer's own figure.
 - **A slow source gives way:** once a transfer has sent for 10 s, if it delivers under 1.25 times the song's rate and an untried copy is expected to be twice as fast, the fetch moves on (streaming.md). Never for the listener's pick or a save's named copy.
+- **A request that sends nothing gives way** (ADR-0018): a song's start or a preload moves to the next peer when no byte arrives within 6 s of its request, queued at the peer or not; the listener's pick and a save's named copy keep 20 s to accept and 30 s queued. A better copy is raced instead, up to 3 peers at once ([streaming.md](streaming.md#better-copies)), each request a lane of a hub-wide budget of 4. lull cancels no more than 3 uploads that were already sending per peer per day, so a peer isn't raced past that (`fetch/lanes.rs`, kept in memory: a restart forgets it).
 
 ## Source rules
 
