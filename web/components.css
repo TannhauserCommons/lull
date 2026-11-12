@@ -916,11 +916,8 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 @media (pointer: coarse) {
   :is(.btn-icon, .btn-icon--sm, .trow .btn-icon, .tile__play)::before { inset: min(-2px, calc((100% - var(--hit)) / 2)); }
   .tray--compact { position: relative; }
-  .tray--compact::before { content: ""; position: absolute; inset: min(-3px, calc((100% - var(--hit)) / 2)); }
+  :is(.tray--compact, .dpad__btn)::before { content: ""; position: absolute; inset: min(-3px, calc((100% - var(--hit)) / 2)); }
 }
-/* the D-pad's keys reach --hit on every pointer, as a pill's label does (.device__pill::before): a key a little easier to
-   hit costs a mouse nothing, and WebKit on Linux missed the touch-only area under touch emulation */
-.dpad__btn::before { content: ""; position: absolute; inset: min(-3px, calc((100% - var(--hit)) / 2)); }
 .device__ab { position: relative; height: 132px; }
 .device__key { position: absolute; display: grid; justify-items: center; gap: 6px; font: var(--t-px); color: var(--indigo); }
 .device__key--a { right: 4px; top: 0; }
