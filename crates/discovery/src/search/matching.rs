@@ -51,8 +51,15 @@ impl Catalog for Service {
     }
 
     fn same_take(&self, song: &SongQuery, track: &Track) -> bool {
-        is_wanted(&super::saved(track.clone()), &wanted(song))
+        is_take(song, track)
     }
+}
+
+/// Whether `track` is `song` by this module's rule (the same take, each credited name tried):
+/// `Catalog::same_take`, and how a bare song finds itself among the songs lull already holds
+/// (`resolve::twin`).
+pub fn is_take(song: &SongQuery, track: &Track) -> bool {
+    is_wanted(&super::saved(track.clone()), &wanted(song))
 }
 
 impl Service {
