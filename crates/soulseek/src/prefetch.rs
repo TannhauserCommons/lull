@@ -1,21 +1,22 @@
 //! Preloading the songs queued next (`PUT /api/stream/prefetch`), so pressing next plays at
 //! once instead of waiting for a search and a new peer. Each device lists up to 3 tracks in
 //! queue order; lull fetches the ones it doesn't have, in order, one search at a time and
-//! behind the playing song (docs/context/streaming.md#preloading).
+//! behind the playing song (docs/context/streaming.md#preloading). Each device's songs are
+//! preloaded by its own source preset (ADR-0017).
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use lull_core::ids::TrackId;
-use lull_core::quality::StreamBelow;
+use lull_core::quality::{StreamBelow, StreamProfile};
 use lull_core::youtube::Mode;
 use lull_core::{Error, Result};
 use tokio::sync::watch;
 
 use crate::Service;
 use crate::budget::Lane;
-use crate::fetch::Status;
+use crate::fetch::{Key, Status};
 use crate::rules::Purpose;
 
 /// The most tracks one device may list: the next few in its queue.
@@ -25,9 +26,12 @@ const START_WAIT: Duration = Duration::from_secs(30);
 /// How often a preload looks again while the player's own song is still starting.
 const PLAYER_POLL: Duration = Duration::from_millis(500);
 
+/// A device's list: its id, the profile of its preset, its songs in queue order.
+type List = (String, StreamProfile, Vec<TrackId>);
+
 /// The devices' lists, most recently sent first, and a counter that moves on every change.
 pub struct Lists {
-    by_device: Mutex<Vec<(String, Vec<TrackId>)>>,
+    by_device: Mutex<Vec<List>>,
     changed: watch::Sender<u64>,
 }
 
@@ -41,9 +45,10 @@ impl Default for Lists {
 }
 
 impl Lists {
-    /// Replaces one device's list (`""` is the shared list of requests without a device) and
-    /// returns every listed track, the latest device's first, each once.
-    pub fn set(&self, device: String, tracks: Vec<TrackId>) -> Result<Vec<TrackId>> {
+    /// Replaces one device's list (`""` is the shared list of requests without a device),
+    /// preloaded by `profile`, and returns every listed song with its profile, the latest
+    /// device's first, each once.
+    pub fn set(&self, device: String, profile: StreamProfile, tracks: Vec<TrackId>) -> Result<Vec<Key>> {
         if tracks.len() > MAX_TRACKS {
             return Err(Error::BadRequest(format!(
                 "at most {MAX_TRACKS} tracks are preloaded at a time"
@@ -51,9 +56,9 @@ impl Lists {
         }
         let wanted = {
             let mut lists = self.by_device.lock().map_err(|_| Error::internal("preload lists"))?;
-            lists.retain(|(d, _)| *d != device);
+            lists.retain(|(d, _, _)| *d != device);
             if !tracks.is_empty() {
-                lists.insert(0, (device, tracks));
+                lists.insert(0, (device, profile, tracks));
             }
             union(&lists)
         };
@@ -61,24 +66,23 @@ impl Lists {
         Ok(wanted)
     }
 
-    fn wanted(&self) -> Vec<TrackId> {
+    fn wanted(&self) -> Vec<Key> {
         self.by_device.lock().map(|l| union(&l)).unwrap_or_default()
     }
 }
 
-fn union(lists: &[(String, Vec<TrackId>)]) -> Vec<TrackId> {
+fn union(lists: &[List]) -> Vec<Key> {
     let mut seen = HashSet::new();
     lists
         .iter()
-        .flat_map(|(_, tracks)| tracks)
-        .filter(|t| seen.insert((*t).clone()))
-        .cloned()
+        .flat_map(|(_, profile, tracks)| tracks.iter().map(move |t| (t.clone(), profile.clone())))
+        .filter(|k| seen.insert(k.clone()))
         .collect()
 }
 
 /// A device sent its list: preloads nobody lists any more are let go, and the worker plans again.
-pub fn listed(svc: &Service, device: String, tracks: Vec<TrackId>) -> Result<()> {
-    let wanted = svc.prefetch.set(device, tracks)?;
+pub fn listed(svc: &Service, device: String, profile: StreamProfile, tracks: Vec<TrackId>) -> Result<()> {
+    let wanted = svc.prefetch.set(device, profile, tracks)?;
     svc.fetcher.unlist(&wanted.into_iter().collect());
     Ok(())
 }
@@ -90,8 +94,8 @@ pub async fn run(svc: Arc<Service>) {
         changed.mark_unchanged();
         let wanted = svc.prefetch.wanted();
         let work = async {
-            for id in &wanted {
-                if let Err(e) = preload(&svc, id).await {
+            for (id, profile) in &wanted {
+                if let Err(e) = preload(&svc, id, profile).await {
                     tracing::debug!(error = %e, track = %id, "preloading a queued song");
                 }
             }
@@ -115,27 +119,31 @@ pub async fn run(svc: Arc<Service>) {
 /// waits behind the player's, and the fetch starts once the player's own song plays; then
 /// this waits for the preload's bytes to flow before the next one starts, so one peer at a
 /// time is asked.
-async fn preload(svc: &Service, id: &TrackId) -> Result<()> {
+async fn preload(svc: &Service, id: &TrackId, profile: &StreamProfile) -> Result<()> {
+    let rules = svc.rules.get().with_stream(profile);
     // With YouTube on, a song Soulseek can't give is preloaded from YouTube by the fetch itself.
-    let mode = svc.rules.get().youtube.mode;
-    if (!svc.online() && mode == Mode::Off) || svc.fetcher.list_live(id) {
+    let mode = rules.youtube.mode;
+    if !svc.online() && mode == Mode::Off {
         return Ok(());
     }
     let track = svc.track(id).await?;
+    if svc.fetcher.list_live(&track, profile) {
+        return Ok(());
+    }
     // A copy in the cache is fetched again when the streaming order knows one clearly above it
     // (`Fetcher::better_than_cached`), so the song plays that from its start.
-    let cached = svc.fetcher.best_cached(&track, Purpose::Stream).await?;
+    let cached = svc.fetcher.best_cached(&track, Purpose::Stream, &rules).await?;
     if svc.searches.saved(id).await
         || cached
             .as_ref()
-            .is_some_and(|e| !svc.fetcher.better_than_cached(&track, &e.source))
+            .is_some_and(|e| !svc.fetcher.better_than_cached(&track, &e.source, profile))
     {
         return Ok(());
     }
     // Start fast: the YouTube match and its extraction are made ready, so the song starts at
     // once even when Soulseek's copy isn't here yet.
     if mode == Mode::StartFast {
-        svc.fetcher.warm(track.clone());
+        svc.fetcher.warm(track.clone(), profile.max_kbps);
     }
     if svc.online() && !svc.sources.known(&track) {
         let searched = svc.searches.resolve_in(&track, Lane::Prefetch).await;
@@ -143,14 +151,14 @@ async fn preload(svc: &Service, id: &TrackId) -> Result<()> {
             searched?;
         }
     }
-    if mode == Mode::Off && !worth_starting(svc, &track) {
+    if mode == Mode::Off && !worth_starting(svc, &track, &rules) {
         return Ok(());
     }
     let started = tokio::time::Instant::now();
     while svc.fetcher.player_waiting() && started.elapsed() < START_WAIT {
         tokio::time::sleep(PLAYER_POLL).await;
     }
-    let f = svc.fetcher.prefetch(track);
+    let f = svc.fetcher.prefetch(track, profile);
     let mut progress = f.progress();
     let flowing =
         progress.wait_for(|p| p.ended() || matches!(p.status, Status::Buffering | Status::Streaming | Status::Done));
@@ -161,9 +169,8 @@ async fn preload(svc: &Service, id: &TrackId) -> Result<()> {
 /// Whether a copy could play: nobody sharing it, or only copies below the minimum while the
 /// rule isn't `playBest`, is left to the player's own fetch, which searches again or applies
 /// the rule when the song plays.
-fn worth_starting(svc: &Service, track: &lull_core::model::Track) -> bool {
-    let rules = svc.rules.get();
-    let ordered = svc.sources.ordered(track, &rules, Purpose::Stream);
+fn worth_starting(svc: &Service, track: &lull_core::model::Track, rules: &crate::rules::Rules) -> bool {
+    let ordered = svc.sources.ordered(track, rules, Purpose::Stream);
     let usable: Vec<_> = ordered.iter().filter(|r| !r.queue_too_long && !r.left_out).collect();
     !usable.is_empty() && (rules.stream.below == StreamBelow::PlayBest || usable.iter().any(|r| r.meets))
 }
@@ -176,25 +183,38 @@ mod tests {
         names.iter().map(|n| TrackId((*n).to_owned())).collect()
     }
 
+    fn keys(names: &[(&str, &StreamProfile)]) -> Vec<Key> {
+        names
+            .iter()
+            .map(|(n, p)| (TrackId((*n).to_owned()), (*p).clone()))
+            .collect()
+    }
+
     #[test]
-    fn a_device_replaces_its_own_list_and_every_device_is_served() -> Result<()> {
+    fn a_device_replaces_its_own_list_and_every_device_is_served_by_its_preset() -> Result<()> {
+        let desktop = StreamProfile::default();
+        let phone = lull_core::presets::phone_from(&desktop);
         let lists = Lists::default();
-        lists.set("phone".into(), ids(&["a", "b"]))?;
-        let both = lists.set("desk".into(), ids(&["c", "b"]))?;
-        assert_eq!(both, ids(&["c", "b", "a"]), "the latest list first, each song once");
-        let replaced = lists.set("phone".into(), ids(&["d"]))?;
+        lists.set("phone".into(), phone.clone(), ids(&["a", "b"]))?;
+        let both = lists.set("desk".into(), desktop.clone(), ids(&["c", "b"]))?;
+        assert_eq!(
+            both,
+            keys(&[("c", &desktop), ("b", &desktop), ("a", &phone), ("b", &phone)]),
+            "the latest list first, each song once per preset"
+        );
+        let replaced = lists.set("phone".into(), phone.clone(), ids(&["d"]))?;
         assert_eq!(
             replaced,
-            ids(&["d", "c", "b"]),
+            keys(&[("d", &phone), ("c", &desktop), ("b", &desktop)]),
             "phone's old songs are no longer listed"
         );
         assert_eq!(
-            lists.set("desk".into(), Vec::new())?,
-            ids(&["d"]),
+            lists.set("desk".into(), desktop.clone(), Vec::new())?,
+            keys(&[("d", &phone)]),
             "an empty list clears"
         );
         assert!(
-            lists.set("phone".into(), ids(&["a", "b", "c", "d"])).is_err(),
+            lists.set("phone".into(), phone, ids(&["a", "b", "c", "d"])).is_err(),
             "at most 3"
         );
         Ok(())

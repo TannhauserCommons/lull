@@ -305,7 +305,12 @@ impl Transfers for Service {
         let best = picks.clone().next();
         let mut here = self.fetcher.copies_here(id);
         if here.is_empty() {
-            here.extend(self.fetcher.best_cached(&track, Purpose::Save).await?.map(|e| e.source));
+            here.extend(
+                self.fetcher
+                    .best_cached(&track, Purpose::Save, &rules)
+                    .await?
+                    .map(|e| e.source),
+            );
         }
         let reusable = |r: &&Ranked| {
             r.meets
