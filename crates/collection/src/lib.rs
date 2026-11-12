@@ -17,6 +17,7 @@ mod matches;
 mod outside;
 mod playlists;
 mod plays;
+mod presets;
 mod seam;
 mod settings;
 mod stats;
@@ -263,7 +264,7 @@ pub async fn start(
     Ok(svc)
 }
 
-/// `/api/likes`, `/api/follows`, `/api/plays`, `/api/history`, `/api/playlists/...`, `/api/stats`, `/api/settings`, `/api/sync`.
+/// `/api/likes`, `/api/follows`, `/api/plays`, `/api/history`, `/api/playlists/...`, `/api/stats`, `/api/settings`, `/api/sources/presets`, `/api/sync`.
 pub fn router(svc: Arc<Service>) -> Router {
     Router::new()
         .merge(likes::routes())
@@ -274,6 +275,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .merge(covers::routes())
         .merge(stats::routes())
         .merge(settings::routes())
+        .merge(presets::routes())
         .merge(sync::routes())
         .merge(exportify::routes())
         .merge(imported_plays::routes())
