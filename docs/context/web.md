@@ -53,6 +53,8 @@ namesakes.js  ADR-0035 (`namesakes` switch): #/artists/named/<name>, the artists
 settings-fit.js  what keeps Settings whole in any window (its tab list on a short one, a choice wider than its row),
              its rules inside (one file: each one the hub serves costs a page its headers);
              loaded with the Settings route (App.needSettingsFit), so no other screen pays for it
+presets.js   Settings > Sources' source presets (ADR-0017, App.presets): which one this device uses, which one the
+             streaming rows edit, new / rename / delete; loaded with that section, its one rule inside
 classic.js   Classic mode: Webamp alone, in an iframe on a stage in a browser, or in the desktop app's own window
 vendor/      Webamp bundle and the QR encoder (qrcode-generator), copied by scripts/vendor-web.sh, gitignored
 desktop/     the desktop app's wrapper pages and bridge (`LullDesktop`), owned by the Apps session
@@ -638,12 +640,20 @@ Copies that don't line up (other masters, edits, loops) never switch mid-song: S
   - Older hubs: an old-shape answer from `/api/search` shows "Search needs a newer hub". So does a 404 from
     `/api/soulseek/search`.
 - **Settings > Sources.**
-  - Two profiles, `sources.stream` and `sources.save`. Each has: lossless only or a minimum bitrate, format chips
-    (each pressed while it counts; all pressed stores none, which means any; at least one stays pressed), which copy,
-    and what to do if none is good enough. A streaming format switched off never streams (soulseek.md#source-rules).
+  - Two profiles: streaming, a source preset's (ADR-0017), and `sources.save`. Each has: lossless only or a minimum
+    bitrate, format chips (each pressed while it counts; all pressed stores none, which means any; at least one stays
+    pressed), which copy, and what to do if none is good enough. Streaming adds the maximum bitrate. A streaming format
+    switched off never streams (soulseek.md#source-rules).
+  - **Presets** (`GET /api/sources/presets`, api.md). "This device uses" is a row of preset chips: pressing one
+    chooses it for this device (`PUT /api/sources/device`), and "Use Phone/Desktop, this device's default" goes back
+    (`preset: null`); the help says whether the hub counts this device as a phone. "Edit preset" picks which preset
+    the streaming rows edit (the device's at first), read and written by the path `preset.<field>`
+    (`PATCH /api/sources/presets/{id} { stream }`); "New preset" (a copy of the one edited), "Rename" and "Delete"
+    (not for the built-ins) open a dialog that shows the hub's sentence. A `settings` event reads the presets again.
+    `screens/presets.js`, loaded with the section. Gate: `tests/ui/gates/source-presets.spec.mjs`.
   - Saving adds `autoUpgrade` and `upgradeEveryH`. Then come the peer limits and "Switch to a better copy while a song plays" (`switchToBetter`, shown when the hub has it).
   - Each control PATCHes only its own key, and the hub merges objects.
-  - A hub without the profiles shows a sentence instead.
+  - A hub without the presets shows a sentence instead.
   - Settings > Search has "Show file results".
 - **Switching source mid-song.** Now Playing's "Source" opens the source picker. For the playing song,
   `P.useSource` reopens the chosen peer's stream at the current time as the same play: `load()` gets `keepPlay`,
