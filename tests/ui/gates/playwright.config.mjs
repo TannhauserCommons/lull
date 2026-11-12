@@ -113,6 +113,10 @@ export default defineConfig({
     { name: 'slots', testMatch: 'slots.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // the UI sounds: once per start, never over music or on a reload, the buffering loop gone as the song sounds
     { name: 'sounds', testMatch: 'sounds.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
+    // a phone's lock screen: the song keeps sounding with the page out of sight or its Web Audio stopped, and the
+    // controls skip songs. Chromium only: Playwright's WebKit has no Web Audio or Media Session on Windows, so iOS's side
+    // is played by the gate
+    { name: 'phone-background', testMatch: 'phone-background.spec.mjs', use: { viewport: { width: 390, height: 844 } } },
     // confirmations collapse into one note, and Quiet keeps them off the screen but not from a screen reader (ADR-0040)
     { name: 'toasts', testMatch: 'toasts.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'loops-webkit', testMatch: 'loops.spec.mjs', fullyParallel: true, use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },

@@ -1991,7 +1991,7 @@
     palette: function () { var s = $('#header-search'); if (s && s.offsetParent) s.focus(); else App.go('/search'); },
     importFile: function (file) { App.toast('Only playlists (.m3u, .m3u8, Exportify .csv) can be dropped here, not ' + file.name, { kind: 'error' }); },
     moreSheet: function () { defaultMoreSheet(); },
-    /* media keys / lock screen target: null = App.player; Classic mode sets { play, pause, prev, next, seek, seekBy } */
+    /* media keys / lock screen target: null = App.player; Classic mode sets { play, pause, prev, next, seek } */
     media: null
   };
   var SAVE_STATUS = { running: 'saving', done: 'saved', failed: 'failed', pending: 'pending', waiting: 'waiting' };
@@ -2886,13 +2886,19 @@
     function deck() {
       /* offset: how far this copy's own time runs ahead of the song's (a better copy switched to); lag: what its delay
          holds it back by. Both 0 until a switch */
-      var d = { el: new Audio(), item: null, waiting: false, fade: 1, norm: 1, gain: null, analyser: null, ms: 0, msN: 0,
+      var d = { el: null, item: null, waiting: false, fade: 1, norm: 1, gain: null, analyser: null, ms: 0, msN: 0,
         offset: 0, lag: 0, delay: null, sw: null };
-      d.el.preload = 'auto';
-      ['playing', 'waiting', 'pause', 'timeupdate', 'durationchange', 'ended', 'error'].forEach(function (type) {
-        d.el.addEventListener(type, function () { onEl(d, type); });
-      });
+      d.el = element(d);
       return d;
+    }
+    /* a deck's <audio>; one it has let go of (unroute) reports nothing more */
+    function element(d) {
+      var el = new Audio();
+      el.preload = 'auto';
+      ['playing', 'waiting', 'pause', 'timeupdate', 'durationchange', 'ended', 'error'].forEach(function (type) {
+        el.addEventListener(type, function () { if (d.el === el) onEl(d, type); });
+      });
+      return el;
     }
     /* waiting: no sound yet for want of data, from the start until 'playing' */
     function hold(d, it) {
@@ -2938,7 +2944,7 @@
     /* crossfade: the next deck starts under an equal-power fade over the playing song's last seconds */
     function maybeFade() {
       var d = dur(a);
-      if (!xfade || switching || fading || a.el.paused || !b.item || !d || d - a.el.currentTime > xfade || b.el.readyState < 3) return;
+      if (!xfade || fixedVolume || switching || fading || a.el.paused || !b.item || !d || d - a.el.currentTime > xfade || b.el.readyState < 3) return;
       fading = { start: Date.now(), len: LullRules.crossfadeLengthS(d - a.el.currentTime) * 1000 };
       b.fade = 0; start(b).catch(function () {}); levels();
       emit('crossfade', { key: key(a), next: key(b) });
@@ -2959,12 +2965,22 @@
 
     /* levels: volume x crossfade x loudness normalisation; then the equaliser (web/eq.js), after the decks are mixed, so
        crossfades, gapless and a better copy's handover pass through one unchanged chain */
-    var ctx = null, master = null, eqSpec = null, eqChain = null;
-    function wantGraph() { return playback.normalisation && playback.normalisation !== 'off' || playback.crossfade > 0 || playback.switchToBetter || !!eqSpec; }
-    /* Web Audio only when a feature needs it; built inside a user gesture (play), once */
+    var ctx = null, master = null, eqSpec = null, eqChain = null, unrouted = false;
+    function wantGraph() { return !unrouted && (playback.normalisation && playback.normalisation !== 'off' || playback.crossfade > 0 || playback.switchToBetter || !!eqSpec); }
+    /* Web Audio only when a feature needs it; built inside a user gesture (play), once. The decks sound only through it
+       from then on, so a context the system stopped while a deck plays (iOS for a call, another app's audio, a page in
+       the background) would leave the song playing on without a sound: it is started again at once, and when the
+       page comes back in sight; one that doesn't start again is left (unroute). */
     function ensureGraph() {
-      if (ctx || !wantGraph() || !window.AudioContext) { if (ctx && ctx.state === 'suspended') ctx.resume(); return; }
+      if (ctx) { wake(); return; }
+      if (!wantGraph() || !window.AudioContext) return;
+      /* iOS stops a page's Web Audio when the page goes to the background, unless its audio session is for playback
+         (WebKit, AudioContext::shouldOverrideBackgroundPlaybackRestriction): what a music player is, and what an
+         <audio> element playing alone already gets. Only Safari has navigator.audioSession */
+      if (navigator.audioSession) navigator.audioSession.type = 'playback';
       ctx = new AudioContext();
+      ctx.addEventListener('statechange', function () { if (sounding()) wake(); });
+      document.addEventListener('visibilitychange', function () { if (!document.hidden && sounding()) wake(); });
       master = ctx.createGain(); eqChain = LullEq.chain(ctx); eqChain.set(eqSpec);
       master.connect(eqChain.input); eqChain.output.connect(ctx.destination);
       /* each deck: source -> delay (a better copy's, to line it up) -> switch fade -> level -> master; the analyser
@@ -2976,6 +2992,41 @@
         src.connect(d.delay); d.delay.connect(d.sw); d.sw.connect(d.gain); d.gain.connect(master); src.connect(d.analyser);
       });
       levels();
+    }
+    /* 'suspended', or WebKit's 'interrupted'; nothing once the graph was left */
+    function wake() { if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(function () { /* stays stopped until the next play */ }); }
+    function sounding() { return decks.some(function (d) { return d.item && !d.el.paused; }); }
+    /* a song playing without a sound: a deck plays while the context's clock stands still (stopped, and not started
+       again). WebKit lets the song's time run on meanwhile, Chromium holds it. SILENT_MS so is past any start or
+       resume: the graph is left, and the song goes on from where it is */
+    var SILENT_MS = 3000, still = null;
+    function watchSound() {
+      if (!ctx || a.el.paused || a.waiting) { still = null; return; }
+      if (!still || ctx.currentTime > still.clock) still = { clock: ctx.currentTime, at: Date.now() };
+      else if (Date.now() - still.at >= SILENT_MS) unroute();
+    }
+    /* each deck moves to an <audio> of its own that sounds without Web Audio (an element given to a context stays in it),
+       for as long as the page lives: normalisation, the equaliser and better copies are off until lull starts again;
+       crossfade and volume go on through the elements' own volume, where it can be set (not on iOS: songs then follow
+       each other gaplessly, and the phone's buttons set the volume) */
+    var fixedVolume = false;
+    function unroute() {
+      console.warn('lull: Web Audio stopped (' + ctx.state + ') and did not start again; playing without it until lull starts again');
+      abandonSwitch(true);
+      var dead = ctx, probe = new Audio();
+      probe.volume = .5; fixedVolume = probe.volume !== .5;
+      if (fixedVolume) abandonFade();
+      ctx = null; master = null; eqChain = null; unrouted = true; still = null;
+      decks.forEach(function (d) {
+        var was = d.el, playing = !was.paused, at = was.currentTime - d.lag;
+        d.el = element(d); d.gain = null; d.analyser = null; d.delay = null; d.sw = null; d.lag = 0;
+        was.pause(); was.removeAttribute('src'); was.load();
+        if (!d.item) return;
+        d.el.src = d.item.url; d.el.currentTime = at;
+        if (playing) start(d).catch(function (err) { console.warn('lull: the song did not go on without Web Audio', err); });
+      });
+      levels();
+      dead.close().catch(function () { /* gone either way */ });
     }
     /* turned on mid-song: the graph is built at once (the page has had the listener's click, so it starts running);
        otherwise the next play builds it */
@@ -3169,6 +3220,7 @@
     setInterval(function () {
       if (!a.item) return;
       if (!a.el.paused) { normalise(a); if (fading) normalise(b); levels(); time(a); }
+      watchSound();
       var r = ranges(a), k = key(a) + JSON.stringify(r);
       if (k !== held) { held = k; emit('buffered', { key: key(a), ranges: r }); }
       stepFade(); maybeFade();
@@ -4628,11 +4680,13 @@
     if (!('mediaSession' in navigator)) return;
     /* the player the keys drive: the app engine, or whatever App.hooks.media is set to (Classic mode: Webamp) */
     function T() { return App.hooks.media || P; }
+    /* no seekbackward / seekforward: with them iOS puts 10-second skips where the previous and next song go (WebKit
+       hands them to the system as skip commands, and the lock screen shows those instead). A music player skips songs;
+       seekto keeps the lock screen's scrubber */
     var h = {
       play: function () { T().play(); }, pause: function () { T().pause(); }, stop: function () { T().pause(); T().seek(0); },
       previoustrack: function () { T().prev(); }, nexttrack: function () { T().next(); },
-      seekto: function (d) { T().seek(d.seekTime); },                     // the engine keeps or clamps it, like the seek bar's
-      seekbackward: function (d) { T().seekBy(-(d.seekOffset || 10)); }, seekforward: function (d) { T().seekBy(d.seekOffset || 10); }
+      seekto: function (d) { T().seek(d.seekTime); }                      // the engine keeps or clamps it, like the seek bar's
     };
     Object.keys(h).forEach(function (k) { try { navigator.mediaSession.setActionHandler(k, h[k]); } catch (e) { /* unsupported action */ } });
   }

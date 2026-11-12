@@ -348,8 +348,7 @@
   var webampControls = {
     play: function () { webamp.play(); }, pause: function () { webamp.pause(); },
     prev: function () { webamp.previousTrack(); }, next: function () { webamp.nextTrack(); },
-    seek: function (sec) { webamp.seekToTime(sec); },
-    seekBy: function (sec) { if (sec < 0) webamp.seekBackward(-sec); else webamp.seekForward(sec); }
+    seek: function (sec) { webamp.seekToTime(sec); }
   };
 
   /* Webamp's repeat is on or off: on keeps the app's all / one, off turns it off */

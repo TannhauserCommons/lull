@@ -237,7 +237,13 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   `track.replayGain { track, album }` (dB) when the library supplies it; otherwise the measured loudness of what has
   played (unweighted RMS) is levelled toward `playback.loudnessTarget` (-18 / -14 / -11) within -12..+6 dB. The Web Audio graph is built only when normalisation,
   crossfade, switching to better copies (`sources.switchToBetter`) or the equaliser is on, inside the first play gesture
-  (the equaliser turned on mid-song builds it at once).
+  (the equaliser turned on mid-song builds it at once). The decks then sound only through it, so it must keep running in
+  the background: the page's audio session is set to `playback` first (Safari's `navigator.audioSession`; otherwise
+  iOS stops Web Audio when the page leaves the screen and the song plays on silently), and a context the system
+  stops while a deck plays is resumed at once and when the page comes back in sight. One whose clock still stands
+  while a deck plays (3 s) is left for good: the decks move to fresh `<audio>` elements that sound without Web Audio
+  and the song goes on where it was; normalisation, the equaliser and better copies are then off until lull starts
+  again, and crossfade too where an element's volume is fixed (iOS) (`gates/phone-background.spec.mjs`).
 - **Equaliser**: [below](#equaliser), after both decks are mixed.
 - **Better copies**: the playing song moves to a better copy mid-song without a jump; [below](#better-copies).
 - **Plays**: `App.recordPlay(trackId, duration, recommended)` posts `POST /api/plays` when a song starts playing
@@ -275,8 +281,9 @@ The state shape and methods are DESIGN.md 7.8; the insides:
     `ui.placeMark(key)` (the playing bars, a row's `.eq`); `App.syncRows` (`App.syncPlaces`) moves the mark when the
     place or play state changes, touching only the elements whose state differs.
 - **Media Session**: metadata with `/api/art/{albumId}?size=96|256|512` once the 96 px cover is known to exist (else
-  `assets/fallback-art-*.png`), `playbackState`, position state on track change and seek, all handlers; `seekto`
-  is kept or clamped like the seek bar's.
+  `assets/fallback-art-*.png`), `playbackState`, position state on track change and seek, handlers `play pause stop
+  previoustrack nexttrack seekto`; `seekto` is kept or clamped like the seek bar's. No `seekbackward`/`seekforward`:
+  with them iOS shows 10-second skips instead of the previous and next song (`gates/phone-background.spec.mjs`).
 
 ### Output interface (ADR-0006)
 
