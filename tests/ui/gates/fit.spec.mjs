@@ -381,19 +381,23 @@ for (const design of designs) {
   });
 }
 
-// the search is the main tool of the header: it keeps a comfortable width before the
-// status tray and the other parts give way (components.css: the search's own --search-min floor and the fit order),
-// whatever a design lays out, in a browser and in the desktop app's window (whose
-// buttons take room from the header). The tray shows full while the search has 220 px to type in (the tray compacts first)
+// the search and the seek are the main tools of the header and the player bar: they keep a comfortable width before the
+// status tray, the bar's secondary keys and the volume slider give way (layout.js: the search's own --search-min floor
+// and the fit order, --fit-seek-min), whatever a design lays out, in a browser and in the desktop app's window (whose
+// buttons take room from the header). The tray shows full while the search has 220 px to type in (the tray compacts
+// first), the seek track has 360 px (300 on a tablet) while any secondary key still shows, and the bar shows its time
+// once, "0:00 / 3:19", the seek's aria-valuetext still saying both
 for (const design of designs) {
   for (const desktop of [false, true]) {
-    test(`the search keeps its room / ${design} / ${desktop ? 'desktop app' : 'browser'}`, async ({ page }) => {
+    test(`the search and the seek keep their room / ${design} / ${desktop ? 'desktop app' : 'browser'}`, async ({ page }) => {
       if (desktop) {
         await page.addInitScript({ path: fileURLToPath(new URL('./desktop-bridge.js', import.meta.url)) });
         await page.addInitScript(() => { window.__LULL_DESKTOP__ = { os: 'win', titlebar: 'win' }; });
       }
       await page.setViewportSize({ width: 1440, height: 900 });
       await openScreen(page, `/album/${ids.album}`, { design });
+      await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');
+      await page.waitForFunction(() => App.player.current());
       await page.evaluate(() => { location.hash = '#/home'; });
       await settle(page);
       const found = [];
@@ -405,13 +409,23 @@ for (const design of designs) {
           const shown = (e) => e.getClientRects().length > 0;
           const input = document.querySelector('#header-search'), cs = getComputedStyle(input);
           const inner = input.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+          const seek = document.querySelector('.pbar__seek .seek').getBoundingClientRect().width;
+          const keys = [...document.querySelectorAll('.pbar__tools [data-fit]:not(.seek)')].filter(shown).length;
           return {
-            inner, full: shown(document.querySelector('.tray--full')),
+            inner, full: shown(document.querySelector('.tray--full')), seek, keys,
+            vol: shown(document.querySelector('.vol > .seek')) && getComputedStyle(document.querySelector('.vol > .seek')).position !== 'absolute',
+            times: [...document.querySelectorAll('#pbar .seek-row__time')].filter(shown).length,
+            text: document.querySelector('.pbar__seek .seek').getAttribute('aria-valuetext') || '',
+            readout: document.querySelector('#pbar .seek-row__time').textContent.replace(/\s+/g, ' ').trim(),
           };
         });
         if (m.full && m.inner < 220) found.push(`at ${w} px the search has ${Math.round(m.inner)} px to type in beside the full tray, under 220`);
+        const least = w <= 1099 ? 300 : 360;
+        if ((m.keys > 0 || m.vol) && m.seek < least) found.push(`at ${w} px the seek track is ${Math.round(m.seek)} px while ${m.keys} secondary keys${m.vol ? ' and the volume slider' : ''} show, under ${least}`);
+        if (m.times !== 1) found.push(`at ${w} px the bar shows ${m.times} time readouts, not one`);
+        if (!/ of /.test(m.text) || !/\d:\d\d \/ \d:\d\d/.test(m.readout.replace(' of ', ' ').replace(/(\d:\d\d) (\d:\d\d)/, '$1 / $2'))) found.push(`at ${w} px the readout "${m.readout}" or the seek's value text "${m.text}" lacks the length`);
       }
-      expect(found, 'the search').toEqual([]);
+      expect(found, 'the search and the seek').toEqual([]);
     });
   }
 }

@@ -435,7 +435,18 @@
       /* the gap as laid out: a design may give it as min() or a percentage, which getComputedStyle hands back unresolved;
          the tracks fill the row (the middle one is 1fr), so what they leave is the gaps */
       gap = tracks.length === 3 && tracks.every(isFinite) ? (inner - tracks[0] - tracks[1] - tracks[2]) / 2 : parseFloat(cs.columnGap) || 0;
-    return Math.max(0, (inner - (parseFloat(cs.getPropertyValue('--fit-centre-min')) || 0) - 2 * gap) / 2);
+    /* the middle's least: --fit-centre-min, or what the seek track needs (--fit-seek-min, on the seek, [data-fit-seek]) plus
+       what stands beside it in the middle as laid out now (its times, the transport in a design that puts it in line),
+       whichever is more: the seek is the bar's main control, so the tools give way before it is squeezed */
+    var centre = parseFloat(cs.getPropertyValue('--fit-centre-min')) || 0, seek = $('[data-fit-seek]', root);
+    if (seek && tracks.length === 3 && tracks.every(isFinite)) {
+      var want = parseFloat(cs.getPropertyValue('--fit-seek-min')) || 0, sw = seek.getBoundingClientRect().width;
+      if (want && sw) centre = Math.max(centre, want + Math.max(0, tracks[1] - sw));
+    }
+    /* the seek never takes the song's side below its least (--fit-side-min), where the side's own row has nothing left to
+       give way (the Private pill of an idle bar): only what --fit-centre-min asked for does */
+    var most = (inner - centre - 2 * gap) / 2, base = (inner - (parseFloat(cs.getPropertyValue('--fit-centre-min')) || 0) - 2 * gap) / 2;
+    return Math.max(0, most, Math.min(base, parseFloat(cs.getPropertyValue('--fit-side-min')) || 0));
   }
   /* rows fit again when they resize, and when what is in them does without the row resizing (a web font arriving with
      wider letters than the fallback's, a label that changed): the observer watches each row, its children and its

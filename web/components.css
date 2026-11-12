@@ -560,11 +560,12 @@ li[data-fill]:empty { display: block; position: static; }
 .seek--line .seek__target::before { top: -3px; height: 6px; }
 .seek--line .seek__track { top: 0; margin: 0; height: 2px; border-radius: 0; box-shadow: none; background: var(--divider); }
 .seek--line .seek__rail { display: none; }
-.seek-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); }
-/* both times are as wide as the song's duration reads (--time-ch, its characters, set per song by app.js): the
-   position never outgrows it, so the seek bar keeps one length from 0:00 to the end */
-.seek-row__time { min-width: calc(var(--time-ch, 4) * 1ch); font: 700 .875rem/1 var(--f-ui); color: var(--fg-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.seek-row__time:last-child { text-align: right; }
+.seek-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--sp-3); }
+/* one readout, "0:00 / 3:19" (a screen reader says "0:00 of 3:19"), as wide as the song's duration reads twice (--time-ch,
+   its characters, set per song by app.js): the position never outgrows it, so the seek bar keeps one length from 0:00 to
+   the end; the length is dimmer, the seek's aria-valuetext says both */
+.seek-row__time { min-width: calc((var(--time-ch, 4) * 2 + 3) * 1ch); font: 700 .875rem/1 var(--f-ui); color: var(--fg-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.seek-row__len { opacity: .75; }
 
 /* =====================================================================
    Waveform strip (device screen): .wave > .wave__bar(--h 0-1) + .wave__head(--pos)
@@ -1300,7 +1301,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
   /* the song, the transport, the tools: both sides as wide as the tools need (layout.js sets --fit-side, after the
      tools gave way to keep --fit-centre-min for the middle; the song's side keeps --fit-side-min), the middle every
      pixel left, so the transport stays centred and nothing stands empty */
-  --fit-centre-min: 360px; --fit-side-min: 260px;
+  --fit-centre-min: 360px; --fit-side-min: 260px; --fit-seek-min: 360px;
   display: grid; grid-template-columns: minmax(0, var(--fit-side, 1fr)) minmax(0, 1fr) minmax(0, var(--fit-side, 1fr)); align-items: center; gap: min(var(--sp-6), 2%);
   padding: 0 12px; border: var(--stroke) solid var(--edge); border-radius: var(--r-panel); box-shadow: var(--stack-1l);   /* even, so the middle is the bar's middle */
 }
@@ -1518,7 +1519,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
   .nav-item__label, .rail__scroll, .rail__foot { display: none; }
   .nav-item .badge-count { position: absolute; top: -4px; right: -6px; }
   /* tablet: the middle may be narrower before the tools give way */
-  .pbar { --fit-centre-min: 280px; --fit-side-min: 200px; gap: var(--sp-4); }
+  .pbar { --fit-centre-min: 280px; --fit-side-min: 200px; --fit-seek-min: 300px; gap: var(--sp-4); }
   .pbar__now { overflow: hidden; }
   .header__search { flex: 1 1 280px; }
   .app:not([data-ctx="docked"]) .ctx { top: 16px; }
