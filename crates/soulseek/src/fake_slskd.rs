@@ -72,6 +72,8 @@ struct Shared {
     answers: Vec<Answer>,
     /// Every request, by transfer id, in order: who, what, when it began and ended.
     log: Mutex<Vec<(String, Request)>>,
+    /// How long slskd takes to answer a cancel (`slow_cancels`).
+    cancel_takes: Mutex<Duration>,
 }
 
 /// How one peer behaves when asked for a file.
@@ -87,6 +89,33 @@ pub enum Behaviour {
     QueuedThen(Duration, usize),
     /// Sends this many bytes at once, then this many a `TICK`.
     Burst(usize, usize),
+    /// Sends this many bytes a `TICK` up to this byte of the file, then nothing more, to any
+    /// request (one asked from there on gets no byte).
+    Until(usize, usize),
+    /// Sends this many bytes a `TICK` until it has sent this many, then drops the request itself
+    /// (slskd reads `Completed, Errored`).
+    Drops(usize, usize),
+    /// Queued this long, then sends `slow` bytes a `TICK` for this long, then `then` a `TICK`.
+    Slowly {
+        queued: Duration,
+        slow_for: Duration,
+        slow: usize,
+        then: usize,
+    },
+}
+
+/// How one request is served (from its `Behaviour`).
+#[derive(Clone, Copy)]
+struct Plan {
+    wait: Duration,
+    burst: usize,
+    pace: usize,
+    /// No byte past this one.
+    until: usize,
+    /// Dropped by the peer once this many bytes are sent.
+    drops: Option<usize>,
+    /// A first stretch at another pace.
+    slow: Option<(Duration, usize)>,
 }
 
 /// One peer answering searches (`Fake::start_peers`).
@@ -226,6 +255,7 @@ impl Fake {
             searches: Mutex::default(),
             answers,
             log: Mutex::default(),
+            cancel_takes: Mutex::new(Duration::ZERO),
         });
         let app = Router::new()
             .route("/api/v0/transfers/downloads/batches", post(enqueue))
@@ -308,6 +338,30 @@ impl Fake {
             })
             .max()
             .unwrap_or(0)
+    }
+
+    /// slskd answers every cancel only after `d` (it has done what was asked by then).
+    pub fn slow_cancels(&self, d: Duration) {
+        if let Ok(mut takes) = self.shared.cancel_takes.lock() {
+            *takes = d;
+        }
+    }
+
+    /// "user path" for every copy that had two requests running (or queued) at one moment.
+    pub fn twice_at_once(&self) -> Vec<String> {
+        let all = self.requests();
+        let mut twice: Vec<String> = Vec::new();
+        for (i, a) in all.iter().enumerate() {
+            for b in &all[i + 1..] {
+                let same = a.user == b.user && a.path == b.path;
+                let overlap = a.ended.is_none_or(|e| e > b.at) && b.ended.is_none_or(|e| e > a.at);
+                let name = format!("{} {}", a.user, a.path);
+                if same && overlap && !twice.contains(&name) {
+                    twice.push(name);
+                }
+            }
+        }
+        twice
     }
 
     /// The users whose requests run (or wait in a queue) now.
@@ -485,23 +539,39 @@ async fn enqueue(
                 pace => Behaviour::Sends(pace),
             });
     let reports = answer.and_then(|a| a.reports).or(s.peer.reported);
-    let (wait, burst, pace) = match behaviour {
-        Behaviour::Sends(pace) => (Some(Duration::ZERO), 0, pace),
-        Behaviour::Silent => (Some(Duration::ZERO), 0, 0),
-        Behaviour::Queues => (None, 0, 0),
-        Behaviour::QueuedThen(after, pace) => (Some(after), 0, pace),
-        Behaviour::Burst(first, pace) => (Some(Duration::ZERO), first, pace),
+    let now = |pace| Plan {
+        wait: Duration::ZERO,
+        burst: 0,
+        pace,
+        until: usize::MAX,
+        drops: None,
+        slow: None,
     };
-    let task = wait.map(|wait| {
-        let run = download(
-            s.clone(),
-            id.clone(),
-            path,
-            filename.clone(),
-            bytes,
-            at,
-            (wait, burst, pace),
-        );
+    let plan = match behaviour {
+        Behaviour::Sends(pace) => Some(now(pace)),
+        Behaviour::Silent => Some(now(0)),
+        Behaviour::Queues => None,
+        Behaviour::QueuedThen(wait, pace) => Some(Plan { wait, ..now(pace) }),
+        Behaviour::Burst(burst, pace) => Some(Plan { burst, ..now(pace) }),
+        Behaviour::Until(until, pace) => Some(Plan { until, ..now(pace) }),
+        Behaviour::Drops(after, pace) => Some(Plan {
+            drops: Some(after),
+            ..now(pace)
+        }),
+        Behaviour::Slowly {
+            queued,
+            slow_for,
+            slow,
+            then,
+        } => Some(Plan {
+            wait: queued,
+            slow: Some((slow_for, slow)),
+            ..now(then)
+        }),
+    };
+    let wait = plan.map(|p| p.wait);
+    let task = plan.map(|plan| {
+        let run = download(s.clone(), id.clone(), path, filename.clone(), bytes, at, plan);
         Arc::new(tokio::spawn(run).abort_handle())
     });
     let t = Transfer {
@@ -535,19 +605,11 @@ async fn enqueue(
     Ok(axum::Json(json!({ "batch": { "transfers": [view(&id, &t)] } })))
 }
 
-/// The peer sends from `at`: appended (resume) or written from a fresh file (overwrite). It
-/// waits in its queue for `wait` first, sends `burst` bytes at once, then `pace` bytes a tick.
-async fn download(
-    s: Arc<Shared>,
-    id: String,
-    path: PathBuf,
-    filename: String,
-    bytes: Vec<u8>,
-    at: u64,
-    (wait, burst, pace): (Duration, usize, usize),
-) {
-    if !wait.is_zero() {
-        tokio::time::sleep(wait).await;
+/// The peer sends from `at`: appended (resume) or written from a fresh file (overwrite), as
+/// `plan` says: it waits in its queue first, sends a burst at once, then its pace a tick.
+async fn download(s: Arc<Shared>, id: String, path: PathBuf, filename: String, bytes: Vec<u8>, at: u64, plan: Plan) {
+    if !plan.wait.is_zero() {
+        tokio::time::sleep(plan.wait).await;
         if let Ok(mut all) = s.transfers.lock()
             && let Some(t) = all.get_mut(&id)
         {
@@ -570,9 +632,29 @@ async fn download(
     };
     let Ok(mut file) = open.await else { return };
     let mut pos = at as usize;
-    let mut first = burst;
+    let mut first = plan.burst;
+    let began = Instant::now();
     while pos < bytes.len() {
-        let end = (pos + pace + std::mem::take(&mut first)).min(bytes.len());
+        if plan.drops.is_some_and(|after| pos - at as usize >= after) {
+            if let Ok(mut all) = s.transfers.lock()
+                && let Some(t) = all.get_mut(&id)
+            {
+                t.state = "Completed, Errored";
+            }
+            if let Ok(mut log) = s.log.lock()
+                && let Some((_, r)) = log.iter_mut().find(|(tid, _)| *tid == id)
+            {
+                r.ended = Some(Instant::now());
+            }
+            return;
+        }
+        let pace = match plan.slow {
+            Some((during, slow)) if began.elapsed() < during => slow,
+            _ => plan.pace,
+        };
+        let end = (pos + pace + std::mem::take(&mut first))
+            .min(bytes.len())
+            .min(plan.until.max(pos));
         if file.write_all(&bytes[pos..end]).await.is_err() || file.flush().await.is_err() {
             return;
         }
@@ -638,6 +720,7 @@ async fn one(
 }
 
 async fn cancel(State(s): State<Arc<Shared>>, UrlPath((_user, id)): UrlPath<(String, String)>) -> StatusCode {
+    let takes = s.cancel_takes.lock().map(|t| *t).unwrap_or_default();
     let gone = s.transfers.lock().ok().and_then(|mut all| all.remove(&id));
     if let Some(t) = &gone
         && let Ok(mut log) = s.log.lock()
@@ -650,6 +733,7 @@ async fn cancel(State(s): State<Arc<Shared>>, UrlPath((_user, id)): UrlPath<(Str
     if let Some(task) = gone.and_then(|t| t.task) {
         task.abort();
     }
+    tokio::time::sleep(takes).await;
     StatusCode::NO_CONTENT
 }
 

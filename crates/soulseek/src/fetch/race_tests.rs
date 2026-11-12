@@ -148,6 +148,8 @@ async fn hub(rules: Rules, titles: &[&str], answers: Vec<Answer>) -> Result<Hub>
     let mut files = HashMap::new();
     for t in titles {
         files.insert(format!("low|{}", low_path(t)), bytes_of("low", &low_path(t), LOW_SIZE));
+        let ogg = low_ogg(t).path;
+        files.insert(format!("lowogg|{ogg}"), bytes_of("lowogg", &ogg, LOW_SIZE));
     }
     for a in &answers {
         for (path, _) in &a.files {
@@ -213,6 +215,17 @@ fn low_copy(title: &str) -> Source {
         queue: 0,
         length: Some(200),
     }
+}
+
+/// Another lesser copy ("lowogg", OGG 128), for a preset that streams OGG.
+fn low_ogg(title: &str) -> Source {
+    let mut s = low_copy(title);
+    s.user = "lowogg".into();
+    s.path = format!("Music\\Rips\\Album\\01 - {title}.ogg");
+    s.ext = "ogg".into();
+    s.facts.format = "OGG 128".into();
+    s.facts.codec = "OGG".into();
+    s
 }
 
 /// The song plays its lesser copy; the upgrade searches and races.
@@ -934,5 +947,408 @@ async fn s2_after_the_switch_a_seek_anywhere_reads_the_winners_bytes() -> Result
         "S2 the bytes at the seek aren't the winner's"
     );
     assert_eq!(h.fake.starts_of("fast").first(), Some(&0), "S2 the winner's first leg");
+    Ok(())
+}
+
+// Review round 1 (ADR-0018, R22-R28): what the first build got wrong that the tests above missed.
+
+fn profile(formats: &[&str], max_kbps: u32) -> StreamProfile {
+    let mut p = StreamProfile::default();
+    p.minimum.formats = formats.iter().map(|f| (*f).to_owned()).collect();
+    p.max_kbps = max_kbps;
+    p
+}
+
+/// Waits until `f` plays a copy of `user`'s.
+async fn on(f: &Fetch, user: &str, within: Duration) -> Result<()> {
+    let deadline = Instant::now() + within;
+    while f.now().source.as_ref().is_none_or(|s| s.user != user) {
+        if Instant::now() > deadline {
+            return Err(Error::internal(format!("never started on {user}'s copy")));
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    Ok(())
+}
+
+/// The ready offer for the song a device of `profile` plays, if any by `within`.
+async fn ready_for(h: &Hub, f: &Fetch, within: Duration) -> Option<Value> {
+    ready_offer(h, f, within).await.0.map(|(_, offer)| offer)
+}
+
+#[tokio::test]
+async fn r22_two_presets_racing_one_song_never_share_a_peer_and_file() -> Result<()> {
+    let s = [mp3("Song")];
+    let h = hub(
+        Rules::default(),
+        &["Song"],
+        vec![
+            peer("fast1", Behaviour::Sends(FAST), 9.0, &s),
+            peer("fast2", Behaviour::Sends(FAST), 8.0, &s),
+            peer("silent", Behaviour::Silent, 7.0, &s),
+        ],
+    )
+    .await?;
+    let t = track("Song");
+    // Two devices, two presets, each on a lesser copy of its own, racing for the same 320s.
+    let (ogg, mp3_only) = (profile(&["ogg", "mp3"], 0), profile(&["mp3"], 320));
+    h.fetcher
+        .sources
+        .add(HashMap::from([(t.id.clone(), vec![low_ogg("Song")])]));
+    let a = h.fetcher.stream(t.clone(), None, &ogg).await?;
+    on(&a, "lowogg", SECS(10)).await?;
+    h.fetcher
+        .sources
+        .add(HashMap::from([(t.id.clone(), vec![low_copy("Song")])]));
+    let b = h.fetcher.stream(t.clone(), None, &mp3_only).await?;
+    on(&b, "low", SECS(10)).await?;
+    let (offer_a, offer_b) = tokio::join!(ready_for(&h, &a, SECS(30)), ready_for(&h, &b, SECS(30)));
+    assert_eq!(
+        h.fake.twice_at_once(),
+        Vec::<String>::new(),
+        "R22 one copy asked twice at once"
+    );
+    for (device, offer, p) in [("ogg", offer_a, &ogg), ("mp3", offer_b, &mp3_only)] {
+        let offer = offer.ok_or_else(|| Error::internal(format!("R22 nothing ready for the {device} preset")))?;
+        let user = peer_of(&offer).to_owned();
+        let up = h
+            .fetcher
+            .upgrade(&(t.id.clone(), p.clone()))
+            .ok_or_else(|| Error::internal(format!("R22 the {device} preset's copy is gone")))?;
+        let done = ended(&up, SECS(30)).await?;
+        assert_eq!(done.status, Status::Done, "R22 {device}: {:?}", done.error);
+        let path = done.path.ok_or_else(|| Error::internal("R22 no file"))?;
+        let file = std::fs::read(&path).unwrap_or_default();
+        assert!(
+            file == bytes_of(&user, &mp3("Song"), SIZE),
+            "R22 the {device} preset's copy from {user} isn't whole ({} bytes)",
+            file.len()
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn r23_a_lane_never_deletes_a_copy_already_finished() -> Result<()> {
+    let s = [mp3("Song")];
+    let h = hub(
+        capped(),
+        &["Song"],
+        vec![
+            peer("finished", Behaviour::Sends(SLOW), 9.0, &s),
+            peer("fast", Behaviour::Sends(FAST), 1.0, &s),
+        ],
+    )
+    .await?;
+    let t = track("Song");
+    let f = play_low(&h, "Song").await?;
+    // Meanwhile another preset's fetch finished a copy of `finished`'s file into the cache.
+    let copy = the("finished", &mp3("Song"));
+    let path = h.fetcher.cache.copy_file(&copy).await?;
+    let bytes = bytes_of("finished", &mp3("Song"), SIZE);
+    std::fs::write(&path, &bytes).map_err(|e| Error::internal(e.to_string()))?;
+    h.fetcher
+        .cache
+        .record(crate::cache::Entry {
+            track: t.id.clone(),
+            source: copy.clone(),
+            path: path.clone(),
+            complete: true,
+            used_at: lull_core::now(),
+            ranges: None,
+        })
+        .await?;
+    first_offer(&h, &f, SECS(25))
+        .await
+        .ok_or_else(|| Error::internal("R23 no offer in 25 s"))?;
+    tokio::time::sleep(SECS(2)).await;
+    assert!(
+        h.fetcher.cache.finished(&t.id, &copy).await?.is_some(),
+        "R23 the finished copy left the cache"
+    );
+    let now = std::fs::read(&path).unwrap_or_default();
+    assert!(
+        now == bytes,
+        "R23 the finished copy's file was changed ({} bytes)",
+        now.len()
+    );
+    Ok(())
+}
+
+/// A song that played `half`'s copy part of the way, then was skipped: a partial in the cache.
+async fn skipped_part_way(h: &Hub, title: &str, user: &str) -> Result<()> {
+    let f = h.fetcher.play(track(title), None).await?;
+    on(&f, user, SECS(15)).await?;
+    let deadline = Instant::now() + SECS(15);
+    while f.now().received() < 300_000 {
+        if Instant::now() > deadline {
+            return Err(Error::internal(format!("{title}: the first part never came")));
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    h.fetcher.stop_streaming(&track(title).id, &h.profile());
+    Ok(())
+}
+
+#[tokio::test]
+async fn r24_a_start_resuming_a_partial_moves_past_a_silent_peer_in_six_seconds() -> Result<()> {
+    let s = [mp3("Song")];
+    let h = hub(
+        capped(),
+        &["Song"],
+        vec![
+            // Sends the first 300 KB to anyone, then nothing more: a resumed request gets no byte.
+            peer("half", Behaviour::Until(300_000, FAST), 9.0, &s),
+            peer("fast", Behaviour::Sends(FAST), 1.0, &s),
+        ],
+    )
+    .await?;
+    skipped_part_way(&h, "Song", "half").await?;
+    tokio::time::sleep(SECS(1)).await;
+    let opened = Instant::now();
+    let f = h.fetcher.play(track("Song"), None).await?;
+    let deadline = opened + SECS(15);
+    while !f.now().source.is_some_and(|s| s.user == "fast") || !f.now().ranges.has(0) {
+        if Instant::now() > deadline {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let at = since(opened, Instant::now());
+    let resumed = h.fake.requests_of("half").iter().any(|r| r.offset > 0);
+    assert!(resumed, "R24 the partial wasn't resumed");
+    // No search (the copies are known): 6 s for the silent resume, then the next peer's first byte.
+    assert!(at <= 8.5, "R24 the next peer's bytes after {at:.1} s, over 8.5");
+    Ok(())
+}
+
+#[tokio::test]
+async fn r25_starts_resuming_partials_count_in_the_lane_budget() -> Result<()> {
+    let titles = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"];
+    let users = ["ha", "hb", "hc", "hd", "he"];
+    let answers = titles
+        .iter()
+        .zip(users)
+        .map(|(t, u)| peer(u, Behaviour::Until(300_000, FAST), 9.0, &[mp3(t)]))
+        .collect();
+    let h = hub(capped(), &titles, answers).await?;
+    for (t, u) in titles.iter().zip(users) {
+        skipped_part_way(&h, t, u).await?;
+    }
+    tokio::time::sleep(SECS(1)).await;
+    let before = h.fake.requests().len();
+    for t in titles {
+        h.fetcher.play(track(t), None).await?;
+    }
+    tokio::time::sleep(SECS(5)).await;
+    let again: Vec<_> = h.fake.requests().into_iter().skip(before).collect();
+    assert!(
+        again.iter().all(|r| r.offset > 0),
+        "R25 a partial wasn't resumed: {again:?}"
+    );
+    let most = again
+        .iter()
+        .map(|r| {
+            again
+                .iter()
+                .filter(|o| o.at <= r.at && o.ended.is_none_or(|e| e > r.at))
+                .count()
+        })
+        .max()
+        .unwrap_or(0);
+    assert!(most <= 4, "R25 {most} resumed requests waiting at once, over 4 lanes");
+    Ok(())
+}
+
+/// The INFO lines logged on this test's thread: message and fields.
+#[derive(Clone, Default)]
+struct Lines(Arc<std::sync::Mutex<Vec<HashMap<String, String>>>>);
+
+struct Fields<'a>(&'a mut HashMap<String, String>);
+
+impl tracing::field::Visit for Fields<'_> {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        self.0.insert(field.name().to_owned(), format!("{value:?}"));
+    }
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        self.0.insert(field.name().to_owned(), value.to_owned());
+    }
+}
+
+impl tracing::Subscriber for Lines {
+    fn enabled(&self, m: &tracing::Metadata<'_>) -> bool {
+        *m.level() <= tracing::Level::INFO
+    }
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+    fn event(&self, e: &tracing::Event<'_>) {
+        if *e.metadata().level() != tracing::Level::INFO {
+            return;
+        }
+        let mut fields = HashMap::new();
+        e.record(&mut Fields(&mut fields));
+        if let Ok(mut lines) = self.0.lock() {
+            lines.push(fields);
+        }
+    }
+    fn enter(&self, _: &tracing::span::Id) {}
+    fn exit(&self, _: &tracing::span::Id) {}
+}
+
+impl Lines {
+    /// The INFO lines about the better copy (its race, or fetching it).
+    fn about_the_better_copy(&self) -> Vec<HashMap<String, String>> {
+        let lines = self.0.lock().map(|l| l.clone()).unwrap_or_default();
+        lines
+            .into_iter()
+            .filter(|l| {
+                let m = l.get("message").map(String::as_str).unwrap_or_default();
+                m.contains("better copy") || m.contains("better-copy")
+            })
+            .collect()
+    }
+}
+
+#[tokio::test]
+async fn r26_a_won_race_leaves_one_log_line_with_its_time_to_winner() -> Result<()> {
+    let lines = Lines::default();
+    let _logging = tracing::subscriber::set_default(lines.clone());
+    let s = [mp3("Song")];
+    let h = hub(
+        capped(),
+        &["Song"],
+        vec![
+            peer("slow", Behaviour::Sends(SLOW), 9.0, &s),
+            peer("silent", Behaviour::Silent, 8.0, &s),
+            peer("fast", Behaviour::Sends(FAST), 1.0, &s),
+        ],
+    )
+    .await?;
+    let f = play_low(&h, "Song").await?;
+    // slskd takes 3 s to answer each cancel: the time to the winner doesn't include them.
+    h.fake.slow_cancels(SECS(3));
+    first_offer(&h, &f, SECS(25))
+        .await
+        .ok_or_else(|| Error::internal("R26 no offer in 25 s"))?;
+    tokio::time::sleep(SECS(4)).await;
+    let said = lines.about_the_better_copy();
+    assert_eq!(said.len(), 1, "R26 lines about the better copy: {said:?}");
+    let line = &said[0];
+    assert_eq!(
+        line.get("message").map(String::as_str),
+        Some("better-copy race"),
+        "R26 {line:?}"
+    );
+    assert_eq!(line.get("winner").map(String::as_str), Some("fast"), "R26 {line:?}");
+    let secs: f64 = line.get("secs").and_then(|s| s.parse().ok()).unwrap_or(f64::MAX);
+    assert!(
+        secs <= 4.5,
+        "R26 time to winner {secs:.1} s: it counts more than the race"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn r26_an_interrupted_race_leaves_one_log_line() -> Result<()> {
+    let lines = Lines::default();
+    let _logging = tracing::subscriber::set_default(lines.clone());
+    let s = [mp3("Song")];
+    let h = hub(
+        capped(),
+        &["Song"],
+        vec![
+            peer("s1", Behaviour::Silent, 9.0, &s),
+            peer("s2", Behaviour::Silent, 8.0, &s),
+        ],
+    )
+    .await?;
+    play_low(&h, "Song").await?;
+    let deadline = Instant::now() + SECS(10);
+    while h.began(&["s1", "s2"]).is_none() {
+        if Instant::now() > deadline {
+            return Err(Error::internal("R26 no peer asked in 10 s"));
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    tokio::time::sleep(SECS(2)).await;
+    // The listener skips while the lanes race.
+    h.fetcher.stop_streaming(&track("Song").id, &h.profile());
+    tokio::time::sleep(SECS(3)).await;
+    let said = lines.about_the_better_copy();
+    assert_eq!(said.len(), 1, "R26 lines about the better copy: {said:?}");
+    assert_eq!(
+        said[0].get("message").map(String::as_str),
+        Some("better-copy race"),
+        "R26 {said:?}"
+    );
+    assert_eq!(said[0].get("winner").map(String::as_str), Some("none"), "R26 {said:?}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn r27_a_peer_dropping_the_request_itself_is_not_counted_as_a_cancel() -> Result<()> {
+    let titles = ["Alpha", "Bravo", "Charlie", "Delta"];
+    let files: Vec<String> = titles.iter().map(|t| mp3(t)).collect();
+    let h = hub(
+        capped(),
+        &titles,
+        vec![
+            // Sends 200 KB, then drops the request itself (slskd: Completed, Errored).
+            peer("dropper", Behaviour::Drops(200_000, FAST), 9.0, &files),
+            peer("winner", Behaviour::Sends(FASTEST), 1.0, &files),
+        ],
+    )
+    .await?;
+    for title in titles {
+        let f = play_low(&h, title).await?;
+        let (_, offer) = first_offer(&h, &f, SECS(25))
+            .await
+            .ok_or_else(|| Error::internal(format!("R27 no offer for {title}")))?;
+        assert_eq!(peer_of(&offer), "winner", "R27 {title}: {offer}");
+        if let Some(up) = h.fetcher.upgrade(&(track(title).id, h.profile())) {
+            ended(&up, SECS(20)).await?;
+        }
+        h.fetcher.stop_streaming(&track(title).id, &h.profile());
+        tokio::time::sleep(SECS(1)).await;
+    }
+    let asked = h.fake.requests_of("dropper");
+    assert!(
+        asked.iter().all(|r| !r.cancelled),
+        "R27 lull cancelled the dropper: {asked:?}"
+    );
+    assert_eq!(asked.len(), 4, "R27 the dropper was raced {} times, not 4", asked.len());
+    Ok(())
+}
+
+#[tokio::test]
+async fn r28_a_kept_copy_that_arrives_whole_is_offered() -> Result<()> {
+    let h = hub(
+        Rules::default(),
+        &["Song"],
+        vec![
+            // Queued 7 s, then slow for 17 s (long enough to be judged slow), then fast to the end.
+            peer(
+                "q",
+                Behaviour::Slowly {
+                    queued: SECS(7),
+                    slow_for: SECS(17),
+                    slow: SLOW,
+                    then: FASTEST,
+                },
+                5.0,
+                &[flac("Song")],
+            )
+            .busy(2),
+            peer("h1", Behaviour::Queues, 9.0, &[mp3("Song")]).busy(1),
+        ],
+    )
+    .await?;
+    let f = play_low(&h, "Song").await?;
+    let (offer, seen) = ready_offer(&h, &f, SECS(50)).await;
+    let (_, offer) = offer.ok_or_else(|| Error::internal(format!("R28 nothing ready in 50 s; offered {seen:?}")))?;
+    assert_eq!(peer_of(&offer), "q", "R28 ready offer: {offer}");
     Ok(())
 }
