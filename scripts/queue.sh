@@ -81,6 +81,9 @@ checks() { # <base> <candidate>
   want aur '^(packaging/aur/|scripts/aur-pkgbuild\.sh$)'
   want android '^(app/gen/android/|app/src/mobile/|app/build\.rs$|app/Cargo\.(toml|lock)$|app/tauri\.android\.conf\.json$|scripts/android-|rust-toolchain\.toml$)'
   want slskd '^(deploy/compose\.yaml$|app/build\.rs$|app/slskd/|crates/soulseek/|tests/slskd-contract/)'
+  # lull's slskd for Windows, built twice inside the contract (ADR-0062): only its recipe and its pin change its bytes.
+  # main-full builds it every time, so what the recipe pulls drifting shows there without holding a landing.
+  want slskd_windows '^(app/build\.rs$|app/slskd/)'
   # The Linux server package (ADR-0090): how it is built, the programs app/build.rs pins for it, the contract, and the
   # hub code only the package runs (its own slskd, its commands, self-update), and the library's Jellyfin side, which it
   # meets a real Jellyfin with. Any other hub change reaches it in main-full.yml.

@@ -42,6 +42,7 @@ jobs:
       graphics: ${{ steps.plan.outputs.graphics }}
       aur: ${{ steps.plan.outputs.aur }}
       slskd: ${{ steps.plan.outputs.slskd }}
+      slskd_windows: ${{ steps.plan.outputs.slskd_windows }}
       package: ${{ steps.plan.outputs.package }}
       image: ${{ steps.plan.outputs.image }}
       pages: ${{ steps.plan.outputs.pages }}
@@ -129,6 +130,7 @@ jobs:
     uses: ./.github/workflows/slskd-contract.yml
     with:
       ref: ${{ needs.plan.outputs.candidate }}
+      windows-build: ${{ needs.plan.outputs.slskd_windows == 'true' }}
 
   # The Linux server package (ADR-0090), installed as a service and held to the hub contract.
   server-package:

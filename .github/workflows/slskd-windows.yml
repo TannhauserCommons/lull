@@ -1,9 +1,9 @@
 name: slskd-windows
 # lull's slskd for Windows (ADR-0062): app/slskd/build.sh, run twice in different folders, must give the same
-# bytes, and the bytes app/build.rs pins once it pins this build. The slskd contract calls it when the recipe or
-# the pin changes; slskd-windows-publish calls it before attaching the zips to a release. Read-only on purpose:
-# the queue calls it, and a called workflow may ask for no more than its caller grants, checked before any job
-# is skipped (one asking for write here stopped every queue run).
+# bytes, and the bytes app/build.rs pins once it pins this build. The slskd contract calls it when the queue's
+# candidate changes the recipe or the pin, and on every main-full run; slskd-windows-publish calls it before
+# attaching the zips to a release. Read-only on purpose: the queue calls it, and a called workflow may ask for no
+# more than its caller grants, checked before any job is skipped (one asking for write here stopped every queue run).
 on:
   workflow_dispatch:
   workflow_call:
