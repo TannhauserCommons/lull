@@ -4874,6 +4874,30 @@
     });
     App.on('route', function (r) { if (r.path === '/search' && document.activeElement !== input) { input.value = r.query.q || ''; toggleClear(); } });
   }
+  /* The Search tab opens the keyboard, as phone apps do. iOS opens it only for a focus made inside the tap itself, and the
+     search page's field is not drawn yet when the tap comes from another page: the tap focuses a stand-in field, and the
+     page's own field takes the focus as it arrives (the keyboard stays up between two fields). Already on search, the
+     tap focuses the field at once. */
+  function wireSearchTab() {
+    var standIn = null, timer = null;
+    function drop() { clearTimeout(timer); if (standIn) { standIn.remove(); standIn = null; } }
+    function focusField() {
+      var f = $('#disc-q'); if (!f) return false;
+      f.focus(); try { f.setSelectionRange(f.value.length, f.value.length); } catch (e) { /* a type with no caret */ }
+      drop(); return true;
+    }
+    document.addEventListener('click', function (e) {
+      if (e.defaultPrevented || !e.target.closest('[data-region="tabbar"] [data-nav="search"]') || focusField()) return;
+      drop();
+      standIn = document.createElement('input');
+      standIn.type = 'search'; standIn.tabIndex = -1; standIn.setAttribute('aria-hidden', 'true');
+      standIn.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;font-size:16px';
+      document.body.appendChild(standIn);
+      standIn.focus({ preventScroll: true });
+      timer = setTimeout(drop, 4000);
+    });
+    App.on('route', function (r) { if (standIn) { if (r.path !== '/search' || !focusField()) drop(); } });
+  }
   function wireThemeButtons() {
     function upd() {
       var night = App.theme() === 'night';
@@ -4988,7 +5012,7 @@
 
   var booted = false;
   function boot() {
-    renderRegionSlots(); renderBrand(); renderRail(); renderTray(); wireHeader(); wireThemeButtons(); layoutCtx(); renderCtx(); wireMediaSession();
+    renderRegionSlots(); renderBrand(); renderRail(); renderTray(); wireHeader(); wireSearchTab(); wireThemeButtons(); layoutCtx(); renderCtx(); wireMediaSession();
     updateActivityBadge(); renderBar();
     window.addEventListener('online', refetchAll);
     var headsQueued = false;                                   // card heads survive any repaint (see ui.cardHeads)
