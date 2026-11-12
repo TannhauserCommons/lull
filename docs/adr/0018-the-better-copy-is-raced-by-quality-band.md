@@ -91,6 +91,8 @@ Every file below begins "Acceptance tests for ADR-0018: the builder must not edi
 | R26 | Exactly one INFO line per race, whatever its end (won, kept, lost, skipped, failed), and no other line about the better copy; `secs` is the time to the winner, not counting cancels | `r26_a_won_race_leaves_one_log_line_with_its_time_to_winner`, `r26_an_interrupted_race_leaves_one_log_line` |
 | R27 | Only lull's own cancels of a sending upload count toward the 3 a day; a peer dropping the request itself doesn't | `r27_a_peer_dropping_the_request_itself_is_not_counted_as_a_cancel` |
 | R28 | A kept queue that was slow but then arrives whole while the song plays is offered (a copy all here passes) | `r28_a_kept_copy_that_arrives_whole_is_offered` |
+| R29 | A song's start never takes a copy a race has claimed (or claims it first), and no lane deletes a file a start uses: the playing device's copy stays whole and playable | `r29_a_songs_start_never_takes_a_copy_a_race_holds` |
+| R30 | Until a copy's first byte, every leg of its request follows the 6 s rule, a leg started by a seek included; a seek into a part not yet here still lands | `r30_a_seek_before_the_first_byte_keeps_the_six_second_rule` |
 | S1 | The race never touches the playing fetch (guard) | `s1_the_race_leaves_the_playing_copy_alone` |
 | S2 | After the switch, a seek anywhere reads the winner's own bytes (guard) | `s2_after_the_switch_a_seek_anywhere_reads_the_winners_bytes` |
 | S3 | A seek while the race runs keeps the place; no reload (guard) | `tests/ui/gates/race-seek.spec.mjs` "a seek while the better copy races keeps the listener's place" |
@@ -105,7 +107,7 @@ Every file below begins "Acceptance tests for ADR-0018: the builder must not edi
 
 ```sh
 cargo test -p lull-core --test adr0018_bands   # R1-R4: "test result: ok. 4 passed; 0 failed"
-cargo test -p lull-soulseek race_tests         # R5-R28, S1-S2: "test result: ok. 26 passed; 0 failed" (~50 s)
+cargo test -p lull-soulseek race_tests         # R5-R30, S1-S2: "test result: ok. 28 passed; 0 failed" (~50 s)
 cd tests/ui && FIXTURE_PORT=8901 npx playwright test -c gates/playwright.config.mjs --project race-seek --reporter line   # S3-S9: "7 passed"
 ```
 
