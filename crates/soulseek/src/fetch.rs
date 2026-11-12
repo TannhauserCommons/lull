@@ -1368,6 +1368,9 @@ impl Fetcher {
         self.search_beside(f);
         // A preload that made way is Soulseek's side already.
         let mut soulseek = self.upgrade(&f.track.id).or_else(|| self.racer(f));
+        // Soulseek's copy sent first but is above the streaming cap: it starts the song only when
+        // YouTube has no copy that may (`policy::start`, within the cap first).
+        let mut held = false;
         // YouTube's lookup, while Soulseek's side may send first.
         let looked = {
             let lookup = self.youtube_copy(f, stop);
@@ -1375,7 +1378,11 @@ impl Fetcher {
             loop {
                 tokio::select! {
                     r = &mut lookup => break Some(r),
-                    won = soulseek_sends(soulseek.clone()), if soulseek.is_some() => {
+                    won = soulseek_sends(soulseek.clone()), if soulseek.is_some() && !held => {
+                        if won && self.above_cap(f, soulseek.as_ref()) {
+                            held = true;
+                            continue;
+                        }
                         if won {
                             break None;
                         }
@@ -1421,7 +1428,11 @@ impl Fetcher {
                             }
                             youtube_sent = true;
                         }
-                        won = soulseek_sends(soulseek.clone()), if !youtube_sent && soulseek.is_some() => {
+                        won = soulseek_sends(soulseek.clone()), if !youtube_sent && soulseek.is_some() && !held => {
+                            if won && self.above_cap(f, soulseek.as_ref()) {
+                                held = true;
+                                continue;
+                            }
                             if won {
                                 break Err(());
                             }
@@ -1473,6 +1484,13 @@ impl Fetcher {
         let u = self.start_upgrade(f.track.clone(), Purpose::Stream, None, f.opened, Beside::Racer)?;
         tracing::info!(track = %f.track.id, job = u.job_id, "racing Soulseek's copy against YouTube's");
         Some(u)
+    }
+
+    /// Whether Soulseek's side of the race (`u`) is on a copy above the streaming cap.
+    fn above_cap(&self, f: &Fetch, u: Option<&Arc<Fetch>>) -> bool {
+        let rules = self.rules.get();
+        u.and_then(|u| u.now().source)
+            .is_some_and(|s| !policy::within_cap(&rules.stream, &s, f.track.duration))
     }
 
     /// The copy `copy` as known: a peer's from its search, YouTube's from its own facts.
@@ -2061,7 +2079,14 @@ impl Fetcher {
             }
             let peers = copies.len() + tried.len();
             self.update(f, |p| p.peers_found = peers);
-            if let Some(passing) = copies.iter().find(|r| r.meets) {
+            if let Some(passing) = copies.iter().find(|r| r.meets && !r.above_max) {
+                return Ok(passing.source.clone());
+            }
+            // A copy above the streaming cap only when none within it may start the song.
+            let within_may_start = copies
+                .iter()
+                .any(|r| !r.above_max && policy::may_start(&rules.stream, &r.source, f.track.duration));
+            if !within_may_start && let Some(passing) = copies.iter().find(|r| r.meets) {
                 return Ok(passing.source.clone());
             }
             let Some(best) = copies.first() else {
@@ -3657,6 +3682,37 @@ mod tests {
                 assert!(fetcher.event(&yt)["upgrade"].is_null(), "offered a tiny gain");
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn a_copy_above_the_streaming_cap_never_starts_the_song_while_youtube_has_one_within_it() -> Result<()> {
+            // Live (2026-11-12): Marlon Funaki's "Metaphor", under a 320 kbps minimum and cap and
+            // `playBest`, started on a peer's FLAC: Soulseek's side sent before YouTube's Opus 160
+            // and the race handed it the song, though the cap is a maximum.
+            const FLAC: &str = "Music\\Artist\\Album\\01 - Song.flac";
+            let mut rules = start_fast_rules();
+            rules.stream.minimum.kbps = 320;
+            rules.stream.max_kbps = 320;
+            rules.stream.below = lull_core::quality::StreamBelow::PlayBest;
+            let bytes: Vec<u8> = (0..900_000).map(|i| (i % 251) as u8).collect();
+            let (_fake, fetcher) = racing(
+                HashMap::from([(FLAC.to_owned(), bytes.clone())]),
+                rules,
+                Timed::opus(Duration::from_secs(1)),
+            )
+            .await?;
+            let flac = shared("peer", FLAC, bytes.len() as u64, "flac", None, true);
+            fetcher.sources.add(HashMap::from([(track().id, vec![flac])]));
+            fetcher.sources.mark_searched(&track().id);
+
+            let opened = fetcher.stream(track(), None).await?;
+            let (chunk, _) = first_bytes(&opened).await?;
+            let playing = last(&opened);
+            let event = fetcher.event(&playing);
+            assert_eq!(event["peer"], lull_core::youtube::PEER, "{event}");
+            assert!(chunk.iter().all(|b| *b == 7), "YouTube's copy within the cap plays");
+            assert!(event["upgrade"].is_null(), "the FLAC is never offered: {event}");
             Ok(())
         }
 
