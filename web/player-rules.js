@@ -175,6 +175,17 @@
     return ev.replaces && ev.replaces === job ? 'adopt' : 'drop';
   };
 
+  /* the output failed (docs/context/web.md#a-songs-outcome; the page only, so tests/web/output-error.test.mjs holds its
+     cases): 'restart' a song restored after a reload from 0:00 (its resumed stream may be gone), 'unpick' a copy the
+     listener picked for lull's own choice (a pick stays with its queue entry, and may outlive the copy: the hub no
+     longer has it, or this device can't play it), else 'ask-hub' for a Soulseek or YouTube song's outcome, or 'own'.
+     s: { resuming, soulseek, picked } */
+  R.afterOutputError = function (s) {
+    if (s.resuming) return 'restart';
+    if (!s.soulseek) return 'own';
+    return s.picked ? 'unpick' : 'ask-hub';
+  };
+
   R.playingCopy = function (s) {
     var e = s.e || {}, peer = s.peer || null, lib = s.library || null, where;
     if (e.local) where = 'device';

@@ -2764,7 +2764,18 @@
      hub, which answers with the job's state, its own reason in it, and records a copy that arrived but can't be played
      here. The player adds no reason of its own; only "can't reach the lull server" is its to say. */
   function onOutputError(e, msg) {
-    if (e.resumeAt && e === cur) { e.resumeAt = 0; ps.pos = 0; load(ps.index, { at: 0 }); return; }   // see P.play
+    var next = LullRules.afterOutputError({ resuming: !!e.resumeAt && e === cur, soulseek: e.soulseek, picked: !!e.source && e === cur });
+    if (next === 'restart') { e.resumeAt = 0; ps.pos = 0; load(ps.index, { at: 0 }); return; }   // see P.play
+    /* the copy the listener picked can't play here: lull's own choice plays instead, from where the song was. Before
+       (2026-11-12), a pick kept with the queue was sent on every later play, and the song stopped at it, a day after
+       the hub had last seen that copy; Retry only asked for it again */
+    if (next === 'unpick') {
+      e.source = null; ps.source = null;
+      App.toast('The copy you picked couldn\'t play, so lull chose one', { icon: 'soulseek' });
+      load(ps.index, { at: ps.pos, autoplay: ps.playing, keepPlay: true });
+      queueChanged();
+      return;
+    }
     var t = P.current();
     function show(status, text) {
       if (e !== cur || P.current() !== t) return;
