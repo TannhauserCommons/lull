@@ -2,9 +2,10 @@
 //! stays per device in the browser). Editable values are stored here; values from server
 //! config come back read-only as `{ value, source: "config" }`, and secrets only say whether
 //! they are set. Every change, and start-up, publishes a `settings` event for the crates that
-//! honour them (soulseek: sources and sharing; library: the saving profile; discovery: discovery;
-//! youtube: `sources.youtube`). Last.fm's switches live in
-//! lastfm (`/api/lastfm`), so they are not repeated here.
+//! honour them (soulseek: sources, the source presets and sharing; library: the saving profile;
+//! discovery: discovery; youtube: `sources.youtube`). Last.fm's switches live in
+//! lastfm (`/api/lastfm`), so they are not repeated here. The source presets (ADR-0017) are
+//! stored here too, and changed through `/api/sources/presets` (`presets.rs`).
 
 use std::sync::Arc;
 
@@ -13,7 +14,10 @@ use axum::extract::rejection::JsonRejection;
 use axum::routing::get;
 use axum::{Json, Router};
 use lull_core::config::Config;
-use lull_core::quality::{Minimum, SaveProfile, StreamProfile};
+use std::collections::BTreeMap;
+
+use lull_core::presets::{self as preset, Preset};
+use lull_core::quality::{FORMATS, Minimum, SaveProfile, StreamProfile};
 use lull_core::{Ctx, Error, Result, youtube};
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -30,7 +34,7 @@ pub(crate) fn routes() -> Router<Arc<Service>> {
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub(crate) struct Prefs {
     playback: Playback,
-    sources: Sources,
+    pub(crate) sources: Sources,
     search: SearchPrefs,
     library: LibraryPrefs,
     sharing: SharingPrefs,
@@ -77,11 +81,14 @@ enum Normalisation {
 }
 
 /// Which Soulseek copy to play and to save (ADR-0008); soulseek and library read them from the
-/// `settings` event.
+/// `settings` event. Streaming is per device: each uses a source preset (ADR-0017).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
-struct Sources {
-    stream: StreamProfile,
+pub(crate) struct Sources {
+    /// The source presets, the built-ins Desktop and Phone first: named streaming profiles.
+    pub(crate) presets: Vec<Preset>,
+    /// The preset each device chose, by device id; a device not here uses its kind's default.
+    pub(crate) devices: BTreeMap<String, String>,
     save: SaveProfile,
     /// Peers with a longer upload queue are skipped.
     max_peer_queue: u32,
@@ -96,7 +103,8 @@ struct Sources {
 impl Default for Sources {
     fn default() -> Self {
         Sources {
-            stream: StreamProfile::default(),
+            presets: preset::builtins(StreamProfile::default()),
+            devices: BTreeMap::new(),
             save: SaveProfile::default(),
             max_peer_queue: 20,
             stall_timeout: 15,
@@ -184,8 +192,10 @@ impl Default for DiscoverySources {
     }
 }
 
-/// What `sources.*.minimum.formats` may name: the formats soulseek can play (`.aif` counts as aiff).
-const FORMATS: [&str; 8] = ["flac", "wav", "aiff", "m4a", "aac", "mp3", "ogg", "opus"];
+/// The most source presets a hub keeps, the built-ins included.
+pub(crate) const MAX_PRESETS: usize = 20;
+/// The longest preset name, in characters.
+pub(crate) const MAX_NAME: usize = 40;
 
 impl Prefs {
     /// Ranges and choices serde's types can't say.
@@ -204,22 +214,6 @@ impl Prefs {
                 "2, 5 or 10",
             ),
             ("playback.prefetchCount", self.playback.prefetch_count <= 3, "0 to 3"),
-            ("sources.stream.minimum.kbps", s.stream.minimum.kbps <= 320, "0 to 320"),
-            (
-                "sources.stream.maxKbps",
-                [0, 128, 192, 256, 320].contains(&s.stream.max_kbps),
-                "0 (no cap), 128, 192, 256 or 320",
-            ),
-            (
-                "sources.stream.minimum.kbps",
-                s.stream.max_kbps == 0 || s.stream.minimum.kbps <= s.stream.max_kbps,
-                "at most sources.stream.maxKbps while a cap is set",
-            ),
-            (
-                "sources.stream.minimum.formats",
-                minimum_can_pass(&s.stream.minimum),
-                "known formats (flac, wav, aiff, m4a, aac, mp3, ogg, opus), including a lossless one when lossless only is on",
-            ),
             ("sources.save.minimum.kbps", s.save.minimum.kbps <= 320, "0 to 320"),
             (
                 "sources.save.minimum.formats",
@@ -258,10 +252,69 @@ impl Prefs {
                 "between 0 and 1",
             ),
         ];
-        match checks.iter().find(|(_, ok, _)| !ok) {
-            Some((key, _, allowed)) => Err(Error::BadRequest(format!("{key} must be {allowed}."))),
+        if let Some((key, _, allowed)) = checks.iter().find(|(_, ok, _)| !ok) {
+            return Err(Error::BadRequest(format!("{key} must be {allowed}.")));
+        }
+        s.validate_presets()
+    }
+}
+
+impl Sources {
+    /// The built-ins first and always there, at most `MAX_PRESETS`, ids and names each once, every
+    /// profile one that can stream, and every device's choice a preset that exists.
+    fn validate_presets(&self) -> Result<()> {
+        let bad = |why: String| Err(Error::BadRequest(why));
+        let ids: Vec<&str> = self.presets.iter().map(|p| p.id.as_str()).collect();
+        if ids.get(..2) != Some(&[preset::DESKTOP, preset::PHONE]) {
+            return bad("The built-in presets Desktop and Phone come first and can't be removed.".into());
+        }
+        if self.presets.len() > MAX_PRESETS {
+            return bad(format!("At most {MAX_PRESETS} source presets."));
+        }
+        for (i, p) in self.presets.iter().enumerate() {
+            let name = p.name.trim();
+            if name.is_empty() || name != p.name || name.chars().count() > MAX_NAME {
+                return bad(format!(
+                    "A preset's name is 1 to {MAX_NAME} characters, without spaces around it."
+                ));
+            }
+            let earlier = &self.presets[..i];
+            if earlier.iter().any(|o| o.id == p.id) {
+                return bad(format!("Two presets have the id {}.", p.id));
+            }
+            if earlier.iter().any(|o| o.name.to_lowercase() == name.to_lowercase()) {
+                return bad(format!("There is already a preset called {name}."));
+            }
+            validate_stream(&p.stream).map_err(|why| Error::BadRequest(format!("{name}: {why}")))?;
+        }
+        match self.devices.iter().find(|(_, id)| !ids.contains(&id.as_str())) {
+            Some((device, id)) => bad(format!("Device {device} uses {id}, which is no preset.")),
             None => Ok(()),
         }
+    }
+}
+
+/// A streaming profile's ranges and choices serde's types can't say, as the sentence the
+/// listener reads.
+fn validate_stream(p: &StreamProfile) -> std::result::Result<(), String> {
+    let checks = [
+        (p.minimum.kbps <= 320, "the minimum bitrate is 0 to 320 kbps"),
+        (
+            [0, 128, 192, 256, 320].contains(&p.max_kbps),
+            "the maximum bitrate is no cap, 128, 192, 256 or 320 kbps",
+        ),
+        (
+            p.max_kbps == 0 || p.minimum.kbps <= p.max_kbps,
+            "the minimum bitrate is at most the maximum while a maximum is set",
+        ),
+        (
+            minimum_can_pass(&p.minimum),
+            "the formats are known ones (flac, wav, aiff, m4a, aac, mp3, ogg, opus), a lossless one among them when lossless only is on",
+        ),
+    ];
+    match checks.iter().find(|(ok, _)| !ok) {
+        Some((_, why)) => Err(format!("{why}.")),
+        None => Ok(()),
     }
 }
 
@@ -298,6 +351,24 @@ fn migrate(v: &mut Value, explicit: bool) {
         set_path(sources, &["stream", "below"], json!("ask"));
         set_path(sources, &["save", "below"], json!("ask"));
     }
+    // Stored before the source presets (ADR-0017): the one streaming profile becomes Desktop's,
+    // and Phone is made from it, so a device streams exactly as before until a phone uses Phone.
+    // A `PATCH` naming `stream` is refused instead (`refuse_preset_keys`).
+    if !explicit
+        && let Some(stream) = sources.remove("stream")
+        && !sources.contains_key("presets")
+        && let Some(desktop) = full_profile(stream)
+        && let Ok(presets) = serde_json::to_value(preset::builtins(desktop))
+    {
+        sources.insert("presets".into(), presets);
+    }
+}
+
+/// A stored streaming profile, written in part, completed by the defaults.
+fn full_profile(stored: Value) -> Option<StreamProfile> {
+    let mut full = serde_json::to_value(StreamProfile::default()).ok()?;
+    merge(&mut full, stored);
+    serde_json::from_value(full).ok()
 }
 
 fn set_path(map: &mut Map<String, Value>, path: &[&str], value: Value) {
@@ -342,27 +413,63 @@ async fn change(State(svc): State<Arc<Service>>, body: Result<Json<Value>, JsonR
         return Err(Error::internal("settings patch"));
     };
     refuse_config_keys(&patch, &config_entries(&svc.ctx))?;
-    let prefs = svc
-        .ctx
+    refuse_preset_keys(&patch)?;
+    let prefs = change_stored(&svc.ctx, move |prefs| {
+        let mut merged = to_value(prefs)?;
+        merge(&mut merged, Value::Object(patch));
+        *prefs = serde_json::from_value(merged).map_err(|e| Error::BadRequest(format!("Settings: {e}.")))?;
+        Ok(())
+    })
+    .await?;
+    respond(&svc.ctx, &prefs).map(Json)
+}
+
+/// Changes the stored settings in one transaction: `change` edits them, and they are stored only
+/// when they validate whole. Publishes `settings`.
+pub(crate) async fn change_stored(
+    ctx: &Ctx,
+    change: impl FnOnce(&mut Prefs) -> Result<()> + Send + 'static,
+) -> Result<Prefs> {
+    let prefs = ctx
         .db
         .call(move |conn| {
             let tx = conn.transaction()?;
-            let mut merged = to_value(&load(&tx)?)?;
-            merge(&mut merged, Value::Object(patch));
-            let prefs: Prefs =
-                serde_json::from_value(merged).map_err(|e| Error::BadRequest(format!("Settings: {e}.")))?;
+            let mut prefs = load(&tx)?;
+            change(&mut prefs)?;
             prefs.validate()?;
-            tx.execute(
-                "INSERT INTO collection_settings (id, json) VALUES (1, ?1)
-                 ON CONFLICT(id) DO UPDATE SET json = excluded.json",
-                [to_value(&prefs)?.to_string()],
-            )?;
+            store(&tx, &prefs)?;
             tx.commit()?;
             Ok(prefs)
         })
         .await?;
-    svc.ctx.bus.publish("settings", &prefs);
-    respond(&svc.ctx, &prefs).map(Json)
+    ctx.bus.publish("settings", &prefs);
+    Ok(prefs)
+}
+
+fn store(conn: &Connection, prefs: &Prefs) -> Result<()> {
+    conn.execute(
+        "INSERT INTO collection_settings (id, json) VALUES (1, ?1)
+         ON CONFLICT(id) DO UPDATE SET json = excluded.json",
+        [to_value(prefs)?.to_string()],
+    )?;
+    Ok(())
+}
+
+/// The streaming profile is a source preset's now, and presets and devices' choices have their
+/// own endpoints (ADR-0017): a `PATCH` naming them (an older UI's) gets a clear answer.
+fn refuse_preset_keys(patch: &Map<String, Value>) -> Result<()> {
+    let Some(Value::Object(sources)) = patch.get("sources") else {
+        return Ok(());
+    };
+    match ["stream", "presets", "devices"]
+        .into_iter()
+        .find(|k| sources.contains_key(*k))
+    {
+        Some(key) => Err(Error::BadRequest(format!(
+            "sources.{key} is a source preset's now: change it in Settings › Sources (PATCH /api/sources/presets/{{id}})."
+        ))),
+        None => Ok(()),
+    }
 }
 
 /// Whether liking a song saves it too (`library.autoSaveLikes`).
@@ -370,7 +477,7 @@ pub(crate) fn auto_save_likes(conn: &Connection) -> Result<bool> {
     Ok(load(conn)?.library.auto_save_likes)
 }
 
-fn load(conn: &Connection) -> Result<Prefs> {
+pub(crate) fn load(conn: &Connection) -> Result<Prefs> {
     let json: Option<String> = conn
         .query_row("SELECT json FROM collection_settings WHERE id = 1", [], |r| r.get(0))
         .optional()?;
@@ -492,7 +599,7 @@ fn refuse_config_keys(patch: &Map<String, Value>, config: &[(&str, Vec<(String, 
 }
 
 /// Objects merge key by key; anything else replaces.
-fn merge(base: &mut Value, patch: Value) {
+pub(crate) fn merge(base: &mut Value, patch: Value) {
     match (base, patch) {
         (Value::Object(base), Value::Object(patch)) => {
             for (k, v) in patch {
@@ -563,11 +670,12 @@ mod tests {
         )
         .await?;
         let s = &changed.sources;
+        let desktop = &s.presets[0].stream;
         assert_eq!(
-            s.stream.minimum.kbps, 320,
-            "a changed minimum becomes the streaming one"
+            desktop.minimum.kbps, 320,
+            "a changed minimum becomes the streaming one: Desktop's"
         );
-        assert_eq!(s.stream.below, StreamBelow::Ask);
+        assert_eq!(desktop.below, StreamBelow::Ask);
         assert_eq!(s.save.below, SaveBelow::Ask, "auto-pick off asks for saves too");
         assert_eq!(s.save.minimum, SaveProfile::default().minimum);
         assert_eq!((s.max_peer_queue, s.stall_timeout), (5, 30));
@@ -599,17 +707,95 @@ mod tests {
     #[test]
     fn a_streaming_cap_is_one_of_the_offered_bitrates_and_never_below_the_minimum() {
         let mut prefs = Prefs::default();
-        prefs.sources.stream.max_kbps = 256;
+        fn desktop(p: &mut Prefs) -> &mut StreamProfile {
+            &mut p.sources.presets[0].stream
+        }
+        desktop(&mut prefs).max_kbps = 256;
         assert!(prefs.validate().is_ok(), "192 kbps minimum under a 256 kbps cap");
-        prefs.sources.stream.max_kbps = 128;
+        desktop(&mut prefs).max_kbps = 128;
         assert!(prefs.validate().is_err(), "a cap below the minimum");
-        prefs.sources.stream.minimum.kbps = 0;
+        desktop(&mut prefs).minimum.kbps = 0;
         assert!(prefs.validate().is_ok());
-        prefs.sources.stream.max_kbps = 300;
+        desktop(&mut prefs).max_kbps = 300;
         assert!(prefs.validate().is_err(), "not an offered bitrate");
-        prefs.sources.stream.max_kbps = 0;
+        desktop(&mut prefs).max_kbps = 0;
         prefs.playback.prefetch_count = 4;
         assert!(prefs.validate().is_err(), "at most 3 songs ahead");
+    }
+
+    #[tokio::test]
+    async fn a_hubs_one_streaming_profile_becomes_desktop_and_phone_is_made_from_it() -> Result<()> {
+        let before = stored(
+            r#"{"sources":{"stream":{"minimum":{"losslessOnly":false,"kbps":256,"formats":["flac","mp3"]},"pick":"highest","below":"keepLooking","maxKbps":0},"maxPeerQueue":7}}"#,
+        )
+        .await?;
+        let s = &before.sources;
+        let ids: Vec<&str> = s.presets.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, [preset::DESKTOP, preset::PHONE]);
+        let desktop = &s.presets[0].stream;
+        assert_eq!(
+            desktop.minimum.formats,
+            ["flac", "mp3"],
+            "nothing changes for a desktop"
+        );
+        assert_eq!(
+            (desktop.pick, desktop.below, desktop.max_kbps),
+            (lull_core::quality::Pick::Highest, StreamBelow::KeepLooking, 0)
+        );
+        assert_eq!(s.presets[1].stream, preset::phone_from(desktop));
+        assert_eq!(
+            s.presets[1].stream.minimum.formats,
+            ["mp3"],
+            "Phone has the lossless ones off"
+        );
+        assert!(s.devices.is_empty());
+        assert_eq!(s.max_peer_queue, 7);
+
+        let partial = stored(r#"{"sources":{"stream":{"maxKbps":256}}}"#).await?;
+        let desktop = &partial.sources.presets[0].stream;
+        assert_eq!(
+            *desktop,
+            StreamProfile {
+                max_kbps: 256,
+                ..StreamProfile::default()
+            },
+            "a profile stored in part is completed by the defaults"
+        );
+        assert_eq!(partial.sources.presets[1].stream.max_kbps, 256);
+        Ok(())
+    }
+
+    #[test]
+    fn presets_keep_their_built_ins_and_names_and_patch_leaves_them_alone() {
+        let ok = Prefs::default();
+        assert!(ok.validate().is_ok());
+        let mut prefs = ok.clone();
+        prefs.sources.presets.remove(1);
+        assert!(prefs.validate().is_err(), "Phone is always there");
+        let mut prefs = ok.clone();
+        prefs.sources.presets.push(Preset {
+            id: "p-1".into(),
+            name: "phone".into(),
+            stream: StreamProfile::default(),
+        });
+        assert!(prefs.validate().is_err(), "a name already taken");
+        prefs.sources.presets[2].name = "Car".into();
+        assert!(prefs.validate().is_ok());
+        prefs.sources.presets[2].stream.minimum.formats = vec!["wma".into()];
+        assert!(prefs.validate().is_err(), "every preset's profile is checked");
+        let mut prefs = ok.clone();
+        prefs.sources.devices.insert("d-1".into(), "p-9".into());
+        assert!(prefs.validate().is_err(), "a device uses a preset that exists");
+
+        for key in ["stream", "presets", "devices"] {
+            let patch = json!({ "sources": { key: {} } });
+            let Value::Object(patch) = patch else { unreachable!() };
+            assert!(refuse_preset_keys(&patch).is_err(), "{key} has its own endpoints");
+        }
+        let Value::Object(fine) = json!({ "sources": { "stallTimeout": 20 } }) else {
+            unreachable!()
+        };
+        assert!(refuse_preset_keys(&fine).is_ok());
     }
 
     #[tokio::test]
