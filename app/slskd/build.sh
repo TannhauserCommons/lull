@@ -5,9 +5,8 @@
 #   sh app/slskd/build.sh <out dir>
 #
 # Writes <out dir>/slskd-<build>-win-x64.zip and -win-arm64.zip, each holding slskd.exe, slskd's LICENSE,
-# NOTICE.txt (what lull changed and where the source is) and the patch, and prints their sha256. Needs git, the
-# .NET SDK in global.json and python3. CI runs it (.github/workflows/slskd-windows.yml); app/build.rs pins the
-# zips it published.
+# NOTICE.txt (what lull changed and where the source is) and the patch, and prints their sha256. Needs git, curl and
+# python3, on Linux. CI runs it (.github/workflows/slskd-windows.yml); app/build.rs pins the zips it published.
 set -eu
 
 UPSTREAM_TAG=0.26.2
@@ -16,13 +15,32 @@ UPSTREAM_COMMIT=e472ecd706050332c8615dc3b908c92afaed592c
 LULL_BUILD=1
 BUILD="$UPSTREAM_TAG-lull.$LULL_BUILD"
 RUNTIMES="win-x64 win-arm64"
+# The SDK global.json names, by the sha512 Microsoft publishes for it (release-metadata/10.0/releases.json). The
+# build runs on this SDK alone, never on a .NET installed on the machine: the SDK runs on the newest runtime patch
+# it finds, the compiler writes that runtime's version into slskd's PDB, and the PDB's hash becomes slskd.dll's
+# ids, so a newer runtime on the machine changed the bytes (10.0.15 next to SDK 10.0.403's own 10.0.14).
+SDK_SHA512_LINUX_X64=b7b3d8461cf98b07d2552ce9199702fa3ad010ac2671a5f8cd5136f7534e50f6855ba7bbb02b11494563f1d04156276a31cda1103b900e5eecd0d9473dc7b9c5
+SDK_SHA512_LINUX_ARM64=0966aa2b70f4677b8319be9df447a78a0dcd6164836425b55a68fd714f4023feb87b4cac21b9a996b79472ad54487cd0adcd2a9dfd570e2b2a1d26423a2baa9b
 
 out=${1:?usage: build.sh <out dir>}
 here=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+trap '[ ! -x "$work/dotnet/dotnet" ] || "$work/dotnet/dotnet" build-server shutdown >/dev/null 2>&1 || true; rm -rf "$work"' EXIT
+
+sdk=$(sed -n 's/^ *"version": "\(.*\)",*$/\1/p' "$here/global.json")
+case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64) sdk_rid=linux-x64 sdk_sha512=$SDK_SHA512_LINUX_X64 ;;
+  Linux-aarch64) sdk_rid=linux-arm64 sdk_sha512=$SDK_SHA512_LINUX_ARM64 ;;
+  *) echo "build.sh runs on Linux x64 or arm64" >&2; exit 1 ;;
+esac
+curl -fsSL --retry 3 -o "$work/sdk.tar.gz" "https://builds.dotnet.microsoft.com/dotnet/Sdk/$sdk/dotnet-sdk-$sdk-$sdk_rid.tar.gz"
+echo "$sdk_sha512  $work/sdk.tar.gz" | sha512sum -c --quiet - ||
+  { echo "the .NET SDK $sdk download isn't the one build.sh pins: a new global.json needs its sha512 here" >&2; exit 1; }
+mkdir "$work/dotnet" && tar -xzf "$work/sdk.tar.gz" -C "$work/dotnet" && rm "$work/sdk.tar.gz"
+export DOTNET_ROOT="$work/dotnet" PATH="$work/dotnet:$PATH" DOTNET_MULTILEVEL_LOOKUP=0 \
+  DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
 
 git -c advice.detachedHead=false clone -q --depth 1 --branch "$UPSTREAM_TAG" https://github.com/slskd/slskd.git "$work/src"
 got=$(git -C "$work/src" rev-parse HEAD)

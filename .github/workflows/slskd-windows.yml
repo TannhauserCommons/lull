@@ -30,9 +30,8 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
-      - uses: actions/setup-dotnet@v5
-        with:
-          global-json-file: app/slskd/global.json
+      # No setup-dotnet: build.sh fetches the exact SDK and builds on it alone (setup-dotnet also adds the newest
+      # LTS runtime, which the SDK then runs on).
       - run: sh app/slskd/build.sh "$RUNNER_TEMP/first"
       - run: sh app/slskd/build.sh "$RUNNER_TEMP/second"
       - id: same
