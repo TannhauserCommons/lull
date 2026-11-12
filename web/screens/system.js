@@ -1,8 +1,8 @@
 /* screens/system.js.
    Stats (/stats), Settings (/settings/:section?), the shortcuts overlay (?), the command palette (Ctrl/Cmd+K),
    PWA install / update, and the service banners. First-run setup and pairing are screens/setup.js.
-   Reads: GET /api/stats, GET + PATCH /api/settings, GET + PATCH /api/config, GET /api/lastfm, store `services`
-   and App.server (docs/context/web.md, docs/context/api.md).
+   Reads: GET /api/stats, GET + PATCH /api/settings, GET + PATCH /api/config, GET /api/lastfm, /api/sources/presets,
+   store `services` and App.server (docs/context/web.md, docs/context/api.md).
    Sections: 0 helpers + generic controls, 1 stats, 2 settings, 3 shortcuts overlay, 4 command palette,
    7 PWA, 8 banners. */
 (function () {
@@ -156,11 +156,15 @@
   var effects = {};
   var fmtRange = {};                              // path -> fn(value) -> visible text / aria-valuetext
 
-  function get(path) { var c = custom[path]; return c && c.get ? c.get() : isCfg(path) ? cfgValue(path.slice(7)) : val(lookup(path)); }
+  function get(path) {
+    var c = custom[path];
+    return c && c.get ? c.get() : isCfg(path) ? cfgValue(path.slice(7)) : isPreset(path) ? presetValue(path) : val(lookup(path));
+  }
   function setVal(path, v) {
     if (typeof get(path) === 'number') v = +v;
     if (custom[path] && custom[path].set) custom[path].set(v);
     else if (isCfg(path)) cfgSave(path.slice(7), String(v)).catch(function (err) { App.toast('Couldn\'t change that: ' + err.message, { kind: 'error' }); App.refresh(); });
+    else if (isPreset(path)) presetSave(one(path, v));
     else save(one(path, v));
     if (effects[path]) effects[path](v);
   }
@@ -338,7 +342,7 @@
      (screens/appearance.js, owned by the themes work: docs/context/workspace.md). */
   App.settingsSections = App.settingsSections || {};
   App.settingsKit = { row: row, choice: choice, showChoice: showChoice, switchRow: switchRow, group: group, custom: custom, get: get, effects: effects,
-    range: range, fmtRange: fmtRange,
+    range: range, fmtRange: fmtRange, assign: assign,
     statusLine: statusLine, spinnerLine: spinnerLine, lockedValue: lockedValue, readError: readError, repaint: repaint,
     cfgField: cfgField, cfgNotice: cfgNotice, cfgItem: cfgItem, cfgSave: cfgSave, clause: clause,
     num: num, hours: hours, pct: pct, share: share };
@@ -394,30 +398,24 @@
   }
 
   /* ---------- sources (ADR-0008): a streaming and a saving profile, then the peer limits ----------
-     sources.stream / sources.save = { minimum: { losslessOnly, kbps, formats }, pick, below } (+ autoUpgrade,
-     upgradeEveryH for saving). A hub from before the profiles has neither: the section says so. */
+     The streaming profile is a source preset's (ADR-0017): GET /api/sources/presets { presets: [{ id, name, builtin,
+     stream }], device: { id, preset, chosen, phone } }. "This device uses" sets the calling device's
+     (PUT /api/sources/device { preset|null }); the streaming rows edit the preset picked under "Edit preset"
+     (PATCH /api/sources/presets/{id} { stream }), read and written by the path 'preset.<field>'.
+     sources.save = { minimum: { losslessOnly, kbps, formats }, pick, below, autoUpgrade, upgradeEveryH }. */
   var SOURCE_FORMATS = ['flac', 'wav', 'aiff', 'm4a', 'aac', 'mp3', 'ogg', 'opus'];
   var BELOW = {
     stream: [['playBest', 'Play the best one'], ['keepLooking', 'Keep looking'], ['ask', 'Ask me']],
     save: [['saveBestUpgrade', 'Save the best, upgrade later'], ['wait', 'Wait for one'], ['ask', 'Ask me']]
   };
   fmtRange['sources.stallTimeout'] = function (v) { return v + ' s'; };
-  ['stream', 'save'].forEach(function (kind) {
-    effects['sources.' + kind + '.minimum.losslessOnly'] = function (v) { $$('[data-when="' + kind + '-kbps"]').forEach(function (r) { r.hidden = !!v; }); };
-  });
+  effects['sources.save.minimum.losslessOnly'] = function (v) { $$('[data-when="save-kbps"]').forEach(function (r) { r.hidden = !!v; }); };
   effects['sources.save.autoUpgrade'] = function (v) { $$('[data-when="upgrade"]').forEach(function (r) { r.hidden = !v; }); };
-  /* the streaming cap never sits below the streaming minimum (the hub refuses that): moving one past the other
-     moves both, in one PATCH */
-  custom['sources.stream.maxKbps'] = { set: function (v) {
-    var c = { 'sources.stream.maxKbps': v }, min = +get('sources.stream.minimum.kbps') || 0;
-    if (v && min > v) c['sources.stream.minimum.kbps'] = v;
-    save(c); if (c['sources.stream.minimum.kbps'] != null) App.refresh();
-  } };
-  custom['sources.stream.minimum.kbps'] = { set: function (v) {
-    var c = { 'sources.stream.minimum.kbps': v }, max = +get('sources.stream.maxKbps') || 0;
-    if (max && v > max) c['sources.stream.maxKbps'] = v;
-    save(c); if (c['sources.stream.maxKbps'] != null) App.refresh();
-  } };
+  /* the streaming rows edit a source preset (screens/presets.js, App.presets: loaded with this section) */
+  function isPreset(path) { return path.indexOf('preset.') === 0; }
+  function presetValue(path) { return App.presets ? App.presets.value(path) : undefined; }
+  function presetSave(changes) { if (App.presets) App.presets.save(changes); }
+
   /* formats as toggle chips, each pressed while it counts. The hub stores none for any format, shown as every chip
      pressed: before (2026-11-12) "any" showed every chip off, so FLAC read as switched off while it still counted. At
      least one stays pressed. */
@@ -437,21 +435,21 @@
     setVal(path, on.length === SOURCE_FORMATS.length ? [] : on);
   });
   function profileRows(kind) {
-    var base = 'sources.' + kind, ll = !!get(base + '.minimum.losslessOnly');
+    var base = kind === 'stream' ? 'preset' : 'sources.save', ll = !!get(base + '.minimum.losslessOnly');
     return html`
       ${switchRow(base + '.minimum.losslessOnly', 'Lossless only', 'Only FLAC and other lossless files are good enough.')}
       ${row('Minimum bitrate', 'Lossy files below this aren\'t good enough. Lossless always is.', choice(base + '.minimum.kbps', 'Minimum bitrate', [[128, '128'], [192, '192'], [256, '256'], [320, '320']]), { when: kind + '-kbps', hidden: ll, cls: 'sys-row--sub' })}
-      ${kind === 'stream' && lookup('sources.stream.maxKbps') != null ? row('Maximum bitrate', 'Streaming prefers copies at or under this, to save data: lossless counts as over any cap. Saving is never capped.',
-        choice('sources.stream.maxKbps', 'Maximum bitrate', [[0, 'No cap'], [128, '128'], [192, '192'], [256, '256'], [320, '320']], 'sys-seg--wrap')) : ''}
+      ${kind === 'stream' ? row('Maximum bitrate', 'Streaming prefers copies at or under this, to save data: lossless counts as over any cap. Saving is never capped.',
+        choice('preset.maxKbps', 'Maximum bitrate', [[0, 'No cap'], [128, '128'], [192, '192'], [256, '256'], [320, '320']], 'sys-seg--wrap')) : ''}
       ${row('Formats', kind === 'stream' ? 'A format switched off never streams, unless you pick its copy yourself.' : 'Only the formats switched on count.', formatChips(base + '.minimum.formats'), { cls: 'sys-row--stack' })}
       ${row('Which copy', 'Among the copies that are good enough.', choice(base + '.pick', 'Which copy', [['fastest', 'Fastest'], ['highest', 'Highest quality']]))}
       ${row('If none is good enough', kind === 'stream' ? 'Playing the best one marks it as below your minimum.' : 'Saving the best one marks it, and auto-upgrade replaces it later.',
         choice(base + '.below', 'If none is good enough', BELOW[kind], 'sys-seg--wrap'), { cls: 'sys-row--stack' })}`;
   }
   function secSources() {
-    var profiles = lookup('sources.stream') && lookup('sources.save');
+    var profiles = lookup('sources.presets') && lookup('sources.save') && App.presets, streaming = profiles && App.presets.rows();
     return html`
-      ${profiles ? html`${group('streaming')}${profileRows('stream')}
+      ${profiles ? html`${group('streaming')}${streaming}${App.presets.edited() ? profileRows('stream') : ''}
         ${group('saving')}${profileRows('save')}
         ${switchRow('sources.save.autoUpgrade', 'Upgrade saved songs', 'Look again for saved songs below your minimum, and replace them when a good enough copy turns up. One search a minute at most.')}
         ${row('Look again every', 'How long to wait before searching for the same song again.', choice('sources.save.upgradeEveryH', 'Look again every', [[6, '6 h'], [12, '12 h'], [24, 'Day'], [168, 'Week']]), { when: 'upgrade', hidden: !get('sources.save.autoUpgrade'), cls: 'sys-row--sub' })}`
@@ -991,6 +989,7 @@
     var load = [
       App.settingsFit ? null : App.needSettingsFit(),
       HUB_SECTIONS[params.section] && !App.hubKit ? App.needHub() : null,
+      params.section === 'sources' && !App.presets ? App.needScript('screens/presets.js', 'source presets') : null,
       params.section === 'sounds' && !App.settingsSections.sounds ? App.needSoundSettings() : null
     ].filter(Boolean);
     return load.length ? Promise.all(load) : null;
