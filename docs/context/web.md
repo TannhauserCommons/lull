@@ -187,8 +187,13 @@ The state shape and methods are DESIGN.md 7.8; the insides:
 - **Sound comes from an output** (below): two `<audio>` decks in browsers and the desktop app, the native player in
   the Android app. Saved songs play from `/api/library/stream/{id}`, downloaded ones from this device; Soulseek
   songs from `/api/stream/{id}` (`?peer=&path=` after a manual source pick, `P.useSource(trackId, source)` with a
-  source row from `/api/tracks/{id}/sources`). Leaving a Soulseek song whose transfer hasn't finished sends
-  `DELETE /api/stream/{id}`.
+  source row from `/api/tracks/{id}/sources`). The pick stays with its queue entry, kept and restored with the
+  queue. Leaving a Soulseek song whose transfer hasn't finished sends `DELETE /api/stream/{id}`.
+- **When the output fails** (`LullRules.afterOutputError`): a song restored after a reload starts again from 0:00;
+  then a copy the listener picked gives way to lull's own choice, once, from where the song was ("The copy you picked
+  couldn't play, so lull chose one"), since a kept pick can outlive the copy; only then is it the song's outcome,
+  which the hub answers ([streaming.md](streaming.md#a-songs-outcome)). Before (2026-11-12), a pick made the day
+  before stopped the song on "this copy can't be played", and Retry asked for the same copy again.
 - **Streaming state** comes from `stream` events (`finding queued buffering streaming stalled fallback failed`,
   `received/size`, `peer`, `peersFound`, `queuePos`, `failedPeers`), merged with the element's own `playing`/`waiting`.
   `buffered` is `audio.buffered` cut to `received`. A seek may go anywhere for saved songs and up to what has
