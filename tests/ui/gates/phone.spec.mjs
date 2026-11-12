@@ -42,6 +42,44 @@ for (const design of designs) {
   });
 }
 
+// Every screen a listener can type on, and the others the key screens cover. A field under 16 px zooms iOS Safari in when
+// it takes focus and leaves it zoomed; so does a page wider than the screen (it starts zoomed out).
+const ROUTES = ['/home', '/search', '/search?q=velvet', '/library', '/library/songs', '/playlists', `/playlist/${ids.playlist}`, `/album/${ids.album}`,
+  `/artist/${ids.artist}`, '/now', '/stats', '/settings', '/settings/playback', '/settings/sources', '/liked', '/history', '/downloads'];
+
+/* the fields that take typing and the dropdowns, as drawn now (a checkbox, a range and a button never zoom the page) */
+function smallFields() {
+  const typed = /^(text|search|email|url|tel|password|number|date|datetime-local|month|time|week)?$/;
+  return [...document.querySelectorAll('input, textarea, select, [contenteditable=""], [contenteditable="true"]')].filter((e) => {
+    if (e.matches('input') && !typed.test(e.getAttribute('type') || '')) return false;
+    return e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden' && !e.closest('[hidden], .vh');
+  }).map((e) => ({ el: e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (e.className ? '.' + String(e.className).trim().split(/\s+/).join('.') : ''), px: parseFloat(getComputedStyle(e).fontSize) }))
+    .filter((f) => f.px < 16);
+}
+
+for (const [size, use] of Object.entries({ phone: {}, 'tablet (the header search shows)': { viewport: { width: 820, height: 1180 } } })) {
+  test.describe(size, () => {
+    test.use(use);
+    for (const design of designs) {
+      for (const theme of ['day', 'night']) {
+        test(`no field under 16 px and no sideways scroll / ${design} / ${theme}`, async ({ page }) => {
+          const found = [];
+          await openScreen(page, '/home', { design, theme, clock: false });
+          for (const route of ROUTES) {
+            await page.evaluate((r) => { location.hash = '#' + r; }, route);
+            await page.waitForTimeout(500);
+            await page.evaluate(() => document.fonts.ready);
+            for (const f of await page.evaluate(smallFields)) found.push(`${route}: ${f.el} is ${f.px}px`);
+            const wide = await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth);
+            if (wide > 0) found.push(`${route}: the page is ${wide}px wider than the screen`);
+          }
+          expect(found, 'fields iOS zooms into, and pages wider than the screen').toEqual([]);
+        });
+      }
+    }
+  });
+}
+
 test('the Search tab puts the cursor in the search field, from another page and on search itself', async ({ page }) => {
   await openScreen(page, '/home');
   const field = page.locator('#disc-q');
