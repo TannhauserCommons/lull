@@ -244,6 +244,7 @@ pub async fn start(
     ctx.spawn(feed::keep_fresh(svc.clone()));
     ctx.spawn(search::catalog::keep_choosing(svc.clone()));
     ctx.spawn(search::resolve::work(svc.clone()));
+    ctx.spawn(search::resolve::news(svc.clone()));
     Ok(svc)
 }
 
