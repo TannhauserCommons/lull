@@ -72,6 +72,8 @@ export default defineConfig({
     { name: 'mini-seek', testMatch: 'mini-seek.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // a tooltip never shows away from its control: a sheet's Close takes focus while the sheet still slides up
     { name: 'sheet-tip', testMatch: 'sheet-tip.spec.mjs', fullyParallel: true },
+    // the phone's chrome: Now Playing's play button, the Search tab, inputs that never zoom the page
+    { name: 'phone', testMatch: 'phone.spec.mjs', fullyParallel: true },
     // Esc on search goes back to the page before it, where it was
     { name: 'search-esc', testMatch: 'search-esc.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // Settings › Sources signs a hub's own slskd in to Soulseek from nothing, both keys in one request

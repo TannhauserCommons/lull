@@ -1433,7 +1433,9 @@
 :root[data-design="lull"] .lull-dev__name { flex: 1; color: #fff; font: 400 1.375rem/1 var(--f-disp); transform: skewX(-10deg); -webkit-text-stroke: 5px var(--v-edge); paint-order: stroke fill; text-shadow: 0 3px 0 var(--v-edge); white-space: nowrap; }
 :root[data-design="lull"][data-theme="night"] .lull-dev__name { -webkit-text-stroke-color: #2a1690; text-shadow: 0 3px 0 #0d0830, 0 0 16px rgba(160, 130, 255, .6); }
 :root[data-design="lull"] .lull-dev__led { display: inline-flex; align-items: center; height: 22px; padding: 0 10px; border-radius: 4px; background: var(--v-lcd); color: var(--v-lcd-ink); font: 900 .625rem/1 var(--f-ui); letter-spacing: .1em; text-transform: uppercase; text-shadow: var(--v-lcd-glow); box-shadow: var(--v-lcd-sh); white-space: nowrap; }
-:root[data-design="lull"] .lull-dev__screen { position: relative; display: grid; place-items: center; border-radius: 14px; overflow: hidden; background: var(--v-sky-screen); box-shadow: 0 0 0 1px rgba(40, 20, 140, .5), 0 1px 0 2px rgba(255, 255, 255, .45), inset 0 4px 12px -4px rgba(20, 0, 100, .45); }
+/* its own height on every screen: the tray, the disc and the play hub inside are sized from it (and the screen clips them), so
+   a screen with none shrinks to its padding and leaves the play key a sliver; wider windows set it from the window below */
+:root[data-design="lull"] .lull-dev__screen { height: clamp(200px, 72vw, 320px); position: relative; display: grid; place-items: center; border-radius: 14px; overflow: hidden; background: var(--v-sky-screen); box-shadow: 0 0 0 1px rgba(40, 20, 140, .5), 0 1px 0 2px rgba(255, 255, 255, .45), inset 0 4px 12px -4px rgba(20, 0, 100, .45); }
 :root[data-design="lull"][data-theme="night"] .lull-dev__screen { box-shadow: 0 0 0 1px rgba(200, 180, 255, .45), inset 0 4px 12px -4px #000; }
 :root[data-design="lull"] .lull-tray {
   position: relative; height: 90%; aspect-ratio: 1; border-radius: 16px; display: grid; place-items: center;
