@@ -14,9 +14,11 @@ use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::watch;
 
+use super::lanes::Permit;
+use super::race::FIRST_BYTE;
 use super::{
-    BUFFERED, FASTER_BY, Fetch, Fetcher, MEASURE_MIN, POLL, QUEUE_TIMEOUT, SLOW_AFTER, SLOWER_THAN, STALL_NOTICE,
-    START_TIMEOUT, Skip, Status, Stop, reason, stopped,
+    BUFFERED, FASTER_BY, Fetch, Fetcher, MEASURE_MIN, PATIENT_QUEUE, POLL, Patience, SLOW_AFTER, SLOWER_THAN,
+    STALL_NOTICE, START_TIMEOUT, Skip, Status, Stop, reason, stopped,
 };
 use crate::cache::Entry;
 use crate::ranges::Ranges;
@@ -47,12 +49,12 @@ const COLLAPSE: std::time::Duration = std::time::Duration::from_millis(300);
 /// request may wait in its queue (ADR-0014, Which peer).
 pub(super) const JUMP_SAME_S: u32 = 30;
 
-type Outcome<T> = std::result::Result<T, std::result::Result<Skip, Stop>>;
+pub(super) type Outcome<T> = std::result::Result<T, std::result::Result<Skip, Stop>>;
 
 /// lull's file for one copy and what of it has arrived.
 pub(super) struct Copy {
     pub path: PathBuf,
-    file: File,
+    pub(super) file: File,
     /// The bytes from the copy's own peer, and from another peer once its bytes matched the
     /// own peer's where both brought them.
     pub ranges: Ranges,
@@ -99,21 +101,21 @@ struct Check {
 
 /// Whose bytes: the copy's own peer's, or another peer's not checked yet.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum From {
+pub(super) enum From {
     Own,
     Side,
 }
 
 /// One slskd transfer of the copy, from `start`.
-struct Leg {
-    id: String,
-    start: u64,
+pub(super) struct Leg {
+    pub(super) id: String,
+    pub(super) start: u64,
     /// The next byte of the copy this leg brings.
-    front: u64,
+    pub(super) front: u64,
     /// Where slskd may write it: each spelling of its path, all sized to `start`.
     files: Vec<PathBuf>,
     reading: Option<(PathBuf, File)>,
-    begun: Instant,
+    pub(super) begun: Instant,
     /// The last new byte, for stall and queue timeouts: from when the peer started sending.
     last: (u64, Instant),
     was_running: bool,
@@ -124,8 +126,15 @@ struct Leg {
     landing: Option<Instant>,
 }
 
+/// A copy the race (`race.rs`) already has running: its file with what arrived, and the leg that
+/// brings it (`None`: all of it is here). `legs` carries on from it and never requests it again.
+pub(super) struct Started {
+    pub copy: Copy,
+    pub leg: Option<Leg>,
+}
+
 /// How a leg ended without failing the copy.
-enum Ended {
+pub(super) enum Ended {
     /// slskd finished the transfer: everything from the leg's start to the end is here.
     Finished,
     /// The leg reached bytes that had arrived before: it has nothing new to bring.
@@ -139,22 +148,34 @@ impl Fetcher {
     /// byte is here. A peer that doesn't answer, queues us too long, stalls, or proves slower
     /// than the song while a copy expected at `faster` bytes a second is left, is skipped, as
     /// with one transfer; what its legs brought stays recorded for a later fetch of the copy.
+    ///
+    /// `started`: the race's winner, whose room is made and whose first leg is running. `lane`: a
+    /// lane of the hub's budget, given back once the first byte is here (or the copy fails).
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn legs(
         &self,
         f: &Fetch,
         attempt: u32,
         source: &Source,
         faster: f64,
+        patience: Patience,
+        started: Option<Started>,
+        mut lane: Option<Permit>,
         stop: &mut watch::Receiver<bool>,
     ) -> Outcome<PathBuf> {
         let failed = |e: Error| Err(Stop::Failed(reason(&e)));
-        // lull's file, and slskd's for the leg running, can both hold the whole copy.
-        self.cache
-            .make_room(source.size.saturating_mul(2))
-            .await
-            .map_err(failed)?;
+        let (mut copy, mut first) = match started {
+            Some(Started { copy, leg }) => (copy, leg),
+            None => {
+                // lull's file, and slskd's for the leg running, can both hold the whole copy.
+                self.cache
+                    .make_room(source.size.saturating_mul(2))
+                    .await
+                    .map_err(failed)?;
+                (self.open_copy(f, source).await.map_err(failed)?, None)
+            }
+        };
         let below = !source.meets(&f.profile.minimum, f.track.duration);
-        let mut copy = self.open_copy(f, source).await.map_err(failed)?;
         self.update(f, |p| {
             p.attempt = attempt;
             p.source = Some(source.clone());
@@ -171,14 +192,21 @@ impl Fetcher {
         // reaches the end, the gap it left fills from its start.
         let mut jump = None;
         let outcome = loop {
-            let Some(start) = jump.take().or_else(|| copy.ranges.next_missing(0, source.size)) else {
-                break Ok(());
+            let leg = match first.take() {
+                Some(leg) => leg,
+                None => {
+                    let Some(start) = jump.take().or_else(|| copy.ranges.next_missing(0, source.size)) else {
+                        break Ok(());
+                    };
+                    match self.start_leg(source, start).await {
+                        Ok(leg) => leg,
+                        Err(e) => break Err(e),
+                    }
+                }
             };
-            let leg = match self.start_leg(source, start).await {
-                Ok(leg) => leg,
-                Err(e) => break Err(e),
-            };
-            let ended = self.run_leg(f, source, &mut copy, leg, faster, stop).await;
+            let ended = self
+                .run_leg(f, source, &mut copy, leg, faster, patience, &mut lane, stop)
+                .await;
             if let Err(e) = self.save_copy(f, source, &mut copy, false).await {
                 break Err(failed(e));
             }
@@ -205,7 +233,7 @@ impl Fetcher {
 
     /// lull's file for the copy: the one a stopped fetch of it left, with what it holds, or a
     /// new one.
-    async fn open_copy(&self, f: &Fetch, source: &Source) -> lull_core::Result<Copy> {
+    pub(super) async fn open_copy(&self, f: &Fetch, source: &Source) -> lull_core::Result<Copy> {
         let found = self.cache.partial(&f.track.id, &source.source_ref()).await?;
         let (path, ranges) = match found {
             Some(e) => (e.path, e.ranges.unwrap_or_default()),
@@ -252,7 +280,7 @@ impl Fetcher {
     /// bytes long, a hole, so slskd resumes there (`retry.partial: resume`, its default), and
     /// nothing before `start` in it is ever real audio. Both spellings of its path are (slskd on
     /// Windows spells some names its own way), so whichever slskd writes starts at `start`.
-    async fn start_leg(&self, source: &Source, start: u64) -> Outcome<Leg> {
+    pub(super) async fn start_leg(&self, source: &Source, start: u64) -> Outcome<Leg> {
         let files = self
             .layout
             .read()
@@ -288,6 +316,7 @@ impl Fetcher {
     /// a reader far ahead makes it start over there, or it fails. What it brings is copied as it
     /// lands and published as the copy's ranges. Beside it, another peer's leg may run for a
     /// reader far ahead (`tend_side`). However it ends, the rate the peer sent at is remembered.
+    #[allow(clippy::too_many_arguments)]
     async fn run_leg(
         &self,
         f: &Fetch,
@@ -295,6 +324,8 @@ impl Fetcher {
         copy: &mut Copy,
         mut leg: Leg,
         faster: f64,
+        patience: Patience,
+        lane: &mut Option<Permit>,
         stop: &mut watch::Receiver<bool>,
     ) -> Outcome<Ended> {
         let failed = |e: Error| Err(Stop::Failed(reason(&e)));
@@ -325,6 +356,24 @@ impl Fetcher {
                 }
             }
             self.copy_leg(copy, &mut leg, From::Own).await.map_err(failed)?;
+            if lane.is_some() && copy.ranges.total() > 0 {
+                // The first byte is here: no longer a request waiting on a peer.
+                lane.take();
+            }
+            // A request that isn't the listener's own gives way when no byte has come in
+            // `FIRST_BYTE`, queued or not (ADR-0018); a pick or a save keeps its patience below.
+            if patience == Patience::Brisk
+                && copy.ranges.total() == 0
+                && leg.front == leg.start
+                && leg.begun.elapsed() > FIRST_BYTE
+            {
+                self.end_leg(source, &mut leg, t.as_ref()).await;
+                return Err(Ok(Skip::Unavailable(format!(
+                    "{} sent no byte in {} s",
+                    source.user,
+                    FIRST_BYTE.as_secs()
+                ))));
+            }
             if copy.seeks_in_one.is_none() {
                 copy.seeks_in_one = seeks_in_one(&source.ext, copy).await;
             }
@@ -382,12 +431,7 @@ impl Fetcher {
             if t.phase() == Phase::Queued {
                 copy.queued = true;
             }
-            // Once YouTube's copy is ready, a peer that only keeps us queued is given up at once.
-            let queue = match f.youtube_ready.load(std::sync::atomic::Ordering::Relaxed) {
-                true => std::time::Duration::ZERO,
-                false => QUEUE_TIMEOUT,
-            };
-            match watch_leg(&mut leg, t, rules.stall_timeout(), queue) {
+            match watch_leg(&mut leg, t, rules.stall_timeout(), PATIENT_QUEUE) {
                 Watch::Gone(gone) => {
                     self.end_leg(source, &mut leg, Some(t)).await;
                     let pct = copy.ranges.total().saturating_mul(100) / source.size.max(1);
@@ -466,7 +510,7 @@ impl Fetcher {
             copy.side_leg = Some(side);
             return;
         };
-        match watch_leg(&mut side.leg, &t, rules.stall_timeout(), QUEUE_TIMEOUT) {
+        match watch_leg(&mut side.leg, &t, rules.stall_timeout(), PATIENT_QUEUE) {
             Watch::Gone(_) => {
                 self.measure(&side.source, &side.leg, &t).await;
                 return self.shun(copy, side).await;
@@ -499,7 +543,7 @@ impl Fetcher {
 
     /// Stops a leg that is still running, remembering the rate its peer sent at (`t`, slskd's
     /// latest word on it).
-    async fn end_leg(&self, source: &Source, leg: &mut Leg, t: Option<&Transfer>) {
+    pub(super) async fn end_leg(&self, source: &Source, leg: &mut Leg, t: Option<&Transfer>) {
         if let Some(t) = t {
             self.measure(source, leg, t).await;
         }
@@ -570,7 +614,7 @@ impl Fetcher {
     /// shorter than the leg's start, or one whose first bytes aren't the hole lull left, was
     /// started over from byte 0 (an slskd set to overwrite partial files): the leg then brings
     /// the copy from 0, which is still the copy's own bytes at their own offsets.
-    async fn copy_leg(&self, copy: &mut Copy, leg: &mut Leg, from: From) -> lull_core::Result<()> {
+    pub(super) async fn copy_leg(&self, copy: &mut Copy, leg: &mut Leg, from: From) -> lull_core::Result<()> {
         if leg.reading.is_none() {
             // The file slskd writes is the one that changed from how lull left it.
             for path in &leg.files {
@@ -706,13 +750,13 @@ impl Fetcher {
 }
 
 /// Where a leg stands, from slskd's transfer: running, done, or gone (with why).
-enum Watch {
+pub(super) enum Watch {
     Running(Phase, std::time::Duration),
     Done,
     Gone(Gone),
 }
 
-enum Gone {
+pub(super) enum Gone {
     /// The peer didn't accept the request in time.
     Silent,
     /// It kept the leg queued; the place, when known, as " at position N".
@@ -724,7 +768,7 @@ enum Gone {
 /// A leg's state from slskd's transfer, giving up on a peer that doesn't answer, queues it longer
 /// than `queue` or stalls. Silence counts from the last new byte, or from when the peer started sending:
 /// a slow connection set-up (or slskd retrying the peer) is not a stall.
-fn watch_leg(leg: &mut Leg, t: &Transfer, stall: std::time::Duration, queue: std::time::Duration) -> Watch {
+pub(super) fn watch_leg(leg: &mut Leg, t: &Transfer, stall: std::time::Duration, queue: std::time::Duration) -> Watch {
     let running = t.phase() == Phase::InProgress;
     if leg.front > leg.last.0 || (running && !leg.was_running) {
         leg.last = (leg.front, Instant::now());

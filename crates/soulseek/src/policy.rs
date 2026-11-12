@@ -17,12 +17,13 @@
 //!   never streams, whatever `below` says: not at the start, in the race, as a better copy or
 //!   from the cache. It is the listener's own choice (data on a phone); only their pick of that
 //!   copy plays it (2026-11-12).
-//! - **Switching mid-song** (`better`, `switch_to`). The best copy that passes the minimum and is
-//!   within the cap, by how it sounds (`rank::sound`: the score's format factor, its bitrate
-//!   scaled toward `maxKbps`; speed decides only what starts), and only for a clear step in sound
-//!   over the copy playing (`Quality::beats`: lossless over lossy, or a fifth more bitrate).
+//! - **Switching mid-song** (`better`, `switch_to`; ADR-0018). A better copy is one in a higher
+//!   quality band (`lull_core::quality::Band`) than the copy playing, in a band the profile
+//!   allows (`StreamProfile::bands`), passing the minimum and within the cap. A few kbps more in
+//!   the same band is no switch. They are listed highest band first, then by how they sound
+//!   (`rank::sound`); the race (`fetch/race.rs`) decides which of them arrives.
 
-use lull_core::quality::{StreamBelow, StreamProfile};
+use lull_core::quality::{Band, StreamBelow, StreamProfile};
 
 use crate::rank;
 use crate::sources::{self, Ranked, Source};
@@ -128,11 +129,22 @@ pub fn sound(p: &StreamProfile, preferred: &[String], copy: &Source, duration: O
     rank::sound(&sources::offer(copy, duration), preferred, p.max_kbps)
 }
 
-/// Whether the song should switch from `playing` to `copy` mid-song: `copy` passes the minimum,
-/// is within the cap (lossless counts as above any), and is a clear step in sound over `playing`.
+/// The quality band of `copy` (ADR-0018): a bitrate lull only estimated from size and length
+/// counts one band down.
+pub fn band(copy: &Source, duration: Option<u32>) -> Band {
+    Band::of(copy.quality(duration), copy.facts.kbps.is_none())
+}
+
+/// Whether the song should switch from `playing` to `copy` mid-song: `copy` is in a higher band
+/// than `playing`, one the profile allows, passes the minimum, is within the cap (lossless counts
+/// as above any) and is in a format left on.
 pub fn switch_to(p: &StreamProfile, copy: &Source, playing: &Source, duration: Option<u32>) -> bool {
-    let quality = copy.quality(duration);
-    passes(p, copy, duration) && quality.within(p.max_kbps) && quality.beats(&playing.quality(duration))
+    let band = band(copy, duration);
+    band > self::band(playing, duration)
+        && p.bands().contains(&band)
+        && allowed(p, copy)
+        && passes(p, copy, duration)
+        && within_cap(p, copy, duration)
 }
 
 /// What a better copy has to beat: the copy playing, and the peers that failed this play.
@@ -142,8 +154,8 @@ pub struct Bar {
     pub avoid: Vec<String>,
 }
 
-/// The copies worth switching to from the one playing (`switch_to`), best first by how they
-/// sound (`sound`), the speed expected only breaking ties. Not one whose queue is too long
+/// The copies worth switching to from the one playing (`switch_to`), highest band first, then by
+/// how they sound (`sound`), the speed expected only breaking ties. Not one whose queue is too long
 /// (`Ranked::queue_too_long`, from `sources::order`), the copy playing, or a peer that failed.
 pub fn better(
     p: &StreamProfile,
@@ -152,7 +164,7 @@ pub fn better(
     bar: &Bar,
     duration: Option<u32>,
 ) -> Vec<Ranked> {
-    let mut worth: Vec<(u8, Ranked)> = copies
+    let mut worth: Vec<(Band, u8, Ranked)> = copies
         .into_iter()
         .filter(|r| {
             !r.queue_too_long
@@ -160,10 +172,10 @@ pub fn better(
                 && !bar.avoid.contains(&r.peer)
                 && switch_to(p, &r.source, &bar.playing, duration)
         })
-        .map(|r| (sound(p, preferred, &r.source, duration), r))
+        .map(|r| (band(&r.source, duration), sound(p, preferred, &r.source, duration), r))
         .collect();
-    worth.sort_by(|(a, x), (b, y)| b.cmp(a).then(y.expected.total_cmp(&x.expected)));
-    worth.into_iter().map(|(_, r)| r).collect()
+    worth.sort_by(|(ba, a, x), (bb, b, y)| bb.cmp(ba).then(b.cmp(a)).then(y.expected.total_cmp(&x.expected)));
+    worth.into_iter().map(|(_, _, r)| r).collect()
 }
 
 /// The order a later play takes cached copies in, best first: within the cap, passing the
@@ -373,14 +385,20 @@ mod tests {
     }
 
     #[test]
-    fn a_switch_is_a_clear_step_in_sound_to_a_passing_copy_within_the_cap() {
+    fn a_switch_is_a_higher_band_passing_the_minimum_within_the_cap() {
         let mut p = profile(192, StreamBelow::PlayBest);
         p.max_kbps = 320;
         let mp3 = |kbps| copy("x", "mp3", kbps);
-        assert!(switch_to(&p, &mp3(320), &mp3(256), SONG), "256 to 320");
-        assert!(switch_to(&p, &mp3(256), &mp3(192), SONG), "192 to 256");
-        assert!(!switch_to(&p, &mp3(320), &mp3(300), SONG), "300 to 320 is a tiny gain");
-        assert!(!switch_to(&p, &mp3(224), &mp3(192), SONG), "and 192 to 224");
+        // ADR-0018 R4: 256 -> 320 and 192 -> 224 are no longer switches (the old step test:
+        // a fifth more bitrate); 192 -> 256 and 160 -> 320 cross into the high band.
+        assert!(!switch_to(&p, &mp3(320), &mp3(256), SONG), "256 to 320 is a small step");
+        assert!(switch_to(&p, &mp3(256), &mp3(192), SONG), "192 to 256 is a higher band");
+        assert!(switch_to(&p, &mp3(320), &mp3(160), SONG), "160 to 320 is a higher band");
+        assert!(switch_to(&p, &mp3(224), &mp3(192), SONG), "192 to 224 crosses 220");
+        assert!(
+            !switch_to(&p, &mp3(192), &mp3(160), SONG),
+            "160 to 192 stay in the lower band"
+        );
         assert!(!switch_to(&p, &mp3(256), &mp3(320), SONG), "never down");
         assert!(
             !switch_to(&p, &copy("x", "flac", 0), &mp3(192), SONG),
@@ -391,7 +409,7 @@ mod tests {
             "a copy below the minimum is no target"
         );
         assert!(
-            switch_to(&p, &mp3(256), &copy("YouTube", "webm", 160), SONG),
+            switch_to(&p, &mp3(256), &copy("YouTube", "webm", 128), SONG),
             "YouTube's copy is beaten as any"
         );
         p.max_kbps = 0;
@@ -402,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn the_upgrade_target_is_the_best_sounding_passing_copy_nearer_the_cap_however_slow() {
+    fn the_upgrade_target_is_the_best_sounding_copy_of_a_higher_band_however_slow() {
         let preferred = ["flac", "mp3"].map(String::from);
         let ranked = |user: &str, ext: &str, kbps: u32, speed: f64| Ranked {
             expected: speed,
@@ -426,8 +444,8 @@ mod tests {
             .collect();
         assert_eq!(
             got,
-            ["slow-256", "fast-192"],
-            "the 256 is at the cap; the FLAC and the 320 are above it"
+            ["slow-256"],
+            "the 256 is at the cap; the 192 is no higher band; the FLAC and the 320 are above it"
         );
         // Format points scale toward the cap: a 256 earns them all under a 256 cap.
         let mp3_256 = copy("x", "mp3", 256);
