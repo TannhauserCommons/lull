@@ -1617,6 +1617,12 @@
   :root[data-design="starlight"] .lib .trow__title { white-space: normal; text-align: left; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 }
 
+/* the mini player is a small ticket, on a phone and in the player bar's place on a phone held sideways */
+@media (max-width: 639px), (max-height: 500px) and (orientation: landscape) {
+  :root[data-design="starlight"] .mini { border: var(--stroke) solid var(--line); border-radius: var(--r-card); box-shadow: inset 0 0 0 6px var(--bg), inset 0 0 0 7px color-mix(in srgb, var(--line) 38%, transparent), var(--stack-sm); overflow: visible; }
+  :root[data-design="starlight"] .mini > .seek--line { left: 18px; right: 18px; top: -1px; }
+  :root[data-design="starlight"] .mini .bezel-thumb .cover { --cover-size: 42px; box-shadow: var(--sl-print-sm); }
+}
 /* =====================================================================
    Phone: the tab bar is a printed index on the sky (the place open marked with a 4-point star over its icon), the
    mini player a small ticket, Now Playing the poster on its own with its index of tabs under it
@@ -1627,9 +1633,7 @@
   :root[data-design="starlight"] .tray--compact .tray__word { font-size: .75rem; }
   :root[data-design="starlight"] .sky-specks > .sparkle:nth-child(1) { display: none; }
   :root[data-design="starlight"] .sys-tile__value { font-size: 1.75rem; white-space: nowrap; }
-  :root[data-design="starlight"] .mini { border: var(--stroke) solid var(--line); border-radius: var(--r-card); box-shadow: inset 0 0 0 6px var(--bg), inset 0 0 0 7px color-mix(in srgb, var(--line) 38%, transparent), var(--stack-sm); margin: 0 10px 18px; overflow: visible; }
-  :root[data-design="starlight"] .mini > .seek--line { left: 18px; right: 18px; top: -1px; }
-  :root[data-design="starlight"] .mini .bezel-thumb .cover { --cover-size: 42px; box-shadow: var(--sl-print-sm); }
+  :root[data-design="starlight"] .mini { margin: 0 10px 18px; }
   :root[data-design="starlight"] .tabbar { background: var(--sky-deep); border-top: 1px solid var(--edge); }
   :root[data-design="starlight"] .tab { position: relative; font: 500 .6875rem/1 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; }
   :root[data-design="starlight"] .tab[aria-current="page"] { color: var(--fg-sky); }

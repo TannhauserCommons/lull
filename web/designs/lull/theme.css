@@ -1895,8 +1895,9 @@
 /* the settings page uses the window it has: its rows keep their measure, the picker and the rows take the width */
 @media (min-width: 1100px) { :root[data-design="lull"] .sys-page { max-width: none; } }
 
-/* the phone in the new materials: the mini player and the tab bar are shells; words on them in the shell's ink */
-@media (max-width: 639px) {
+/* the phone in the new materials: the mini player and the tab bar are shells; words on them in the shell's ink. A phone
+   held sideways shows the same mini player in the player bar's place */
+@media (max-width: 639px), (max-height: 500px) and (orientation: landscape) {
   :root[data-design="lull"] .app .main::after, :root[data-design="lull"] .app[data-screen] .main[data-meta]::after { display: none; }
   /* a section head's actions wrap under its title rather than run off the window */
   :root[data-design="lull"] .card > .label-rule.card-head { flex-wrap: wrap; }
@@ -1908,6 +1909,13 @@
   :root[data-design="lull"] .mini .btn-gloss { margin: 0 4px; width: 46px; height: 46px; }
   :root[data-design="lull"] .tabbar :is(.tab, a) { color: var(--v-clear-ink); text-shadow: none; background: var(--v-clear); box-shadow: var(--v-clear-sh); }
   :root[data-design="lull"] .tabbar [aria-current="page"] { color: #fff; background: var(--v-gel); border-radius: 18px; box-shadow: var(--v-shine), 0 0 0 1px var(--v-gel-edge); text-shadow: 0 1px 0 var(--v-gel-edge); }
+}
+/* sideways, the header strip is slim and the windows sit closer, so the page keeps most of the height */
+@media (max-height: 500px) and (orientation: landscape) and (min-width: 640px) {
+  :root[data-design="lull"] .app { padding-top: 6px; }
+  :root[data-design="lull"] .header { min-height: 48px; margin-bottom: 8px; padding-block: 4px; }
+  :root[data-design="lull"] .main { margin-bottom: 8px; padding-bottom: 8px; }
+  :root[data-design="lull"] .app:not([data-ctx="docked"]) .ctx { top: 6px; bottom: 6px; }
 }
 
 /* =====================================================================

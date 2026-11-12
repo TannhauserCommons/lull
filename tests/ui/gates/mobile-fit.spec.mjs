@@ -113,7 +113,6 @@ test.describe('a phone held sideways', () => {
       }
     });
     test(`the page keeps room to read, and notes stay on the screen / ${design}`, async ({ page }) => {
-      test.fixme(design !== 'skydeck', 'M13: sideways, a phone gets the tablet layout: the header and player bar leave the page 13-45% of the height');
       await withSong(page, design, `/album/${ids.album}`);
       const view = await page.evaluate(() => document.querySelector('#view').getBoundingClientRect().height / innerHeight);
       expect(view, 'the share of the window the page gets beside the header and player').toBeGreaterThanOrEqual(0.5);

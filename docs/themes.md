@@ -152,7 +152,7 @@ Go beyond tokens with any selector. These hooks are the theme API: they stay put
 | `:root[data-design]` | the built-in design that is loaded (your `extends`), else your id |
 | `:root[data-window]` | `mica`, `acrylic`, `blur`, `transparent`: what the desktop app's window shows behind the page now (section 12); absent while the window is solid |
 | `:root[data-graphics]` | `light`: the desktop app found the processor drawing the page, not a graphics card (Settings › App › Graphics). lull stops all movement and every `backdrop-filter` there, and decorative loops hold still; make sure your glass reads without its blur. Absent otherwise |
-| `[data-region]` | `rail`, `header`, `topnav`, `content`, `ctx` (queue, lyrics, activity), `playerbar`, `mini` (phone player), `tabbar`, `lead` (Home's homeLead slot) |
+| `[data-region]` | `rail`, `header`, `topnav`, `content`, `ctx` (queue, lyrics, activity), `playerbar`, `mini` (the phone's player; on a phone held sideways, a window under 500 px tall, it stands in for the player bar everywhere but Now Playing), `tabbar`, `lead` (Home's homeLead slot) |
 | `.app[data-screen]` | `home`, `search`, `now`, `library`, `liked`, `history`, `following`, `album`, `artist`, `tag`, `playlists`, `playlist`, `stats`, `settings`, `classic`... |
 | `.app[data-route]`, `.app[data-view]`, `.app[data-ctx]` | nav key; `page` or `now`; `docked`, `open`, `closed` |
 | `[data-act]`, `[data-nav]` | every control's action (`play`, `next`, `like`, `shuffle`...) and nav target (`home`, `library`...) |
@@ -614,6 +614,7 @@ Go through this before you share a theme, and before a built-in design ships. Th
 
 **Every width and height:**
 - phone 390×844;
+- a phone held sideways, 844×390: the mini player in the player bar's place, a slim header, the page with at least half the height;
 - tablet 768 and 1024;
 - a short laptop, 1366×768;
 - desktop 1440×900;
@@ -621,6 +622,12 @@ Go through this before you share a theme, and before a built-in design ships. Th
 - `ultra` 2560×1440.
 
 Also a window narrowed past each `data-size` step. Nothing may scroll sideways, and no title may be squeezed.
+
+**The notch and the home indicator:** lull keeps `.app` inside the safe-area insets at a phone's sides, and from 640 px
+above and below too, with margins, so your padding on `.app` keeps them. Under 640 px the phone's header, tab bar and
+Now Playing's sheet pad into the top and bottom insets themselves, so their paper reaches the screen's edge: a theme that
+sets its own padding there adds the inset (`calc(8px + env(safe-area-inset-top))`), or moves a floating bar clear of it
+with its margin. Nothing to read or tap goes under an inset.
 
 **Every mode** the manifest lists, with each token you set given in both the day and the night block.
 
