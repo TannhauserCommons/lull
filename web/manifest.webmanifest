@@ -1,4 +1,5 @@
 {
+  "id": "./",
   "name": "lull",
   "short_name": "lull",
   "description": "A self-hosted music player that streams from Soulseek and saves to Jellyfin.",
