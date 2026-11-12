@@ -42,6 +42,7 @@ fn routes() -> Router<Arc<Service>> {
         .route("/api/transfers", get(transfers))
         .route("/api/transfers/{job}", delete(cancel))
         .route("/api/transfers/{job}/retry", post(retry))
+        .route("/api/cache/clear", post(clear_cache))
 }
 
 #[derive(Deserialize)]
@@ -390,6 +391,13 @@ async fn cancel(State(svc): State<Arc<Service>>, Path(job): Path<String>) -> Res
 async fn retry(State(svc): State<Arc<Service>>, Path(job): Path<String>) -> Result<Json<Value>> {
     let job = svc.fetcher.retry(&job)?;
     Ok(Json(json!({ "jobId": job })))
+}
+
+async fn clear_cache(State(svc): State<Arc<Service>>) -> Result<Json<Value>> {
+    let c = svc.cache.clear().await?;
+    Ok(Json(
+        json!({ "files": c.files, "freedBytes": c.freed_bytes, "keptBytes": c.kept_bytes }),
+    ))
 }
 
 #[cfg(test)]
