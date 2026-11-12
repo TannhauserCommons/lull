@@ -173,7 +173,6 @@ const known = JSON.parse(readFileSync(new URL('./a11y-known.json', import.meta.u
 for (const design of designs) {
   test(`axe finds nothing new at a phone's width / ${design}`, async ({ page, browser }) => {
     test.skip(isWebkit(browser), 'axe reads the same markup in both engines: Chromium only');
-    test.fixme(['lull', 'starlight', 'glasshouse'].includes(design), 'M15: the phone\'s Now Playing seek wave is a slider with no aria-valuenow');
     const found = [];
     for (const route of ['/home', '/search?q=velvet', `/playlist/${ids.playlist}`, '/now?tab=queue']) {
       await withSong(page, design, route);

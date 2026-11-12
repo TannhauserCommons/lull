@@ -1514,7 +1514,7 @@
       var env = Math.sin(Math.PI * (i + .5) / bars) * .55 + .35;
       out.push('<i class="wave__bar" style="--h:' + Math.max(.12, Math.min(1, env * (.55 + (h % 100) / 180))).toFixed(2) + '"></i>');
     }
-    return html`<div class="wave" data-seek="player" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="100">${raw(out.join(''))}<div class="wave__rail"><i class="wave__head"></i></div></div>`;
+    return html`<div class="wave" data-seek="player" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="">${raw(out.join(''))}<div class="wave__rail"><i class="wave__head"></i></div></div>`;
   };
   ui.waveTimes = function () {
     return html`<div class="wave-times"><b data-bind="pos">0:00</b><span class="wave-times__buf">buffered to <span data-bind="buffered-to">0:00</span></span><span data-bind="dur">0:00</span></div>`;
