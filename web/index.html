@@ -151,14 +151,13 @@
         <button class="btn-icon btn-icon--bare" data-act="repeat" data-bind="repeat" aria-pressed="false" aria-label="Repeat off" data-tip="Repeat (R)"><svg class="ic" aria-hidden="true"><use href="#i-repeat"/></svg></button>
       </div>
       <div class="pbar__seek seek-row">
-        <span class="seek-row__time" data-bind="pos">0:00</span>
-        <div class="seek" data-seek="player" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <span class="seek-row__time"><span data-bind="pos">0:00</span><span aria-hidden="true"> / </span><span class="vh"> of </span><span class="seek-row__len" data-bind="dur">0:00</span></span>
+        <div class="seek" data-seek="player" data-fit-seek role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div class="seek__track"><div class="seek__xfer"></div><div class="seek__bufs"></div><div class="seek__played"></div></div>
           <div class="seek__rail"><div class="seek__knob"></div></div>
           <div class="seek__target" aria-hidden="true"></div>
           <div class="seek__tip" aria-hidden="true"></div>
         </div>
-        <span class="seek-row__time" data-bind="dur">0:00</span>
       </div>
     </div>
     <div class="pbar__tools" data-fit-row data-fit-side>

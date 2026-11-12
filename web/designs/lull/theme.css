@@ -493,6 +493,7 @@
    ===================================================================== */
 :root[data-design="lull"] .pbar {
   --fit-centre-min: 420px; isolation: isolate;
+  --gate-free: "song-side-room: the seek keeps its 360 px beside the transport, so the chips go to the menu first";
   height: var(--bar-h); margin: 0 auto 10px; padding: 0 6px 0 0; column-gap: 18px; width: min(100% - 32px, 1680px); justify-self: center;
   background: none; border: 0; border-radius: 0; box-shadow: none;
 }
@@ -570,7 +571,8 @@
 :root[data-design="lull"] .pbar__controls .btn-icon { width: 36px; height: 36px; flex: none; }
 /* the seek: the tube's own glass */
 :root[data-design="lull"] .pbar__seek { max-width: none; gap: 6px; }
-:root[data-design="lull"] .pbar__seek .seek-row__time { min-width: 46px; height: 22px; padding: 0 6px; border-radius: 4px; display: grid; place-items: center; background: var(--v-lcd); color: var(--v-lcd-ink); font: 900 .6875rem/1 var(--f-ui); text-shadow: var(--v-lcd-glow); box-shadow: var(--v-lcd-sh); }
+:root[data-design="lull"] .pbar__seek .seek-row__time { min-width: calc((var(--time-ch, 4) * 2 + 3) * 1ch + 12px); height: 22px; padding: 0 6px; border-radius: 4px; display: flex; justify-content: center; align-items: center; background: var(--v-lcd); color: var(--v-lcd-ink); font: 900 .6875rem/1 var(--f-ui); text-shadow: var(--v-lcd-glow); box-shadow: var(--v-lcd-sh); }
+:root[data-design="lull"] .pbar__seek .seek-row__time > [aria-hidden] { margin: 0 .3em; }
 :root[data-design="lull"] .pbar__seek .seek { height: 44px; }
 :root[data-design="lull"] .pbar__seek .seek__track { height: 40px; margin-top: -20px; border-radius: 999px; background: linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,.08) 50%, rgba(255,255,255,.25)); box-shadow: inset 0 0 0 1px rgba(60, 30, 170, .35), inset 0 3px 6px -2px rgba(30, 10, 110, .25); }
 :root[data-design="lull"][data-theme="night"] .pbar__seek .seek__track { background: rgba(30, 18, 110, .55); box-shadow: inset 0 0 0 1px rgba(200, 180, 255, .45), inset 0 3px 8px -2px #000; }
