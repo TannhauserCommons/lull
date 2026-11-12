@@ -41,6 +41,9 @@ use serde_json::json;
 use tokio::sync::{Notify, watch};
 
 mod legs;
+// Acceptance tests for ADR-0018 (the better-copy race): the verifier's, never the builder's to edit.
+#[cfg(test)]
+mod race_tests;
 
 use crate::cache::{Cache, Entry, Pin};
 use crate::files;

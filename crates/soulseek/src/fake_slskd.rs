@@ -1,3 +1,6 @@
+//! Acceptance tests for ADR-0018: the builder must not edit this file (test infrastructure the
+//! race's acceptance tests stand on; extend it only with the verifier).
+//!
 //! A stand-in for slskd's download API in tests, writing files as slskd 0.26 does: a download
 //! starts from the length of its incomplete file (`retry.partial: resume`, the default) or from 0
 //! (`overwrite`), appends the peer's bytes at a set pace, then moves the file to the downloads
@@ -6,11 +9,19 @@
 //! `DownloadService`; pinned by the contract test, tests/slskd-contract). This lets lull's fetches
 //! and their legs be tested in-process against it. Its searches find every file it serves
 //! (`peer` shares them), after `SEARCH_TAKES`.
+//!
+//! For the better-copy race (ADR-0018) it also stands in for many peers (`Fake::start_peers`):
+//! each answers searches with its own slot, queue, reported speed and files, and behaves as a
+//! real peer did in the measurements (`Behaviour`: sends, stays silent, queues, queues then
+//! sends, bursts then crawls). Every request is logged with when it began and ended, so tests
+//! can count lanes, requests per peer and cancels. Time is tokio's, as lull's is.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use tokio::time::Instant;
 
 use axum::Router;
 use axum::extract::{Path as UrlPath, State};
@@ -55,7 +66,90 @@ struct Shared {
     events: Mutex<Vec<Value>>,
     next: Mutex<u32>,
     /// Every search started: its text, and when.
-    searches: Mutex<Vec<(String, std::time::Instant)>>,
+    searches: Mutex<Vec<(String, Instant)>>,
+    /// The peers that answer searches, each its own way (`start_peers`); empty: `peer` alone.
+    answers: Vec<Answer>,
+    /// Every request, by transfer id, in order: who, what, when it began and ended.
+    log: Mutex<Vec<(String, Request)>>,
+}
+
+/// How one peer behaves when asked for a file.
+#[derive(Clone, Copy, Debug)]
+pub enum Behaviour {
+    /// Accepts and sends this many bytes every `TICK`.
+    Sends(usize),
+    /// Accepts and never sends a byte.
+    Silent,
+    /// Keeps the request queued remotely, for good.
+    Queues,
+    /// Keeps the request queued remotely this long, then sends this many bytes a `TICK`.
+    QueuedThen(Duration, usize),
+    /// Sends this many bytes at once, then this many a `TICK`.
+    Burst(usize, usize),
+}
+
+/// One peer answering searches (`Fake::start_peers`).
+#[derive(Clone, Debug)]
+pub struct Answer {
+    pub user: String,
+    pub behaviour: Behaviour,
+    pub free_slot: bool,
+    pub queue: u64,
+    /// The upload speed its search answer reports, bytes a second.
+    pub upload_speed: u64,
+    /// The averageSpeed slskd reports for its transfers, when not the rate the bytes come at.
+    pub reports: Option<f64>,
+    /// The files it shares (remote paths), each with the bitrate its answer gives (None: none).
+    pub files: Vec<(String, Option<u32>)>,
+}
+
+impl Answer {
+    /// A peer with a free slot and no queue, reporting 1 MB/s, sharing `files`.
+    pub fn new(user: &str, behaviour: Behaviour, files: &[(&str, Option<u32>)]) -> Answer {
+        Answer {
+            user: user.to_owned(),
+            behaviour,
+            free_slot: true,
+            queue: 0,
+            upload_speed: 1_000_000,
+            reports: None,
+            files: files.iter().map(|(p, k)| ((*p).to_owned(), *k)).collect(),
+        }
+    }
+
+    /// The upload speed its answer reports.
+    pub fn says(mut self, upload_speed: u64) -> Answer {
+        self.upload_speed = upload_speed;
+        self
+    }
+
+    /// No free slot, this many waiting.
+    pub fn busy(mut self, queue: u64) -> Answer {
+        self.free_slot = false;
+        self.queue = queue;
+        self
+    }
+
+    /// slskd reports this averageSpeed for its transfers, whatever comes.
+    pub fn reports(mut self, speed: f64) -> Answer {
+        self.reports = Some(speed);
+        self
+    }
+}
+
+/// One request a peer was sent.
+#[derive(Clone, Debug)]
+pub struct Request {
+    pub user: String,
+    pub path: String,
+    /// The byte it was asked from.
+    pub offset: u64,
+    pub at: Instant,
+    /// When it was cancelled or completed; None while it runs or waits in the queue.
+    pub ended: Option<Instant>,
+    pub cancelled: bool,
+    /// Whether it had sent bytes when it was cancelled.
+    pub sent: bool,
 }
 
 #[derive(Clone)]
@@ -64,7 +158,9 @@ struct Transfer {
     state: &'static str,
     bytes: u64,
     /// Where the peer started sending from, and when: slskd's averageSpeed is what came since.
-    from: (u64, std::time::Instant),
+    from: (u64, Instant),
+    /// The averageSpeed slskd reports for it, when not the true rate.
+    reports: Option<f64>,
     task: Option<Arc<tokio::task::AbortHandle>>,
 }
 
@@ -93,6 +189,25 @@ impl Fake {
         peer: Peer,
         paces: HashMap<String, usize>,
     ) -> std::io::Result<Fake> {
+        Fake::start_all(files, peer, paces, Vec::new()).await
+    }
+
+    /// slskd whose searches are answered by `answers`, each peer behaving its own way. A peer's
+    /// bytes for a path are `files["user|path"]`, else `files[path]`.
+    pub async fn start_peers(
+        files: HashMap<String, Vec<u8>>,
+        peer: Peer,
+        answers: Vec<Answer>,
+    ) -> std::io::Result<Fake> {
+        Fake::start_all(files, peer, HashMap::new(), answers).await
+    }
+
+    async fn start_all(
+        files: HashMap<String, Vec<u8>>,
+        peer: Peer,
+        paces: HashMap<String, usize>,
+        answers: Vec<Answer>,
+    ) -> std::io::Result<Fake> {
         let root = std::env::temp_dir().join(format!("lull-fake-slskd-{}-{}", std::process::id(), rand_id()));
         std::fs::create_dir_all(root.join("incomplete"))?;
         std::fs::create_dir_all(root.join("complete"))?;
@@ -108,6 +223,8 @@ impl Fake {
             events: Mutex::default(),
             next: Mutex::new(0),
             searches: Mutex::default(),
+            answers,
+            log: Mutex::default(),
         });
         let app = Router::new()
             .route("/api/v0/transfers/downloads/batches", post(enqueue))
@@ -161,6 +278,46 @@ impl Fake {
             .unwrap_or_default()
     }
 
+    /// Every request sent to a peer, in order.
+    pub fn requests(&self) -> Vec<Request> {
+        self.shared
+            .log
+            .lock()
+            .map(|l| l.iter().map(|(_, r)| r.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    /// The requests sent to `user`, in order.
+    pub fn requests_of(&self, user: &str) -> Vec<Request> {
+        self.requests().into_iter().filter(|r| r.user == user).collect()
+    }
+
+    /// The most requests of `users` that ran (or waited in a queue) at one moment.
+    pub fn most_at_once(&self, users: &[&str]) -> usize {
+        let mine: Vec<Request> = self
+            .requests()
+            .into_iter()
+            .filter(|r| users.contains(&r.user.as_str()))
+            .collect();
+        mine.iter()
+            .map(|r| {
+                mine.iter()
+                    .filter(|o| o.at <= r.at && o.ended.is_none_or(|e| e > r.at))
+                    .count()
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// The users whose requests run (or wait in a queue) now.
+    pub fn running(&self) -> Vec<String> {
+        self.requests()
+            .into_iter()
+            .filter(|r| r.ended.is_none())
+            .map(|r| r.user)
+            .collect()
+    }
+
     /// The offsets one peer's downloads were asked from, in order.
     pub fn starts_of(&self, user: &str) -> Vec<u64> {
         self.shared
@@ -174,7 +331,7 @@ impl Fake {
 async fn start_search(State(s): State<Arc<Shared>>, axum::Json(body): axum::Json<Value>) -> axum::Json<Value> {
     let text = body["searchText"].as_str().unwrap_or_default().to_owned();
     let n = s.searches.lock().map_or(0, |mut all| {
-        all.push((text, std::time::Instant::now()));
+        all.push((text, Instant::now()));
         all.len()
     });
     axum::Json(json!({ "id": format!("s{n}"), "state": "InProgress", "responseCount": 0, "fileCount": 0 }))
@@ -193,9 +350,15 @@ async fn search(State(s): State<Arc<Shared>>, UrlPath(id): UrlPath<String>) -> R
         .ok()
         .and_then(|all| all.get(n.wrapping_sub(1)).map(|(_, at)| *at))
         .ok_or(StatusCode::NOT_FOUND)?;
-    let files = shared_files(&s).len();
+    let (responses, files) = match s.answers.is_empty() {
+        true => {
+            let files = shared_files(&s).len();
+            (usize::from(files > 0), files)
+        }
+        false => (s.answers.len(), s.answers.iter().map(|a| a.files.len()).sum()),
+    };
     Ok(axum::Json(if started.elapsed() >= SEARCH_TAKES {
-        json!({ "id": id, "state": "Completed, Succeeded", "responseCount": u32::from(files > 0), "fileCount": files,
+        json!({ "id": id, "state": "Completed, Succeeded", "responseCount": responses, "fileCount": files,
                 "endedAt": "2026-11-06T00:00:00Z" })
     } else {
         json!({ "id": id, "state": "InProgress", "responseCount": 0, "fileCount": 0 })
@@ -203,6 +366,32 @@ async fn search(State(s): State<Arc<Shared>>, UrlPath(id): UrlPath<String>) -> R
 }
 
 async fn responses(State(s): State<Arc<Shared>>) -> axum::Json<Value> {
+    if !s.answers.is_empty() {
+        let answers: Vec<Value> = s
+            .answers
+            .iter()
+            .map(|a| {
+                let files: Vec<Value> = a
+                    .files
+                    .iter()
+                    .filter_map(|(path, kbps)| {
+                        let size = s
+                            .files
+                            .get(&format!("{}|{path}", a.user))
+                            .or_else(|| s.files.get(path))?
+                            .len();
+                        Some(
+                            json!({ "filename": path, "size": size, "bitRate": kbps, "bitDepth": null,
+                                     "sampleRate": 44100, "length": LENGTH, "isVariableBitRate": false }),
+                        )
+                    })
+                    .collect();
+                json!({ "username": a.user, "hasFreeUploadSlot": a.free_slot, "queueLength": a.queue,
+                        "uploadSpeed": a.upload_speed, "files": files })
+            })
+            .collect();
+        return axum::Json(json!(answers));
+    }
     let files: Vec<Value> = shared_files(&s)
         .into_iter()
         .map(|(path, bytes)| {
@@ -250,31 +439,86 @@ async fn enqueue(
     if let Ok(mut starts) = s.starts.lock() {
         starts.push((user.clone(), at));
     }
-    let pace = s.paces.get(&user).copied().unwrap_or(s.peer.per_tick);
-    let task = (pace != QUEUES).then(|| {
-        Arc::new(tokio::spawn(download(s.clone(), id.clone(), path, filename.clone(), bytes, at, pace)).abort_handle())
+    let answer = s.answers.iter().find(|a| a.user == user);
+    let behaviour =
+        answer
+            .map(|a| a.behaviour)
+            .unwrap_or_else(|| match s.paces.get(&user).copied().unwrap_or(s.peer.per_tick) {
+                QUEUES => Behaviour::Queues,
+                0 => Behaviour::Silent,
+                pace => Behaviour::Sends(pace),
+            });
+    let reports = answer.and_then(|a| a.reports).or(s.peer.reported);
+    let (wait, burst, pace) = match behaviour {
+        Behaviour::Sends(pace) => (Some(Duration::ZERO), 0, pace),
+        Behaviour::Silent => (Some(Duration::ZERO), 0, 0),
+        Behaviour::Queues => (None, 0, 0),
+        Behaviour::QueuedThen(after, pace) => (Some(after), 0, pace),
+        Behaviour::Burst(first, pace) => (Some(Duration::ZERO), first, pace),
+    };
+    let task = wait.map(|wait| {
+        let run = download(
+            s.clone(),
+            id.clone(),
+            path,
+            filename.clone(),
+            bytes,
+            at,
+            (wait, burst, pace),
+        );
+        Arc::new(tokio::spawn(run).abort_handle())
     });
     let t = Transfer {
         filename: filename.clone(),
-        state: if task.is_some() {
-            "InProgress"
-        } else {
-            "Queued, Remotely"
+        state: match wait {
+            Some(w) if w.is_zero() => "InProgress",
+            _ => "Queued, Remotely",
         },
         bytes: at,
-        from: (at, std::time::Instant::now()),
+        from: (at, Instant::now()),
+        reports,
         task,
     };
+    if let Ok(mut log) = s.log.lock() {
+        log.push((
+            id.clone(),
+            Request {
+                user: user.clone(),
+                path: filename.clone(),
+                offset: at,
+                at: Instant::now(),
+                ended: None,
+                cancelled: false,
+                sent: false,
+            },
+        ));
+    }
     if let Ok(mut all) = s.transfers.lock() {
         all.insert(id.clone(), t.clone());
     }
-    Ok(axum::Json(
-        json!({ "batch": { "transfers": [view(&id, &t, s.peer.reported)] } }),
-    ))
+    Ok(axum::Json(json!({ "batch": { "transfers": [view(&id, &t)] } })))
 }
 
-/// The peer sends from `at`: appended (resume) or written from a fresh file (overwrite).
-async fn download(s: Arc<Shared>, id: String, path: PathBuf, filename: String, bytes: Vec<u8>, at: u64, pace: usize) {
+/// The peer sends from `at`: appended (resume) or written from a fresh file (overwrite). It
+/// waits in its queue for `wait` first, sends `burst` bytes at once, then `pace` bytes a tick.
+async fn download(
+    s: Arc<Shared>,
+    id: String,
+    path: PathBuf,
+    filename: String,
+    bytes: Vec<u8>,
+    at: u64,
+    (wait, burst, pace): (Duration, usize, usize),
+) {
+    if !wait.is_zero() {
+        tokio::time::sleep(wait).await;
+        if let Ok(mut all) = s.transfers.lock()
+            && let Some(t) = all.get_mut(&id)
+        {
+            t.state = "InProgress";
+            t.from = (at, Instant::now());
+        }
+    }
     let open = async {
         if let Some(dir) = path.parent() {
             tokio::fs::create_dir_all(dir).await?;
@@ -290,8 +534,9 @@ async fn download(s: Arc<Shared>, id: String, path: PathBuf, filename: String, b
     };
     let Ok(mut file) = open.await else { return };
     let mut pos = at as usize;
+    let mut first = burst;
     while pos < bytes.len() {
-        let end = (pos + pace).min(bytes.len());
+        let end = (pos + pace + std::mem::take(&mut first)).min(bytes.len());
         if file.write_all(&bytes[pos..end]).await.is_err() || file.flush().await.is_err() {
             return;
         }
@@ -310,6 +555,11 @@ async fn download(s: Arc<Shared>, id: String, path: PathBuf, filename: String, b
     {
         t.state = "Completed, Succeeded";
     }
+    if let Ok(mut log) = s.log.lock()
+        && let Some((_, r)) = log.iter_mut().find(|(tid, _)| *tid == id)
+    {
+        r.ended = Some(Instant::now());
+    }
     tokio::time::sleep(s.peer.settles).await;
     let name = filename.rsplit(['\\', '/']).next().unwrap_or("song").to_owned();
     let done = s.root.join("complete").join(&name);
@@ -322,8 +572,10 @@ async fn download(s: Arc<Shared>, id: String, path: PathBuf, filename: String, b
     }
 }
 
-fn view(id: &str, t: &Transfer, reported: Option<f64>) -> Value {
-    let speed = reported.unwrap_or_else(|| (t.bytes - t.from.0) as f64 / t.from.1.elapsed().as_secs_f64().max(0.001));
+fn view(id: &str, t: &Transfer) -> Value {
+    let speed = t
+        .reports
+        .unwrap_or_else(|| (t.bytes - t.from.0) as f64 / t.from.1.elapsed().as_secs_f64().max(0.001));
     json!({
         "id": id, "filename": t.filename, "state": t.state, "bytesTransferred": t.bytes,
         "averageSpeed": speed, "placeInQueue": null, "exception": null,
@@ -334,7 +586,7 @@ async fn list(State(s): State<Arc<Shared>>, UrlPath(_user): UrlPath<String>) -> 
     let files: Vec<Value> = s
         .transfers
         .lock()
-        .map(|all| all.iter().map(|(id, t)| view(id, t, s.peer.reported)).collect())
+        .map(|all| all.iter().map(|(id, t)| view(id, t)).collect())
         .unwrap_or_default();
     axum::Json(json!({ "directories": [{ "files": files }] }))
 }
@@ -345,12 +597,20 @@ async fn one(
 ) -> Result<axum::Json<Value>, StatusCode> {
     let all = s.transfers.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     all.get(&id)
-        .map(|t| axum::Json(view(&id, t, s.peer.reported)))
+        .map(|t| axum::Json(view(&id, t)))
         .ok_or(StatusCode::NOT_FOUND)
 }
 
 async fn cancel(State(s): State<Arc<Shared>>, UrlPath((_user, id)): UrlPath<(String, String)>) -> StatusCode {
     let gone = s.transfers.lock().ok().and_then(|mut all| all.remove(&id));
+    if let Some(t) = &gone
+        && let Ok(mut log) = s.log.lock()
+        && let Some((_, r)) = log.iter_mut().find(|(tid, r)| *tid == id && r.ended.is_none())
+    {
+        r.ended = Some(Instant::now());
+        r.cancelled = true;
+        r.sent = t.bytes > r.offset;
+    }
     if let Some(task) = gone.and_then(|t| t.task) {
         task.abort();
     }
