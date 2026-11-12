@@ -37,6 +37,9 @@
 // With seekAhead, the transfer starts over where a request waits, as the hub's legs do (ADR-0014). With file (a path), the
 // song's bytes are that file's, as the browser reads a real MP3, M4A or FLAC; GET /__fixture/reads?id= lists the offsets
 // the browser asked for, with when.
+// Source presets (ADR-0017, api.md): /api/sources/presets and PUT /api/sources/device as the hub answers them, kept with
+// the settings (a client's own changes stay its own) and announced as `settings`. The fixture's one device is
+// d-fixture; a request whose User-Agent names Android, iPhone, iPad, iPod or Mobi counts as a phone, as on the hub.
 // POST /__fixture/art-pending { ids } makes those covers answer 404 "not yet" (no-store), as the hub does while it
 // fetches one; POST /__fixture/art-ready { ids } serves them again and sends `art.ready { keys }`.
 // GET /__fixture/art-requests: cover requests that reached the hub since the last call, by URL (and resets them).
@@ -104,7 +107,11 @@ const state = {
     playback: { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, volumeStep: 5, radioWhenQueueEnds: false, prefetchCount: 2 },
     sources: {
       maxPeerQueue: 20, stallTimeout: 15,
-      stream: { below: 'playBest', maxKbps: 0, minimum: { formats: [], kbps: 192, losslessOnly: false }, pick: 'fastest' },
+      presets: [
+        { id: 'desktop', name: 'Desktop', stream: { below: 'playBest', maxKbps: 0, minimum: { formats: [], kbps: 192, losslessOnly: false }, pick: 'fastest' } },
+        { id: 'phone', name: 'Phone', stream: { below: 'playBest', maxKbps: 320, minimum: { formats: ['m4a', 'aac', 'mp3', 'ogg', 'opus'], kbps: 192, losslessOnly: false }, pick: 'fastest' } },
+      ],
+      devices: {},
       save: { autoUpgrade: true, below: 'saveBestUpgrade', minimum: { formats: [], kbps: 320, losslessOnly: false }, pick: 'highest', upgradeEveryH: 24 },
       youtube: { mode: 'off', format: 'opus', match: 'close', waitS: 20, saves: false, autoUpdate: true },
       preferredFormats: { source: 'config', value: ['flac', 'mp3', 'opus'] },
@@ -411,6 +418,64 @@ function sortTracks(ids, sort) {
   }[sort];
   return by ? [...ids].sort(by) : ids;
 }
+// ---------- source presets (ADR-0017): the hub's answers, checked as crates/collection checks them, in short ----------
+const BUILT_IN_PRESETS = ['desktop', 'phone'];
+const CAPS = [0, 128, 192, 256, 320];
+function sourcePresets(req, path, body, client) {
+  const phone = /Android|iPhone|iPad|iPod|Mobi/.test(req.headers['user-agent'] || '') || req.headers['sec-ch-ua-mobile'] === '?1';
+  const sources = settingsOf(client).sources, presets = structuredClone(sources.presets), devices = structuredClone(sources.devices);
+  const bad = (message) => ({ status: 400, body: { error: 'bad_request', message } });
+  const gone = { status: 404, body: { error: 'not_found', message: 'that source preset no longer exists' } };
+  const answer = () => {
+    const chosen = devices['d-fixture'];
+    return { body: {
+      presets: presets.map((p) => ({ ...p, builtin: BUILT_IN_PRESETS.includes(p.id) })),
+      device: { id: 'd-fixture', preset: chosen || (phone ? 'phone' : 'desktop'), chosen: !!chosen, phone },
+    } };
+  };
+  if (req.method === 'GET') return answer();
+  const named = (name, except) => {
+    name = String(name || '').trim();
+    if (!name || name.length > 40) return bad('A preset\'s name is 1 to 40 characters, without spaces around it.');
+    if (presets.some((p) => p.id !== except && p.name.toLowerCase() === name.toLowerCase())) return bad(`There is already a preset called ${name}.`);
+    return name;
+  };
+  const id = path.split('/')[4];
+  const p = id && presets.find((x) => x.id === id);
+  if (path === '/api/sources/device' && req.method === 'PUT') {
+    if (body.preset == null) delete devices['d-fixture'];
+    else if (!presets.some((x) => x.id === body.preset)) return gone;
+    else devices['d-fixture'] = body.preset;
+  } else if (!id && req.method === 'POST') {
+    if (presets.length >= 20) return bad('At most 20 source presets.');
+    const name = named(body.name);
+    if (typeof name !== 'string') return name;
+    const from = presets.find((x) => x.id === body.from) || presets.find((x) => x.id === (devices['d-fixture'] || (phone ? 'phone' : 'desktop')));
+    let n = 1;
+    while (presets.some((x) => x.id === 'p-' + n)) n += 1;
+    presets.push({ id: 'p-' + n, name, stream: structuredClone(from.stream) });
+  } else if (p && req.method === 'PATCH') {
+    if (body.name != null) {
+      const name = named(body.name, p.id);
+      if (typeof name !== 'string') return name;
+      if (BUILT_IN_PRESETS.includes(p.id) && name !== p.name) return bad(`${p.name} is built in and keeps its name.`);
+      p.name = name;
+    }
+    if (body.stream) deepMerge(p.stream, body.stream);
+    const s = p.stream;
+    if (!CAPS.includes(s.maxKbps) || (s.maxKbps && s.minimum.kbps > s.maxKbps)) return bad(`${p.name}: the maximum bitrate is no cap, 128, 192, 256 or 320 kbps, and never below the minimum.`);
+  } else if (p && req.method === 'DELETE') {
+    if (BUILT_IN_PRESETS.includes(p.id)) return bad(`${p.name} is built in and can't be deleted.`);
+    presets.splice(presets.indexOf(p), 1);
+    for (const [d, used] of Object.entries(devices)) if (used === p.id) delete devices[d];
+  } else return gone;
+  // set whole, not merged: a device's choice taken back is gone
+  const into = client ? (ownSettings.get(client) || ownSettings.set(client, {}).get(client)) : state.settings;
+  into.sources = Object.assign(into.sources || {}, { presets, devices });
+  emit('settings', settingsOf(client), client || undefined);
+  return answer();
+}
+
 function deepMerge(into, patch) {
   for (const [k, v] of Object.entries(patch)) {
     if (v && typeof v === 'object' && !Array.isArray(v) && into[k] && typeof into[k] === 'object') deepMerge(into[k], v);
@@ -1013,6 +1078,10 @@ const server = createServer(async (req, res) => {
     if (!notSwitched.has(client)) notSwitched.set(client, []);
     notSwitched.get(client).push({ trackId: m[1], peer: b.peer, path: b.path, why: b.why });
     return send(res, 204);
+  }
+  if (path === '/api/sources/presets' || path === '/api/sources/device' || /^\/api\/sources\/presets\/[^/]+$/.test(path)) {
+    const out = sourcePresets(req, path, req.method === 'GET' ? undefined : await readBody(req), client);
+    return send(res, out.status || 200, out.body);
   }
   if (THEMES && (m = /^\/api\/themes\/([a-z0-9-]+)\/theme\.json$/.exec(path)) && req.method === 'GET') {
     // the hub's manifest, its slots the templates in the folder (crates/themes store.rs)
