@@ -682,8 +682,20 @@
      the placeholder above: that first one is the player as it already was, not a change to say. */
   var REPEAT_TEXT = { off: 'repeat off', all: 'repeat all', one: 'repeat one' };
   var heardMain = false;
+  /* where main said the song was, and when we heard it. Main sends a snapshot when something changed or the position
+     strayed (a seek), not as the song plays: while it plays, the position moves on from here (advance, below) */
+  var anchor = { pos: 0, at: 0 };
+  function runs(s) { return !!(s.playing && s.duration && (s.status === 'streaming' || s.status === 'library')); }
+  function advance() {
+    if (!runs(S)) return;
+    var p = Math.min(S.duration, anchor.pos + (Date.now() - anchor.at) / 1000), w = Math.floor(p);
+    if (w === S.pos) return;
+    S.pos = w; paintPlayer(doc);
+    if (window.Live) Live.feed({ 'song.pos': Math.floor(p / S.duration * 100) / 100, 'song.elapsed': fmt(w) });
+  }
   function receive(scope, next, first) {
     var prev = S; S = Object.assign({}, next, { art: prev.art });   // the cover comes on its own ('player-art')
+    anchor = { pos: next.pos, at: Date.now() }; S.pos = Math.floor(next.pos);
     var key = function (s) { return JSON.stringify([s.track, s.received < 1]); };
     if (first || key(prev) !== key(next)) paintTrack(scope);
     paintPlayer(scope);
@@ -751,7 +763,7 @@
     try { w.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events */ }
     var f = 0, frame = 0;
     function at(ev) { var r = w.getBoundingClientRect(); return Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)); }
-    function show() { frame = 0; S.pos = f * S.duration; paintPlayer(doc); seekTo(f); }
+    function show() { frame = 0; S.pos = f * S.duration; anchor = { pos: S.pos, at: Date.now() }; paintPlayer(doc); seekTo(f); }
     function move(ev) { f = at(ev); if (!frame) frame = requestAnimationFrame(show); }
     function end(ev) {
       w.removeEventListener('pointermove', move); w.removeEventListener('pointerup', end); w.removeEventListener('pointercancel', end);
@@ -848,6 +860,7 @@
           if (inUse) render(); else if (id === want.design) show();
         }, logFailure('theme ' + id));
       });
+      setInterval(advance, 250);
       toMain('hello');                                     // main answers with a snapshot
       window.addEventListener('pagehide', function () { toMain('bye'); });   // main stops sending snapshots
       if (q.get('wayland')) setTimeout(function () {
@@ -963,7 +976,7 @@
       var t = P.current(), ps = P.state, id = t ? t.id : null, bar = P.transferBar();
       return { track: t ? { title: t.title, artist: t.artist, format: t.format || '', lossless: !!t.lossless } : null,
         playing: !!ps.playing, liked: !!(id && App.isLiked(id)), saved: !!(id && App.isSaved(id)),
-        pos: Math.floor(ps.pos || 0), duration: P.duration() || 0, durationKnown: ps.durationKnown !== false,
+        pos: Math.round((ps.pos || 0) * 10) / 10, duration: P.duration() || 0, durationKnown: ps.durationKnown !== false,
         buffered: bar.parts, front: Math.floor(bar.front * 100) / 100,
         received: ps.received == null ? 1 : Math.floor(ps.received * 100) / 100,
         shuffle: !!ps.shuffle, repeat: ps.repeat || 'off', volume: ps.muted ? 0 : ps.volume,
@@ -982,17 +995,32 @@
       if (!force && data === sentArt) return; sentArt = data;
       T.event.emit('player-art', { art: data }).catch(logFailure('cover art'));
     };
-    /* snapshots feed only the mini player: none while it's closed ('hello' when it opens, 'bye' when it goes). pos in
-       whole seconds and received in whole percent, as the mini player shows them, so a tick that moved nothing it draws
-       sends nothing */
-    var lastPlayer = '', miniOpen = false;
+    /* snapshots feed only the mini player: none while it's closed ('hello' when it opens, 'bye' when it goes). While the
+       song plays the mini player moves the position on by itself (advance), so the position is no part of what must
+       change: a snapshot goes when something else did (received in whole percent, as it shows them), or when the
+       position is not where the mini player's clock has it (a seek, a stall, a drifting clock: a second off). The
+       'tick' that carries this is not emitted while this window is hidden (minimised, in the tray: the mini player is
+       what the listener is using then), so a clock of its own checks every second too. */
+    var lastPlayer = '', lastSnap = null, lastAt = 0, miniOpen = false;
+    var liveMoving = { 'song.pos': 1, 'song.elapsed': 1 };      // the mini player works these out as it advances
+    var stable = function (snap) {
+      var o = Object.assign({}, snap, { pos: 0 });
+      if (o.live) { o.live = Object.assign({}, o.live); Object.keys(liveMoving).forEach(function (k) { delete o.live[k]; }); }
+      return JSON.stringify(o);
+    };
+    var strayed = function (snap, now) {
+      if (!lastSnap) return true;
+      return runs(lastSnap) ? Math.abs(snap.pos - Math.min(lastSnap.duration, lastSnap.pos + (now - lastAt) / 1000)) >= 1 : snap.pos !== lastSnap.pos;
+    };
     var sendPlayer = function (force) {
       if (!miniOpen) return;
       sendArt(force);
-      var snap = snapshot(), key = JSON.stringify(snap);
-      if (!force && key === lastPlayer) return; lastPlayer = key;
+      var snap = snapshot(), key = stable(snap), now = Date.now();
+      if (!force && key === lastPlayer && !strayed(snap, now)) return;
+      lastPlayer = key; lastSnap = snap; lastAt = now;
       T.event.emit('player', snap).catch(logFailure('player snapshot'));
     };
+    setInterval(function () { sendPlayer(false); }, 1000);
     var sendAppearance = function () {
       var design = App.design(), base = Designs.designOf(design);
       T.event.emit('appearance', { design: design, base: base !== design ? base || undefined : undefined, theme: App.prefs().theme })

@@ -68,6 +68,8 @@ export default defineConfig({
     { name: 'better-copy', testMatch: 'better-copy.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // a kept seek is over once the song has played up to it
     { name: 'kept-seek', testMatch: 'kept-seek.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
+    // the mini player's position moves while the song plays, with the main window hidden
+    { name: 'mini-seek', testMatch: 'mini-seek.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // a tooltip never shows away from its control: a sheet's Close takes focus while the sheet still slides up
     { name: 'sheet-tip', testMatch: 'sheet-tip.spec.mjs', fullyParallel: true },
     // Esc on search goes back to the page before it, where it was
