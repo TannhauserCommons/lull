@@ -13,7 +13,7 @@ use crate::events::Bus;
 #[serde(rename_all = "lowercase")]
 pub enum State {
     Ok,
-    /// Working but degraded (reconnecting, scrobbles queued, cache nearly full).
+    /// Working but degraded (reconnecting, scrobbles queued, cache held over its size).
     Warn,
     Down,
     /// Not configured; the features that need it are hidden or explain why.

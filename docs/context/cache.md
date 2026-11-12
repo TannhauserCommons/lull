@@ -20,7 +20,11 @@ Before each transfer and every 60 s, `make_room(incoming)` evicts least recently
 - **it's preloading:** a preload ([streaming.md](streaming.md#preloading)) is pinned while it transfers. Once finished it is unpinned at once, like any file nobody plays;
 - **it's being saved:** from `Transfers::complete` until that track's `save` event reports `failed` or `pending`, or `done` at step 5.
 
-Pinned files may hold the cache over its cap; it reports `warn` rather than cut off the song that's playing.
+Pinned files may hold the cache over its cap rather than cut off the song that's playing; it reports `warn` then.
+
+## Clearing
+
+`POST /api/cache/clear` (Settings › Cache › Clear cache) removes every file nothing pins, finished or partial, and answers `{ files, freedBytes, keptBytes }`. The files of songs playing, preloading or being saved stay, and go by eviction once nothing holds them. Later plays of what went are fetched again.
 
 ## Full disk
 
@@ -29,6 +33,8 @@ If even evicting everything evictable can't fit the next file, the fetch fails w
 ## Status
 
 `cache` status: `{ state, detail, extra: { usedBytes, capBytes } }`.
-- `ok`: "3.1 of 5.0 GB used, oldest audio evicted first";
-- `warn`: over 95 % of the cap, held there by pinned files;
+- `ok`: "9.8 of 10.0 GB used, oldest audio evicted first". A cache in use sits just under its cap, since eviction makes room for each file only as it comes: that is the cache working, not full.
+- `warn`: pinned files alone are over the cap ("music that is playing or being saved holds it over its size until it ends"). Nothing stops playing.
 - `down`: the disk is full.
+
+Before (2026-11-12), `warn` was any use over 95 % of the cap, which a cache in use reaches and stays at, and the web said "Cache full and every item is in use, so playback may pause": neither was measured, and nothing was held.

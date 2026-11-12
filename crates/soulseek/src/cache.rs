@@ -20,8 +20,6 @@ use crate::ranges::Ranges;
 /// Free space kept on the transfers disk beyond the file being fetched, so slskd never writes
 /// the disk to the last byte.
 const DISK_MARGIN: u64 = 200_000_000;
-/// Above this share of the cap the cache reports `warn` (only pinned files can keep it there).
-const WARN_FRACTION: f64 = 0.95;
 
 /// One cached file: where it is on disk and which source it came from.
 #[derive(Debug, Clone, PartialEq)]
@@ -89,6 +87,10 @@ impl Cache {
             .lock()
             .map(|p| p.keys().cloned().collect())
             .unwrap_or_default()
+    }
+
+    fn is_pinned(&self, track: &TrackId) -> bool {
+        self.pins.lock().is_ok_and(|p| p.contains_key(track))
     }
 
     /// Records (or moves) a file lull asked for; it now counts against the cap.
@@ -212,7 +214,7 @@ impl Cache {
                 "stream cache evicted least recently used audio"
             );
         }
-        self.report_usage(plan.used_after, plan.disk_short).await;
+        self.report_usage(plan.used_after, held(&entries, &pinned), plan.disk_short);
         if plan.disk_short {
             return Err(Error::unavailable(
                 "cache",
@@ -224,32 +226,37 @@ impl Cache {
 
     /// Recomputes usage and publishes the `cache` status.
     pub async fn report(&self) -> Result<()> {
-        let used = self.on_disk().await?.iter().map(|(_, bytes)| bytes).sum();
-        self.report_usage(used, false).await;
+        let entries = self.on_disk().await?;
+        let used = entries.iter().map(|(_, bytes)| bytes).sum();
+        self.report_usage(used, held(&entries, &self.pinned()), false);
         Ok(())
     }
 
-    async fn report_usage(&self, used: u64, disk_short: bool) {
-        let (state, detail) = if disk_short {
-            (
-                State::Down,
-                "The transfers disk is full: nothing new can stream until there is room".to_owned(),
-            )
-        } else if used as f64 > self.cap as f64 * WARN_FRACTION {
-            (
-                State::Warn,
-                format!(
-                    "{} of {} used, by music that is playing or being saved",
-                    size(used),
-                    size(self.cap)
-                ),
-            )
-        } else {
-            (
-                State::Ok,
-                format!("{} of {} used, oldest audio evicted first", size(used), size(self.cap)),
-            )
-        };
+    /// Empties the cache on the listener's word (`POST /api/cache/clear`): every file goes but
+    /// those of a song playing, preloading or being saved, which stay until nothing holds them.
+    pub async fn clear(&self) -> Result<Cleared> {
+        let mut cleared = Cleared::default();
+        for (e, bytes) in self.on_disk().await? {
+            // Asked again for each file: a song may have started playing since the walk began.
+            if self.is_pinned(&e.track) {
+                cleared.kept_bytes += bytes;
+                continue;
+            }
+            self.remove(&e).await?;
+            cleared.freed_bytes += bytes;
+            cleared.files += 1;
+        }
+        tracing::info!(
+            files = cleared.files,
+            bytes = cleared.freed_bytes,
+            "stream cache cleared"
+        );
+        self.report_usage(cleared.kept_bytes, cleared.kept_bytes, false);
+        Ok(cleared)
+    }
+
+    fn report_usage(&self, used: u64, held: u64, disk_short: bool) {
+        let (state, detail) = usage(used, held, self.cap, disk_short);
         self.status.set(
             "cache",
             state,
@@ -304,6 +311,49 @@ impl Cache {
             })
             .await
     }
+}
+
+/// What `Cache::clear` removed, and what it kept for songs still playing or being saved.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Cleared {
+    pub files: u64,
+    pub freed_bytes: u64,
+    pub kept_bytes: u64,
+}
+
+/// The `cache` status for `used` bytes, `held` of them by pinned files. A cache at its cap is
+/// working: eviction makes room for each new file, so `ok`. Only pinned files can hold it over
+/// the cap (`warn`), and only a full disk stops streaming (`down`).
+fn usage(used: u64, held: u64, cap: u64, disk_short: bool) -> (State, String) {
+    if disk_short {
+        return (
+            State::Down,
+            "The transfers disk is full: nothing new can stream until there is room".to_owned(),
+        );
+    }
+    if held > cap {
+        return (
+            State::Warn,
+            format!(
+                "{} of {} used: music that is playing or being saved holds it over its size until it ends",
+                size(used),
+                size(cap)
+            ),
+        );
+    }
+    (
+        State::Ok,
+        format!("{} of {} used, oldest audio evicted first", size(used), size(cap)),
+    )
+}
+
+/// The bytes of the files no eviction may take: those of pinned tracks.
+fn held(entries: &[(Entry, u64)], pinned: &[TrackId]) -> u64 {
+    entries
+        .iter()
+        .filter(|(e, _)| pinned.contains(&e.track))
+        .map(|(_, bytes)| bytes)
+        .sum()
 }
 
 /// "640 MB", "3.1 GB": what the status tray shows.
@@ -468,6 +518,108 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(all, 2, "both finished copies");
         assert_eq!(asked, Some(yt), "exactly the copy asked for");
+        Ok(())
+    }
+
+    /// A cache of `cap` bytes in a folder of its own, and a way to record a finished file of
+    /// `bytes` bytes in it for track `t-<n>`.
+    struct Fixture {
+        dir: PathBuf,
+        cache: Cache,
+    }
+
+    impl Fixture {
+        fn new(name: &str, cap: u64) -> Result<Fixture> {
+            let dir = std::env::temp_dir().join(format!("lull-cache-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).map_err(|e| Error::internal(e.to_string()))?;
+            let db = lull_core::db::Db::memory()?;
+            db.migrate(&crate::MIGRATIONS)?;
+            let cache = Cache::new(db, Status::new(lull_core::events::Bus::new()), dir.clone(), cap);
+            Ok(Fixture { dir, cache })
+        }
+
+        async fn file(&self, n: u8, bytes: usize) -> Result<PathBuf> {
+            let mut e = entry(n, i64::from(n));
+            e.path = self.dir.join(&e.source.path);
+            std::fs::write(&e.path, vec![0u8; bytes]).map_err(|err| Error::internal(err.to_string()))?;
+            self.cache.record(e.clone()).await?;
+            Ok(e.path)
+        }
+
+        fn state(&self) -> Option<State> {
+            self.cache.status.snapshot().get("cache").map(|s| s.state)
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_cache_at_its_size_with_nothing_held_is_working() -> Result<()> {
+        // Eviction makes room for each new file only as it comes, so a cache in use sits just
+        // under its size. Before, anything over 95 % of it read "full, every item in use".
+        let fx = Fixture::new("at-size", 100)?;
+        fx.file(1, 49).await?;
+        fx.file(2, 49).await?;
+        fx.cache.report().await?;
+        assert_eq!(fx.state(), Some(State::Ok), "98 of 100 bytes, nothing playing");
+        fx.cache.make_room(0).await?;
+        assert_eq!(fx.state(), Some(State::Ok), "after the minute's housekeeping too");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn only_files_held_by_what_plays_can_keep_the_cache_over_its_size() -> Result<()> {
+        let fx = Fixture::new("held", 100)?;
+        fx.file(1, 120).await?;
+        let playing = fx.cache.pin(&TrackId("t-1".into()));
+        fx.cache.make_room(0).await?;
+        assert_eq!(
+            fx.state(),
+            Some(State::Warn),
+            "a song playing holds 120 bytes of a 100-byte cache"
+        );
+        drop(playing);
+        fx.cache.make_room(0).await?;
+        assert_eq!(
+            fx.state(),
+            Some(State::Ok),
+            "once it ends, it is evicted like any other"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn clearing_removes_every_file_but_those_of_songs_playing_or_being_saved() -> Result<()> {
+        let fx = Fixture::new("clear", 1_000)?;
+        let old = fx.file(1, 30).await?;
+        let playing = fx.file(2, 20).await?;
+        let _pin = fx.cache.pin(&TrackId("t-2".into()));
+        let cleared = fx.cache.clear().await?;
+        assert_eq!(
+            cleared,
+            Cleared {
+                files: 1,
+                freed_bytes: 30,
+                kept_bytes: 20
+            }
+        );
+        assert!(!old.exists() && playing.exists(), "the song playing keeps its file");
+        assert!(
+            fx.cache.complete(&TrackId("t-1".into())).await?.is_empty(),
+            "and the index forgets the rest"
+        );
+        let used = fx
+            .cache
+            .status
+            .snapshot()
+            .get("cache")
+            .map(|s| s.extra["usedBytes"].clone());
+        assert_eq!(used, Some(serde_json::json!(20)), "the status shows what is left");
         Ok(())
     }
 
