@@ -10,28 +10,41 @@ import { expect, test } from '@playwright/test';
 import { designs, ids } from './lib.mjs';
 import { go, isWebkit, open, withSong } from './mobile.mjs';
 
-/* the controls a thumb reaches for: the header's, the mini player's, the tab bar's, Now Playing's transport and close */
-const CHROME = ['.header .btn-icon', '.header [data-act="status"]', '#mini button', '#mini .bezel-thumb', '.tabbar .tab',
+/* the controls a thumb reaches for: the header's, the tab bar's, Now Playing's transport and close (the mini player's
+   are below) */
+const CHROME = ['.header .btn-icon', '.header [data-act="status"]', '.tabbar .tab',
   '.sheet-bar [data-act="back"]', '#view [data-act="prev"]', '#view [data-act="play"]', '#view [data-act="next"]'];
+const MINI = ['#mini button', '#mini .bezel-thumb'];
+/* a control a thumb can hit: 44x44 or more, or a smaller look whose touch area reaches 21 px from its centre each way
+   it is short, a tap there landing on the control itself, its words or a pseudo-element it draws, never a neighbour
+   (elementFromPoint reads whole pixels, so 21 px from a centre that falls between pixels can land 22 px out) */
 const tooSmall = (sels) => {
   const named = (el) => `${el.tagName.toLowerCase()}.${[...el.classList].slice(0, 2).join('.')}[${el.getAttribute('data-act') || el.getAttribute('data-nav') || ''}]`;
   const out = [];
   for (const el of document.querySelectorAll(sels.join(','))) {
     const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
     if (r.width < 1 || cs.visibility === 'hidden' || el.closest('[hidden]')) continue;
-    if (r.width < 43.5 || r.height < 43.5) out.push(`${named(el)} ${Math.round(r.width)}x${Math.round(r.height)}`);
+    const x = r.left + r.width / 2, y = r.top + r.height / 2, R = 21;
+    const probes = [...(r.width < 43.5 ? [[x - R, y], [x + R, y]] : []), ...(r.height < 43.5 ? [[x, y - R], [x, y + R]] : [])];
+    const missed = probes.filter(([px, py]) => { const hit = document.elementFromPoint(px, py); return !hit || !(hit === el || el.contains(hit)); });
+    if (missed.length) out.push(`${named(el)} ${Math.round(r.width)}x${Math.round(r.height)}, a tap ${missed.map(([px, py]) => `${Math.round(px - x)},${Math.round(py - y)}`).join(' / ')} px from its centre misses it`);
   }
   return [...new Set(out)];
 };
 
 for (const design of designs) {
   test(`the phone's controls are big enough for a thumb / ${design}`, async ({ page }) => {
-    test.fixme(true, 'M08: the header, mini player and Now Playing controls are 30-42 px in every design');
     await withSong(page, design, '/home');
     const small = await page.evaluate(tooSmall, CHROME);
     await go(page, '/now?tab=art');
     small.push(...await page.evaluate(tooSmall, CHROME));
     expect(small, 'under 44x44').toEqual([]);
+  });
+
+  test(`the mini player's controls are big enough for a thumb / ${design}`, async ({ page }) => {
+    test.fixme(true, 'M08: the mini player\'s keys are 36-40 px (fix-phone-bar gives them --hit)');
+    await withSong(page, design, '/home');
+    expect(await page.evaluate(tooSmall, MINI), 'under 44x44').toEqual([]);
   });
 
   // a listener's report (2026-11): the play key on Now Playing was squeezed to a sliver on an iPhone

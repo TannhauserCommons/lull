@@ -629,6 +629,12 @@ Now Playing's sheet pad into the top and bottom insets themselves, so their pape
 sets its own padding there adds the inset (`calc(8px + env(safe-area-inset-top))`), or moves a floating bar clear of it
 with its margin. Nothing to read or tap goes under an inset.
 
+**A thumb's reach:** on a touch screen (`@media (pointer: coarse)`) lull gives `.btn-icon`, `.tile__play`, the compact
+status tray and the d-pad's keys an invisible `::before` that reaches `--hit` (44 px) round their centre, whatever size
+they are drawn at; leave that `::before` free on them, and keep such a key positioned (`position: relative`) so it is
+the key's own. A key of your own drawn smaller does the same, and keys in a row stand 44 px apart, centre to centre, so
+each touch area is its own.
+
 **Every mode** the manifest lists, with each token you set given in both the day and the night block.
 
 **Contrast, information for you:** lull reports where text may be hard to read, so you can weigh it. It is never a rule:

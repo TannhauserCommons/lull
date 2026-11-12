@@ -911,6 +911,12 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .dpad__btn--down { grid-area: 3 / 2; border-radius: 0 0 8px 8px; border-top: 0; }
 .dpad__hub { grid-area: 2 / 2; background: var(--mocha); }
 .dpad__hub::after { content: ""; display: block; margin: 12px; height: 18px; border-radius: 50%; background: var(--mocha-edge); }
+/* on a touch screen a key's ::before reaches --hit round its centre, whatever size it is drawn (% of the padding box) */
+@media (pointer: coarse) {
+  :is(.btn-icon, .btn-icon--sm, .trow .btn-icon, .tile__play)::before { inset: min(-2px, calc((100% - var(--hit)) / 2)); }
+  .tray--compact { position: relative; }
+  :is(.tray--compact, .dpad__btn)::before { content: ""; position: absolute; inset: min(0px, calc((100% - var(--hit)) / 2)); }
+}
 .device__ab { position: relative; height: 132px; }
 .device__key { position: absolute; display: grid; justify-items: center; gap: 6px; font: var(--t-px); color: var(--indigo); }
 .device__key--a { right: 4px; top: 0; }
@@ -1517,7 +1523,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
   .app[data-view="now"] .header, .app[data-view="now"] .mini, .app[data-view="now"] .tabbar, .app[data-view="now"] .banner-slot { display: none; }
   .app[data-view="now"] .main { grid-row: 1 / -1; }
   .app[data-view="now"] .view { animation: sheet-up var(--dur-3) var(--ease-out) both; padding-top: 0; }
-  .app[data-view="now"] .sheet-bar { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; padding: calc(4px + env(safe-area-inset-top)) 12px 0; flex: none; }
+  .app[data-view="now"] .sheet-bar { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; padding: calc(4px + env(safe-area-inset-top)) 12px 0; flex: none; position: relative; z-index: 2; }
   .sheet-bar .sheet__handle { display: block; grid-column: 2; }
 }
 @media (max-height: 599px) and (orientation: landscape) and (max-width: 1099px) {

@@ -1020,6 +1020,8 @@
 :root[data-design="petal"] .now-dev > .pt-win__deck > .pt-win__keys { grid-column: 2; }
 :root[data-design="petal"] .now-dev > .pt-win__deck > .pt-win__vol { grid-column: 3; justify-self: end; }
 :root[data-design="petal"] .pt-win__keys { display: inline-flex; align-items: center; gap: 4px; }
+/* on a touch screen the keys stand 8 px apart, so each one's touch area (--hit) is its own */
+@media (pointer: coarse) { :root[data-design="petal"] .pt-win__keys { gap: 8px; } }
 :root[data-design="petal"] .pt-win__play { margin: 0 4px; }
 :root[data-design="petal"] .pt-win__key { width: 36px; height: 36px; }
 :root[data-design="petal"] .pt-win__vol { display: inline-flex; align-items: center; gap: 4px; }

@@ -1464,6 +1464,7 @@
 :root[data-design="lull"] .lull-key.is-liked { color: #fff; background: var(--v-pink); box-shadow: var(--v-shine-sm), 0 0 0 1px #a8226a; }
 :root[data-design="lull"] .lull-key:is([aria-pressed="true"], .is-on, .is-liked) .ic { filter: none; }
 :root[data-design="lull"] .lull-key:active { transform: translateY(1px); }
+@media (pointer: coarse) { :root[data-design="lull"] .lull-key { position: relative; } }   /* holds its touch area (::before, components.css) */
 :root[data-design="lull"] .lull-key.device__pill { position: relative; min-width: 0; gap: 0; font-size: 0; }
 /* the pill's hidden word still makes a row of its own: the icon is placed in the middle of the key, not in that grid */
 :root[data-design="lull"] .lull-key.device__pill > i { position: absolute; inset: 0; margin: auto; }
