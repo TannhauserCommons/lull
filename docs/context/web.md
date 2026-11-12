@@ -159,6 +159,11 @@ banners stay hidden: only "unreachable" and "offline" show); a network failure s
 starts, so the installed app opens offline with the cached shell and an "unreachable" banner. `App.server.checked`
 says the ping has answered.
 
+**Service banners** (system.js `syncBanners`) show while their cause lasts. One the listener closes stays closed on
+this device (`lull:bannersClosed`, by its state) through reloads and relaunches, until this page sees its cause end;
+the next time it comes, it shows. The cache has one only for a full disk (`down`); a cache at its size is working
+(cache.md#status). Gate: `tests/ui/gates/notices.spec.mjs`.
+
 ### Pairing and first run (ADR-0002)
 
 - **The gate** (setup.js) asks `GET /api/setup`: an unclaimed hub takes its setup code (`POST /api/setup/claim`, then

@@ -533,22 +533,34 @@
     return switchRow('search.showFiles', 'Show file results', 'Adds a Files tab to search: the Soulseek folders and files behind the songs.');
   }
 
-  /* ---------- cache: size from server config, usage live from the soulseek crate. Nothing here clears it:
-     the server has no endpoint for that, and the oldest audio is evicted on its own. ---------- */
+  /* ---------- cache: size from server config, usage live from the soulseek crate's `cache` status. The oldest audio is
+     evicted on its own; Clear cache (POST /api/cache/clear) empties it on the listener's word. ---------- */
   function usageBar() {
-    var cap = get('cache.capGB'), used = get('cache.usedGB');
+    var c = App.store.get('services').cache, cap = get('cache.capGB');
+    var used = c.capGB ? c.usedGB : get('cache.usedGB');      // live once the hub has reported, else as settings read it
     if (used == null) return html`<div class="sys-usage__head"><span class="sys-usage__big num">${num(cap)} <span class="fg-2">GB cache</span></span>${statusLine('off', 'Usage not reported yet')}</div>`;
     used = Math.min(cap, used);
     var full = used >= cap - .05, free = Math.max(0, cap - used);
-    return html`<div class="sys-usage__head"><span class="sys-usage__big num">${used.toFixed(1)} <span class="fg-2">of ${num(cap)} GB used</span></span>${full ? statusLine('warn', 'Full') : statusLine('ok', free.toFixed(1) + ' GB free')}</div>
+    return html`<div class="sys-usage__head"><span class="sys-usage__big num">${used.toFixed(1)} <span class="fg-2">of ${num(cap)} GB used</span></span>${full ? statusLine('ok', 'Full: the oldest audio makes room') : statusLine('ok', free.toFixed(1) + ' GB free')}</div>
       <div class="sys-usage__bar" role="img" aria-label="${'Cache: ' + used.toFixed(1) + ' GB of streamed audio, ' + free.toFixed(1) + ' GB free'}"><i class="sys-usage__seg sys-usage__seg--playing" style="--w:${share(used, cap) * 100}%"></i></div>
       <ul class="sys-usage__legend"><li><i class="sys-usage__seg sys-usage__seg--playing" aria-hidden="true"></i>Streamed audio<span class="num">${used.toFixed(1)} GB</span></li><li><i class="sys-usage__seg sys-usage__seg--free" aria-hidden="true"></i>Free<span class="num">${free.toFixed(1)} GB</span></li></ul>`;
   }
   function secCache() {
     return html`<div class="sys-usage" id="sys-usage">${usageBar()}</div>
       ${cfgNotice()}${cfgField('LULL_CACHE_MAX_GB', 'Cache size', 'Streamed audio is kept up to this size so replays start instantly.', { type: 'number', unit: 'GB' })}
-      <p class="sys-note">${icon('info', null, 'ic-16')}<span>When the cache is full, the oldest audio that is not playing or queued goes first. Songs in your queue are always kept, and your saved library is never touched.</span></p>`;
+      ${row('Clear cache', 'Removes the streamed audio kept for replays, to free the disk. Songs playing, preloading or being saved stay. Songs that went are fetched again when they play.',
+        html`<button class="btn btn--sm" data-act="sys-cache-clear">${icon('trash', null, 'ic-16')}Clear cache</button>`)}
+      <p class="sys-note">${icon('info', null, 'ic-16')}<span>When the cache is full, the oldest audio goes first, never a song that is playing, preloading or being saved. Your saved library is never touched.</span></p>`;
   }
+  App.action('sys-cache-clear', function (el) {
+    App.confirm({ title: 'clear the cache?', text: 'Streamed audio kept for replays is removed. Songs playing, preloading or being saved stay, and your saved library is never touched.', confirm: 'Clear cache', danger: true }, function () {
+      el.disabled = true;
+      M.api('/api/cache/clear', { method: 'POST' }).then(function (r) {
+        el.disabled = false;
+        App.toast('Cleared ' + App.fmt.size(r.freedBytes / 1e6) + ' of streamed audio' + (r.keptBytes ? '; ' + App.fmt.size(r.keptBytes / 1e6) + ' stays for what is playing or being saved' : ''), { kind: 'ok', icon: 'check' });
+      }, function (err) { el.disabled = false; App.toast('Couldn\'t clear the cache: ' + err.message, { kind: 'error' }); });
+    });
+  });
 
   /* ---------- library and saving ---------- */
   /* the naming template is server config; the preview shows where the playing (or first queued) song would go */
@@ -949,7 +961,7 @@
         var p = App.prefs(); showChoice('device.theme', p.theme); showChoice('device.motion', p.motion); showChoice('device.design', p.design);
       }),
       App.store.subscribe(function (keys) {
-        if (keys.indexOf('services') >= 0) repaint('#sys-health', healthRows(false));
+        if (keys.indexOf('services') >= 0) { repaint('#sys-health', healthRows(false)); repaint('#sys-usage', usageBar()); }
         if (keys.indexOf('activity') >= 0) repaint('#sys-rescan', rescanStatus());
       }),
       App.on('server', function () {
@@ -1199,8 +1211,9 @@
     if (paired && lf.state === 'down') {
       out.push({ id: 'sys-lastfm', sig: lf.state, kind: 'warn', icon: 'warning', text: 'Last.fm is down.' + (lf.queued ? ' Scrobbles are queued (' + lf.queued + ') and will retry.' : ''), action: { label: 'Retry now', run: retryScrobbles } });
     }
-    if (paired && (ca.state === 'warn' || ca.state === 'down')) {
-      out.push({ id: 'sys-cache', sig: ca.state, kind: 'warn', icon: 'warning', text: ca.state === 'warn' ? 'Cache full and every item is in use, so playback may pause.' : 'Cache: ' + clause(ca.detail) + '.', action: { label: 'Cache settings', run: go('/settings/cache') } });
+    /* only a full disk stops streaming; a cache at or (held by what plays) over its size works, and the tray says so */
+    if (paired && ca.state === 'down') {
+      out.push({ id: 'sys-cache', sig: ca.state, kind: 'warn', icon: 'warning', text: 'Cache: ' + clause(ca.detail) + '.', action: { label: 'Cache settings', run: go('/settings/cache') } });
     }
     if (App.server.reachable === false) {
       out.push({ id: 'sys-unreachable', sig: 'down', kind: 'down', icon: 'offline', dismissible: false, text: 'Can\'t reach your hub. Downloaded songs still play, and changes wait on this device.', action: { label: 'Retry now', run: checkHealth } });
@@ -1210,25 +1223,31 @@
     }
     return out;
   }
-  var shown = {}, dismissed = {};                  // id -> { sig, text } this file put up / sig the listener closed
+  /* shown: id -> { sig, text } this file put up. dismissed: id -> the sig the listener closed it at, kept on this device,
+     so a reload or a reopened app doesn't bring back what was closed (before 2026-11-12 a closing lasted as long as the
+     page). seen: the ids this page has seen called for; a closing is forgotten once its cause ends here, so the next
+     time it comes is news again. */
+  var shown = {}, dismissed = App.storage('bannersClosed') || {}, seen = {};
   var BACK = { 'sys-unreachable': 'Connected to your server again', 'sys-offline': 'Back online' };
   function syncBanners() {
-    var open = App.banner.list().map(function (b) { return b.id; }), want = wantedBanners(), next = {};
+    var open = App.banner.list().map(function (b) { return b.id; }), want = wantedBanners(), wanted = {}, next = {};
     Object.keys(shown).forEach(function (id) { if (open.indexOf(id) < 0) dismissed[id] = shown[id].sig; });
     want.forEach(function (b) {
-      if (dismissed[b.id] === b.sig) { next[b.id] = shown[b.id]; return; }
+      wanted[b.id] = seen[b.id] = true;
+      if (dismissed[b.id] === b.sig) return;
       delete dismissed[b.id];
       /* re-show only on a change, so live regions don't re-announce on every service event */
       if (!shown[b.id] || shown[b.id].text !== b.text || open.indexOf(b.id) < 0) App.banner.show(b);
       next[b.id] = { sig: b.sig, text: b.text };
     });
-    Object.keys(shown).forEach(function (id) {
-      if (next[id]) return;
-      delete dismissed[id];
-      if (open.indexOf(id) >= 0) App.banner.hide(id);
+    Object.keys(shown).forEach(function (id) { if (!next[id] && open.indexOf(id) >= 0) App.banner.hide(id); });
+    Object.keys(seen).forEach(function (id) {
+      if (wanted[id]) return;
+      delete seen[id]; delete dismissed[id];
       if (BACK[id]) App.toast(BACK[id], { kind: 'ok', icon: 'check' });
     });
     shown = next;
+    App.storage('bannersClosed', dismissed);
     setSearchPaused(App.server.reachable === false);
   }
   /* search needs the server: the header field says so while it is unreachable */
@@ -1238,6 +1257,8 @@
     s.disabled = on; s.placeholder = on ? 'Search pauses until the server is back' : s.getAttribute('data-placeholder');
   }
   App.store.subscribe(function (keys) { if (keys.indexOf('services') >= 0) syncBanners(); });
+  /* a closing is kept at once (app.js hid the banner first), not at the next service event: a reload may come before */
+  document.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('[data-banner-close]')) syncBanners(); });
   App.on('server', function (srv) {
     syncBanners();
   });
