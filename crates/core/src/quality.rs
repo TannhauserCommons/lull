@@ -59,7 +59,7 @@ impl Quality {
 }
 
 /// The lowest quality a profile accepts.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Minimum {
     pub lossless_only: bool,
@@ -100,7 +100,7 @@ impl std::fmt::Display for Minimum {
 
 /// Which passing copy to take first. Either way a copy that stalls or never starts falls back
 /// to the next one in the same order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Pick {
     /// The best-scoring copy among those that pass (speed, free slot, queue, then quality).
@@ -110,7 +110,7 @@ pub enum Pick {
 }
 
 /// Streaming when no copy passes the minimum.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum StreamBelow {
     /// Play the best copy found anyway, marked as below the minimum.
@@ -133,7 +133,9 @@ pub enum SaveBelow {
     Ask,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// A source preset's profile (ADR-0017): each device streams by the one its preset holds. Fetches
+/// of one song for different profiles are kept apart, so it is a key (`Hash`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamProfile {
     pub minimum: Minimum,
@@ -197,6 +199,9 @@ pub struct SaveCandidate {
     /// Whether it passes the saving minimum; when not, the profile's `below` decides.
     pub meets: bool,
 }
+
+/// What a minimum's `formats` may name: the formats lull can play (`.aif` counts as aiff).
+pub const FORMATS: [&str; 8] = ["flac", "wav", "aiff", "m4a", "aac", "mp3", "ogg", "opus"];
 
 pub fn is_lossless(codec_or_ext: &str) -> bool {
     matches!(
