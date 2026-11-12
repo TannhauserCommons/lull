@@ -175,7 +175,6 @@ const tinyText = () => {
 
 for (const design of designs) {
   test(`no text under 11 px / ${design}`, async ({ page }) => {
-    test.fixme(design === 'lull', 'M19: lull\'s Now Playing LCD label (.lull-dev__led) is 10 px');
     await withSong(page, design, '/home');
     for (const route of ['/home', `/album/${ids.album}`, '/now?tab=art', '/now?tab=queue', '/settings/playback']) {
       await go(page, route);
