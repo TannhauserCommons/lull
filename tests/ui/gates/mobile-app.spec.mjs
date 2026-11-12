@@ -33,7 +33,6 @@ test('the manifest installs lull as an app of its own', async ({ page }) => {
 
 // iOS takes the home-screen icon from apple-touch-icon and fills what is transparent with black
 test('the home-screen icon on iOS is opaque and 180 px', async ({ page }) => {
-  test.fixme(true, 'M09: apple-touch-icon is the 192 px icon with transparent corners (index.html), which iOS fills with black');
   await open(page, '/home');
   const icon = await page.evaluate(async () => {
     const l = document.querySelector('link[rel="apple-touch-icon"]');
