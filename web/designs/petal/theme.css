@@ -630,7 +630,7 @@
   :root[data-design="petal"] .header .nav-pill[data-fit-out] .ic { display: block; }
   /* the tabs stand at the left, the keys at the right (beside the desktop window's buttons), and the search takes the stretch
      between: it grows with the window, the room left over is the spacer's, so the row is whole at any width */
-  :root[data-design="petal"][data-shell="topnav"] .header__search { flex: 3 1 300px; max-width: clamp(380px, 34vw, 840px); min-width: 300px; }
+  :root[data-design="petal"][data-shell="topnav"] .header__search { flex: 3 1 300px; max-width: clamp(380px, 34vw, 840px); }
   :root[data-design="petal"][data-shell="topnav"] .header .spacer { flex: 1 1 0; }
   :root[data-design="petal"][data-shell="topnav"] .header__search .input { height: 40px; }
   :root[data-design="petal"] .header .btn-icon[aria-current="page"] { background-color: var(--peri); color: var(--ink); }
@@ -657,7 +657,6 @@
   :root[data-design="petal"] .nav-pill { padding: 4px 12px 0; }
   :root[data-design="petal"] .header__brand .wordmark.pt-mark { font-size: 0; text-shadow: none; }
   :root[data-design="petal"] .header__brand .pt-mark .pt-px { width: 27px; height: 21px; margin: 0; }
-  :root[data-design="petal"][data-shell="topnav"] .header__search { min-width: 140px; }
   :root[data-design="petal"] .view { padding-left: 64px; }
 }
 
