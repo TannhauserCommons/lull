@@ -53,3 +53,7 @@ The owner is not expected to run workflows. They say "release it" in chat, for t
 - **Every switch names its area,** so a batch is complete when its area's switches are gone. Work that doesn't use a switch can't say it is unfinished; small changes don't need to.
 - **Self-hosters' `:latest`** moves only with releases, at the pace of the apps.
 - **The scope table is one more thing to keep current;** the job fails on an unknown scope, which says so the day it appears.
+
+## Update 2026-11-12: the image follows the tag
+
+0.2.8, 0.2.9 and 0.2.10 were tagged with `mise run release` and a push of the tag, which skips `release.yml`, so no `:X.Y.Z` image was published and `:latest` stayed at 0.2.7 for every self-hoster (a listener's hub reported it). The image no longer depends on how a release is made: `release-image.yml` builds it on the tag itself, on any `v*` tag pushed, and `release.yml` starts it for the tags its job token pushes (those start no workflow). It moves `:latest` only for the newest release tag, so publishing an older tag never moves self-hosters back; a dispatch from main with `tag` publishes a tag that has none.

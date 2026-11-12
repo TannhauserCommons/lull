@@ -2,8 +2,8 @@ name: release
 # Cuts a release on the owner's word (ADR-0098): the integrator session runs this when the owner says to release, or the
 # owner runs it from the Actions tab or the GitHub app. scripts/release.sh makes the release commit on main's newest
 # green commit (ADR-0097) with the draft's notes and tags it; then the tag starts app.yml (installers, updater files,
-# APK, the GitHub Release), the version commit goes to the queue, and the hub's image of the tag is published as
-# :X.Y.Z and :latest for self-hosters. `rehearse` does everything but push and publish.
+# APK, the GitHub Release), the version commit goes to the queue, and release-image.yml publishes the hub's image of
+# the tag as :X.Y.Z and :latest for self-hosters. `rehearse` does everything but push and publish.
 on:
   workflow_dispatch:
     inputs:
@@ -80,48 +80,10 @@ jobs:
         run: |
           set -eu
           git push origin "$TAG" "$TAG^{commit}:refs/heads/queue/release-${TAG#v}"
-          # Pushes with the job's token start no workflow: start the two that a person's push would.
+          # Pushes with the job's token start no workflow: start the three that a person's push would.
           gh workflow run app.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
+          gh workflow run release-image.yml --repo "$GITHUB_REPOSITORY" --ref main -f tag="$TAG"
           gh workflow run queue.yml --repo "$GITHUB_REPOSITORY" --ref main
           # The next landing drafts the release after this one.
           id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '[.[] | select(.draft and .name == "Next release")][0].id // empty')
           [ -z "$id" ] || gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
-
-  # Self-hosters follow releases: the hub's image of the tag, as :X.Y.Z and :latest. :main stays the queue's.
-  image:
-    needs: tag
-    if: ${{ !inputs.rehearse }}
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.tag.outputs.tag }}
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - id: image
-        run: echo "name=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/lull" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ steps.image.outputs.name }}:${{ inputs.version }}
-            ${{ steps.image.outputs.name }}:latest
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ needs.tag.outputs.commit }}
-            org.opencontainers.image.version=${{ inputs.version }}
-            org.opencontainers.image.title=lull
-            org.opencontainers.image.licenses=AGPL-3.0-only
-          secrets: |
-            lastfm_key=${{ secrets.LULL_LASTFM_API_KEY }}
-            lastfm_secret=${{ secrets.LULL_LASTFM_API_SECRET }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
