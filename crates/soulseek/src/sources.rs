@@ -66,6 +66,11 @@ impl Source {
         self.quality(duration).meets(format_of(&self.ext), min)
     }
 
+    /// Whether its format is one `min` leaves on (`Minimum::allows`).
+    pub fn allowed(&self, min: &Minimum) -> bool {
+        min.allows(format_of(&self.ext))
+    }
+
     /// The order `highest` sorts by: lossless first, hi-res lossless above CD, then bitrate.
     fn quality_rank(&self, duration: Option<u32>) -> (bool, u32) {
         let q = self.quality(duration);
@@ -133,6 +138,10 @@ pub struct Ranked {
     /// Above the streaming cap (`maxKbps`; lossless is above any cap): taken only after every
     /// copy within it. Always false in the saving order.
     pub above_max: bool,
+    /// In a format the streaming profile switched off (`policy::allowed`): listed last, never
+    /// streamed unless the listener picks it. Always false in the saving order.
+    #[serde(skip)]
+    pub left_out: bool,
     #[serde(skip)]
     pub source: Source,
 }
@@ -334,6 +343,7 @@ impl Sources {
             meets: true,
             queue_too_long: false,
             above_max: false,
+            left_out: false,
             source: s,
         }
     }
@@ -342,6 +352,7 @@ impl Sources {
 /// Sorts ranked sources for a profile and marks which pass its minimum. Streaming puts every
 /// copy within its bitrate cap before those above it, passing copies first on each side: the cap
 /// bounds what streams, and a copy above it is taken only when none within it is (2026-11-12).
+/// A copy in a format streaming switched off goes last, and is never taken (`left_out`).
 pub fn order(mut ranked: Vec<Ranked>, duration: Option<u32>, rules: &Rules, purpose: Purpose) -> Vec<Ranked> {
     let min = rules.minimum(purpose);
     let cap = match purpose {
@@ -352,11 +363,13 @@ pub fn order(mut ranked: Vec<Ranked>, duration: Option<u32>, rules: &Rules, purp
         r.meets = r.source.meets(min, duration);
         r.queue_too_long = r.source.queue_too_long(rules.max_peer_queue);
         r.above_max = !r.source.quality(duration).within(cap);
+        r.left_out = purpose == Purpose::Stream && !r.source.allowed(min);
     }
     let fastest = |a: &Ranked, b: &Ranked| b.score.cmp(&a.score).then(b.expected.total_cmp(&a.expected));
     ranked.sort_by(|a, b| {
-        a.queue_too_long
-            .cmp(&b.queue_too_long)
+        a.left_out
+            .cmp(&b.left_out)
+            .then(a.queue_too_long.cmp(&b.queue_too_long))
             .then(a.above_max.cmp(&b.above_max))
             .then(b.meets.cmp(&a.meets))
             .then_with(|| match rules.pick(purpose) {
@@ -437,6 +450,7 @@ pub(crate) mod tests {
             meets: true,
             queue_too_long: false,
             above_max: false,
+            left_out: false,
             source,
         }
     }

@@ -54,10 +54,7 @@ impl Quality {
     /// Whether a file with this quality and `format` (lowercase extension) passes `min`.
     /// A lossy file of unknown bitrate fails any bitrate floor: it can't be shown to pass.
     pub fn meets(&self, format: &str, min: &Minimum) -> bool {
-        if !min.formats.is_empty() && !min.formats.iter().any(|f| f.eq_ignore_ascii_case(format)) {
-            return false;
-        }
-        self.lossless || (!min.lossless_only && self.kbps >= min.kbps)
+        min.allows(format) && (self.lossless || (!min.lossless_only && self.kbps >= min.kbps))
     }
 }
 
@@ -73,6 +70,19 @@ pub struct Minimum {
     pub formats: Vec<String>,
 }
 
+impl Minimum {
+    /// Whether `format` (`format_of` an extension) is one the listener left on: any, with none
+    /// named. Streaming holds to it whatever `below` says (`policy::allowed` in soulseek).
+    pub fn allows(&self, format: &str) -> bool {
+        self.formats.is_empty() || self.formats.iter().any(|f| f.eq_ignore_ascii_case(format))
+    }
+
+    /// The formats left on, for messages: "MP3 or OGG".
+    pub fn formats_named(&self) -> String {
+        self.formats.join(" or ").to_ascii_uppercase()
+    }
+}
+
 /// "320 kbps or lossless", "lossless only, FLAC": for messages that name the listener's rule.
 impl std::fmt::Display for Minimum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -82,7 +92,7 @@ impl std::fmt::Display for Minimum {
             (false, k) => write!(f, "{k} kbps or lossless")?,
         }
         if !self.formats.is_empty() {
-            write!(f, ", {}", self.formats.join(" or ").to_ascii_uppercase())?;
+            write!(f, ", {}", self.formats_named())?;
         }
         Ok(())
     }
@@ -195,10 +205,12 @@ pub fn is_lossless(codec_or_ext: &str) -> bool {
     )
 }
 
-/// The format a minimum's `formats` names for a lowercase extension: `.aif` is AIFF too.
+/// The format a minimum's `formats` names for a lowercase extension: `.aif` is AIFF too, and a
+/// `.webm` is YouTube's Opus (`youtube::Format::Opus`), so Opus switched on takes it.
 pub fn format_of(ext: &str) -> &str {
     match ext {
         "aif" => "aiff",
+        "webm" => "opus",
         other => other,
     }
 }
@@ -262,6 +274,12 @@ mod tests {
             formats: vec!["aiff".into()],
         };
         assert!(q(true, 1400).meets(format_of("aif"), &aiff), ".aif is AIFF");
+        let opus = Minimum {
+            lossless_only: false,
+            kbps: 128,
+            formats: vec!["mp3".into(), "opus".into()],
+        };
+        assert!(q(false, 160).meets(format_of("webm"), &opus), "YouTube's .webm is Opus");
         assert_eq!(flac_only.to_string(), "lossless only, FLAC");
         assert!(!q(false, 320).meets(
             "flac",

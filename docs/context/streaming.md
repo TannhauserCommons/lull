@@ -8,7 +8,7 @@ A **fetch** gets one song onto disk. There is at most one live fetch per track, 
 
 Openings of the song's stream (`Fetcher::stream`) take turns, so two at once join one fetch. Before, each could find no fetch running and start its own; start fast's race then handed the song to Soulseek's copy as the first one's, and a player following the second dropped every event of the copy playing: what had arrived froze on the seek bar, with no speed, and seeks past it were kept and never landed while the song played on (2026-11-08). Two openings at once can come from the player and a download to the device, the player's reopening on every (re)connect of the event stream, or two devices.
 
-A finished copy already in the stream cache plays at once, whatever the `below` rule, with one `stream` event (`streaming`, and `belowMinimum` when it doesn't pass the streaming minimum). Otherwise:
+A finished copy already in the stream cache plays at once, whatever the `below` rule (never one in a format streaming switched off, [soulseek.md](soulseek.md#source-rules)), with one `stream` event (`streaming`, and `belowMinimum` when it doesn't pass the streaming minimum). Otherwise:
 
 1. **Pick a source.** The listener's pick (`?peer=&path=`: a copy a search found, or one finished in the cache, `Fetcher::picked`; a search's copies are kept 6 hours, a pick as long as its queue entry) comes first, then the first untried copy that passes the profile's minimum, in its order ([soulseek.md](soulseek.md#source-rules)): the streaming profile when the player started the fetch, the saving one when a save did. With no known source the fetch searches for the song first (`finding`).
 2. **None passes.** When copies exist but none passes the minimum, the profile's `below` decides:

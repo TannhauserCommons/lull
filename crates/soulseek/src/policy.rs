@@ -13,6 +13,10 @@
 //!   listener picks. `pick` orders the copies tried first (`sources::order`), and so breaks ties.
 //!   `maxKbps` bounds all of it: a copy above the cap starts the song only when no copy within it
 //!   can, and a later play takes a cached copy within it first.
+//! - **Formats switched off** (`allowed`). A copy in a format the minimum's `formats` leaves out
+//!   never streams, whatever `below` says: not at the start, in the race, as a better copy or
+//!   from the cache. It is the listener's own choice (data on a phone); only their pick of that
+//!   copy plays it (2026-11-12).
 //! - **Switching mid-song** (`better`, `switch_to`). The best copy that passes the minimum and is
 //!   within the cap, by how it sounds (`rank::sound`: the score's format factor, its bitrate
 //!   scaled toward `maxKbps`; speed decides only what starts), and only for a clear step in sound
@@ -33,10 +37,16 @@ pub fn within_cap(p: &StreamProfile, copy: &Source, duration: Option<u32>) -> bo
     copy.quality(duration).within(p.max_kbps)
 }
 
+/// Whether `copy`'s format is one streaming leaves on (`Minimum::allows`). A hard rule, unlike
+/// the rest of the minimum, which `below` may set aside.
+pub fn allowed(p: &StreamProfile, copy: &Source) -> bool {
+    copy.allowed(&p.minimum)
+}
+
 /// Whether `copy` may be fetched to start the song: one passing the minimum always, one below it
-/// only under `playBest`.
+/// only under `playBest`, and never one in a format switched off.
 pub fn may_start(p: &StreamProfile, copy: &Source, duration: Option<u32>) -> bool {
-    passes(p, copy, duration) || p.below == StreamBelow::PlayBest
+    allowed(p, copy) && (passes(p, copy, duration) || p.below == StreamBelow::PlayBest)
 }
 
 /// A copy of the song found so far, in the order the profile tries them (`pick`), and whether its
@@ -65,6 +75,9 @@ pub enum Start<'a> {
 /// What the song starts on, given the copies found so far (`copies`, in the profile's order;
 /// those that failed left out) and whether the search for more still runs.
 pub fn start<'a>(p: &StreamProfile, copies: &[Seen<'a>], searching: bool, duration: Option<u32>) -> Start<'a> {
+    // A format switched off never starts the song, nor is it offered.
+    let copies: Vec<Seen<'a>> = copies.iter().filter(|s| allowed(p, s.copy)).copied().collect();
+    let copies = copies.as_slice();
     // Within the cap first: a copy above it starts the song only when none within it can.
     let within = |s: &&Seen| within_cap(p, s.copy, duration);
     let mut ready = copies.iter().filter(|s| s.ready);
@@ -148,7 +161,8 @@ pub fn better(
 }
 
 /// The order a later play takes cached copies in, best first: within the cap, passing the
-/// minimum, then how it sounds. A cached copy needs no speed.
+/// minimum, then how it sounds. A cached copy needs no speed; one in a format switched off is
+/// left out before (`allowed`).
 pub fn cached_key(
     p: &StreamProfile,
     preferred: &[String],
@@ -233,6 +247,31 @@ mod tests {
     /// A row of the start table: the `below` rule, the copies with the time each is ready, when the
     /// search ends, and what starts the song and when.
     type Row<'a> = (StreamBelow, Vec<(&'a Source, u32)>, u32, (&'a str, u32));
+
+    #[test]
+    fn a_format_switched_off_never_starts_the_song_whatever_the_below_rule() {
+        let flac = copy("peer", "flac", 0);
+        let mp3 = copy("other", "mp3", 128);
+        use StreamBelow::*;
+        for below in [PlayBest, KeepLooking, Ask] {
+            let mut p = profile(192, below);
+            p.minimum.formats = vec!["mp3".into(), "opus".into()];
+            assert!(
+                !may_start(&p, &flac, SONG),
+                "{below:?}: the FLAC is never fetched to start"
+            );
+            // Only the FLAC ready, the search over: it doesn't play, and isn't offered.
+            let (what, _) = race(&p, &[(&flac, 1)], 2);
+            assert!(matches!(what.as_str(), "Fail" | "Search"), "{below:?}: {what}");
+            // A copy in a format left on, below the minimum, ready after it: `playBest` plays it,
+            // the others search on or ask; the FLAC never plays.
+            let (what, at) = race(&p, &[(&flac, 1), (&mp3, 3)], 4);
+            match below {
+                PlayBest => assert_eq!((what.as_str(), at), ("other", 3)),
+                KeepLooking | Ask => assert!(what == "Search" || what == "Ask", "{below:?}: {what}"),
+            }
+        }
+    }
 
     #[test]
     fn start_fast_by_below_rule_and_arrival_order() {
