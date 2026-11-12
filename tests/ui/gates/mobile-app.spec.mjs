@@ -6,7 +6,7 @@
 
 import { expect, test } from '@playwright/test';
 import { ids } from './lib.mjs';
-import { isWebkit, open } from './mobile.mjs';
+import { open } from './mobile.mjs';
 
 test('the manifest installs lull as an app of its own', async ({ page }) => {
   await open(page, '/home');
@@ -86,8 +86,7 @@ test.describe('with its service worker', () => {
 
   // WebKit hands the page the worker's 'installed' after the worker has already claimed it, so a first install looked
   // like an update (app.js registerWorker): "New version ready" on the first visit
-  test('a first visit offers no update', async ({ page, browser }) => {
-    test.fixme(isWebkit(browser), 'M14: WebKit reports the first install as an update (controller already set at "installed")');
+  test('a first visit offers no update', async ({ page }) => {
     await page.addInitScript(() => document.addEventListener('DOMContentLoaded', () => { window.__pwa = []; App.on('pwa', (e) => window.__pwa.push(e.kind)); }));
     await open(page, '/home');
     await page.evaluate(() => navigator.serviceWorker.ready);

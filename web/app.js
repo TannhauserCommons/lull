@@ -4880,9 +4880,9 @@
         if (r.active) r.active.postMessage({ type: 'cache', urls: urls });
       });
       reg.addEventListener('updatefound', function () {
-        var w = reg.installing;
+        var w = reg.installing, replaces = !!reg.active;   // asked now, not at 'installed': a first install has no active worker, though WebKit already gives the page a controller
         w.addEventListener('statechange', function () {
-          if (w.state === 'installed' && navigator.serviceWorker.controller) App.emit('pwa', { kind: 'update' });
+          if (w.state === 'installed' && replaces) App.emit('pwa', { kind: 'update' });
         });
       });
     }, function (err) { console.warn('Service worker not registered:', err.message); });
