@@ -122,3 +122,9 @@ The owner: a song "upgraded above my maximum bitrate from YouTube Opus". Marlon 
 
 **Alternative.** A cap no copy ever crosses: with only copies above it, the song wouldn't play. Not chosen without the owner.
 
+## Update 2026-11-12: once YouTube is ready, a queue is given up
+
+On 2026-11-11 TLC's "No Scrubs" waited for YouTube's lookup (8 s) while Soulseek's side sat 30 s in the queue of the first peer it asked, though many peers shared the song. Asked whether a peer that only queues the race should be waited out, the owner: "Once YouTube is ready".
+
+**Decision.** Once YouTube's copy is ready (its first bytes, or all of it), Soulseek's side gives up a peer that has only queued it, at once rather than after the 30 s queue limit, and asks the next peer with a free slot first. Still one peer at a time (ADR-0015 stands). Before YouTube is ready, the queue limit is unchanged, so a known Soulseek copy can still start the song first.
+

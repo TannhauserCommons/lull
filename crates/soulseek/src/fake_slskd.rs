@@ -24,6 +24,8 @@ use crate::slskd::Slskd;
 
 /// The pace the peer sends at: this many bytes every `TICK`.
 const TICK: Duration = Duration::from_millis(20);
+/// A pace for a peer that keeps every request in its queue and never sends.
+pub const QUEUES: usize = usize::MAX;
 /// How long a search runs before slskd calls it complete.
 pub const SEARCH_TAKES: Duration = Duration::from_secs(1);
 /// The length the search reports for every file, seconds: the tests' song's.
@@ -44,7 +46,8 @@ struct Shared {
     layout: Layout,
     root: PathBuf,
     peer: Peer,
-    /// Peers whose pace differs from `peer`'s.
+    /// Peers whose pace differs from `peer`'s (0: it accepts and sends nothing; `QUEUES`: it keeps
+    /// every request queued).
     paces: HashMap<String, usize>,
     transfers: Mutex<HashMap<String, Transfer>>,
     /// Every download started, with the offset the peer was asked for.
@@ -248,13 +251,19 @@ async fn enqueue(
         starts.push((user.clone(), at));
     }
     let pace = s.paces.get(&user).copied().unwrap_or(s.peer.per_tick);
-    let task = tokio::spawn(download(s.clone(), id.clone(), path, filename.clone(), bytes, at, pace)).abort_handle();
+    let task = (pace != QUEUES).then(|| {
+        Arc::new(tokio::spawn(download(s.clone(), id.clone(), path, filename.clone(), bytes, at, pace)).abort_handle())
+    });
     let t = Transfer {
         filename: filename.clone(),
-        state: "InProgress",
+        state: if task.is_some() {
+            "InProgress"
+        } else {
+            "Queued, Remotely"
+        },
         bytes: at,
         from: (at, std::time::Instant::now()),
-        task: Some(Arc::new(task)),
+        task,
     };
     if let Ok(mut all) = s.transfers.lock() {
         all.insert(id.clone(), t.clone());

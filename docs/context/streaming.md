@@ -19,7 +19,7 @@ A finished copy already in the stream cache plays at once, whatever the `below` 
 3. **Make room** in the cache for the file twice over (lull's copy and slskd's file for the leg running, [cache.md](cache.md)), then get it in [legs](#legs).
 4. **Watch each leg every second**, and give up on this peer when:
    - it hasn't accepted the request within 20 s;
-   - it has kept the transfer queued for 30 s;
+   - it has kept the transfer queued for 30 s, or at all once YouTube's copy is ready in start fast's race (the race's Soulseek side then asks peers with a free slot first; ADR-0012's update "once YouTube is ready");
    - no new bytes have arrived for Settings › Sources' stall timeout (`stallTimeout`, 15 s by default; shown as `stalled` after 5 s);
    - slskd reports the transfer failed;
    - after 10 s of sending it delivers under 1.25 times the song's rate (its size over its length) and an untried copy is expected to be twice as fast (ADR-0015, [soulseek.md](soulseek.md#ranking)); not for a copy the listener picked or a save named, and not remembered as a stall.

@@ -383,7 +383,12 @@ impl Fetcher {
             if t.phase() == Phase::Queued {
                 copy.queued = true;
             }
-            match watch_leg(&mut leg, t, rules.stall_timeout()) {
+            // Once YouTube's copy is ready, a peer that only keeps us queued is given up at once.
+            let queue = match f.youtube_ready.load(std::sync::atomic::Ordering::Relaxed) {
+                true => std::time::Duration::ZERO,
+                false => QUEUE_TIMEOUT,
+            };
+            match watch_leg(&mut leg, t, rules.stall_timeout(), queue) {
                 Watch::Gone(gone) => {
                     self.end_leg(source, &mut leg, Some(t)).await;
                     let pct = copy.ranges.total().saturating_mul(100) / source.size.max(1);
@@ -462,7 +467,7 @@ impl Fetcher {
             copy.side_leg = Some(side);
             return;
         };
-        match watch_leg(&mut side.leg, &t, rules.stall_timeout()) {
+        match watch_leg(&mut side.leg, &t, rules.stall_timeout(), QUEUE_TIMEOUT) {
             Watch::Gone(_) => {
                 self.measure(&side.source, &side.leg, &t).await;
                 return self.shun(copy, side).await;
@@ -717,10 +722,10 @@ enum Gone {
     Failed(String),
 }
 
-/// A leg's state from slskd's transfer, giving up on a peer that doesn't answer, queues it too
-/// long or stalls. Silence counts from the last new byte, or from when the peer started sending:
+/// A leg's state from slskd's transfer, giving up on a peer that doesn't answer, queues it longer
+/// than `queue` or stalls. Silence counts from the last new byte, or from when the peer started sending:
 /// a slow connection set-up (or slskd retrying the peer) is not a stall.
-fn watch_leg(leg: &mut Leg, t: &Transfer, stall: std::time::Duration) -> Watch {
+fn watch_leg(leg: &mut Leg, t: &Transfer, stall: std::time::Duration, queue: std::time::Duration) -> Watch {
     let running = t.phase() == Phase::InProgress;
     if leg.front > leg.last.0 || (running && !leg.was_running) {
         leg.last = (leg.front, Instant::now());
@@ -732,7 +737,7 @@ fn watch_leg(leg: &mut Leg, t: &Transfer, stall: std::time::Duration) -> Watch {
     let quiet = leg.last.1.elapsed();
     match t.phase() {
         Phase::Starting if leg.begun.elapsed() > START_TIMEOUT => Watch::Gone(Gone::Silent),
-        Phase::Queued if quiet > QUEUE_TIMEOUT => Watch::Gone(Gone::Queued(
+        Phase::Queued if quiet > queue => Watch::Gone(Gone::Queued(
             t.place_in_queue
                 .map(|q| format!(" at position {q}"))
                 .unwrap_or_default(),

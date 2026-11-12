@@ -229,6 +229,10 @@ pub struct Fetch {
     /// Soulseek's side of start fast's race, still racing: only a copy that passes the streaming
     /// minimum, and no `below` rule, until it becomes the player's fetch (`hand_over`).
     racing: AtomicBool,
+    /// Soulseek's side of start fast's race, once YouTube's copy is ready (ADR-0012's update
+    /// "once YouTube is ready"): a peer that only keeps it queued is given up at once, for the
+    /// next with a free slot, instead of after `QUEUE_TIMEOUT`.
+    youtube_ready: AtomicBool,
     /// The player's fetch this one took over (start fast's race won by Soulseek, the better copy
     /// switched to): its `stream` events name that job, so the player keeps following the song.
     replaces: std::sync::OnceLock<String>,
@@ -1187,6 +1191,7 @@ impl Fetcher {
             bar,
             beside,
             racing: AtomicBool::new(beside == Some(Beside::Racer)),
+            youtube_ready: AtomicBool::new(false),
             replaces: std::sync::OnceLock::new(),
             successor: std::sync::OnceLock::new(),
             youtube_failed: std::sync::OnceLock::new(),
@@ -1427,6 +1432,9 @@ impl Fetcher {
                                 break Err(());
                             }
                             youtube_sent = true;
+                            if let Some(u) = &soulseek {
+                                u.youtube_ready.store(true, Ordering::Relaxed);
+                            }
                         }
                         won = soulseek_sends(soulseek.clone()), if !youtube_sent && soulseek.is_some() && !held => {
                             if won && self.above_cap(f, soulseek.as_ref()) {
@@ -1442,6 +1450,12 @@ impl Fetcher {
                         }
                     }
                 };
+                // YouTube's copy may also have arrived whole before its first bytes were seen.
+                if (youtube_sent || matches!(outcome, Ok(Ok(_))))
+                    && let Some(u) = &soulseek
+                {
+                    u.youtube_ready.store(true, Ordering::Relaxed);
+                }
                 (outcome, youtube_sent)
             }
         };
@@ -2068,7 +2082,11 @@ impl Fetcher {
         let rules = self.rules.get();
         let mut searches = 0;
         loop {
-            let (copies, queued_out) = self.untried(f, tried, &rules);
+            let (mut copies, queued_out) = self.untried(f, tried, &rules);
+            // Once YouTube's copy is ready, the race goes on to a peer with a free slot first.
+            if f.youtube_ready.load(Ordering::Relaxed) {
+                copies.sort_by_key(|r| !r.source.free_slot);
+            }
             if copies.is_empty() && queued_out == 0 && tried.is_empty() && searches == 0 {
                 // One beside YouTube's lookup that ended since the fetch began is its search.
                 if !self.sources.searched_since(&f.track.id, f.opened) {
@@ -3713,6 +3731,64 @@ mod tests {
             assert_eq!(event["peer"], lull_core::youtube::PEER, "{event}");
             assert!(chunk.iter().all(|b| *b == 7), "YouTube's copy within the cap plays");
             assert!(event["upgrade"].is_null(), "the FLAC is never offered: {event}");
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn once_youtube_is_ready_a_peer_that_only_queues_us_gives_way_to_one_with_a_free_slot() -> Result<()> {
+            // The owner, on a start that waited out a peer's queue (2026-11-11): give it up "once
+            // YouTube is ready". Before, Soulseek's side waited 30 s in the first peer's queue.
+            let bytes: Vec<u8> = vec![5u8; 300_000];
+            let peer = Peer {
+                per_tick: 16_384,
+                overwrite: false,
+                reported: None,
+                settles: Duration::ZERO,
+            };
+            const FLAC: &str = "Music\\Artist\\Collected\\01 - Song.flac";
+            let fake = Fake::start_with(
+                HashMap::from([(REMOTE.to_owned(), bytes.clone()), (FLAC.to_owned(), bytes.clone())]),
+                peer,
+                HashMap::from([("queuer".to_owned(), crate::fake_slskd::QUEUES)]),
+            )
+            .await
+            .map_err(|e| Error::internal(e.to_string()))?;
+            let fetcher = with_youtube(&fake, start_fast_rules(), Timed::new(Duration::ZERO, true)).await?;
+            // The peer that will only queue us is first in the profile's order; next comes a
+            // FLAC from a peer without a free slot, then an MP3 from one with a free slot.
+            let size = bytes.len() as u64;
+            let mut queuer = shared("queuer", FLAC, size, "flac", None, true);
+            queuer.upload_speed = 20_000_000;
+            let mut busy = shared("busy", FLAC, size, "flac", None, true);
+            busy.upload_speed = 20_000_000;
+            busy.free_slot = false;
+            let mut free = shared("free", REMOTE, size, "mp3", Some(320), false);
+            free.upload_speed = 200_000;
+            fetcher
+                .sources
+                .add(HashMap::from([(track().id, vec![queuer, busy, free])]));
+            fetcher.sources.mark_searched(&track().id);
+
+            let yt = fetcher.stream(track(), None).await?;
+            let (chunk, _) = first_bytes(&yt).await?;
+            assert!(chunk.iter().all(|b| *b == 7), "YouTube's copy plays");
+            let up = fetcher
+                .upgrade(&track().id)
+                .ok_or_else(|| Error::internal("Soulseek's copy stopped"))?;
+            let t0 = std::time::Instant::now();
+            let p = tokio::time::timeout(Duration::from_secs(15), up.progress().wait_for(|p| p.ended()))
+                .await
+                .map_err(|_| Error::internal("Soulseek's side is still waiting in the queue"))?
+                .map_err(|_| Error::internal("gone"))?
+                .clone();
+            assert_eq!(p.status, Status::Done, "{:?}", p.error);
+            assert_eq!(p.source.map(|s| s.user).as_deref(), Some("free"));
+            assert!(t0.elapsed() < Duration::from_secs(10), "{:?}", t0.elapsed());
+            assert_eq!(fake.starts_of("queuer").len(), 1);
+            assert!(
+                fake.starts_of("busy").is_empty(),
+                "a peer without a free slot was asked"
+            );
             Ok(())
         }
 
