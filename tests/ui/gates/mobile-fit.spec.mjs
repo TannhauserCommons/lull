@@ -114,8 +114,13 @@ test.describe('a phone held sideways', () => {
     });
     test(`the page keeps room to read, and notes stay on the screen / ${design}`, async ({ page }) => {
       await withSong(page, design, `/album/${ids.album}`);
-      const view = await page.evaluate(() => document.querySelector('#view').getBoundingClientRect().height / innerHeight);
-      expect(view, 'the share of the window the page gets beside the header and player').toBeGreaterThanOrEqual(0.5);
+      const share = () => page.evaluate(() => document.querySelector('#view').getBoundingClientRect().height / innerHeight);
+      expect(await share(), 'the share of the window the page gets beside the header and player').toBeGreaterThanOrEqual(0.5);
+      if (design === 'glasshouse') { // its Now Playing kept the full player bar and its dock as well
+        await go(page, '/now');
+        expect(await share(), 'Now Playing: the share of the window the page gets').toBeGreaterThanOrEqual(0.5);
+        await go(page, `/album/${ids.album}`);
+      }
       await page.evaluate(() => { App.toast('Added to the queue'); App.toast('Saved to your library'); });
       await page.waitForTimeout(600);
       const out = await page.evaluate(() => [...document.querySelectorAll('#toasts > *')].map((t) => t.getBoundingClientRect())

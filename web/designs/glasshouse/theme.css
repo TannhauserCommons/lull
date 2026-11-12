@@ -1955,3 +1955,12 @@
 @media (forced-colors: active) {
   :root[data-design="glasshouse"] { --gh-cur: auto; --gh-cur-pt: pointer; --gh-cur-tx: text; }
 }
+
+/* a phone held sideways (under 500 px tall): the mini player stands in for the full player bar on Now Playing too, beside
+   the dock, so the page keeps at least half the height (elsewhere the shared layout already does this) */
+@media (max-height: 500px) and (orientation: landscape) and (min-width: 640px) {
+  :root[data-design="glasshouse"] .app[data-view="now"] .pbar { display: none; }
+  :root[data-design="glasshouse"] .app[data-view="now"] .mini { display: flex; grid-area: bar; margin: 0 0 8px; }
+  :root[data-design="glasshouse"][data-shell="dock"] .app[data-view="now"] { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-areas: "head head" "banner banner" "main main" "bar dock"; column-gap: 12px; }
+  :root[data-design="glasshouse"][data-shell="dock"] .app[data-view="now"] .rail { align-self: end; margin-bottom: 8px; }
+}
