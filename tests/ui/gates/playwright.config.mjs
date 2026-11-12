@@ -87,6 +87,8 @@ export default defineConfig({
     { name: 'like-saves', testMatch: 'like-saves.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // a song moved to the catalog's album shows its cover in the queue panel and the player bar, not only on the page
     { name: 'queue-moved', testMatch: 'queue-moved.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
+    // search's song rows, Soulseek's too, take their album's cover when the hub learns it, without a new search
+    { name: 'search-covers', testMatch: 'search-covers.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // the queue's radio switch stays after radio is switched off, and starts a radio on a queue that never had one
     { name: 'queue-radio', testMatch: 'queue-radio.spec.mjs', fullyParallel: true },
     // Home's parts the hub fills: the first-run screen and its artists, a followed tag's "you might like"
