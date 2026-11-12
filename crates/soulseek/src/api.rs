@@ -329,7 +329,7 @@ async fn known_source(svc: &Service, track: &Track, peer: String, path: String) 
             )),
         };
     }
-    svc.sources.get(track, &wanted).map(|s| s.source_ref()).ok_or_else(|| {
+    svc.fetcher.picked(track, &wanted).await?.ok_or_else(|| {
         Error::NotFound(format!(
             "{} is not a known source for this song; search again",
             wanted.user

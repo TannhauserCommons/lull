@@ -10,7 +10,7 @@ Openings of the song's stream (`Fetcher::stream`) take turns, so two at once joi
 
 A finished copy already in the stream cache plays at once, whatever the `below` rule, with one `stream` event (`streaming`, and `belowMinimum` when it doesn't pass the streaming minimum). Otherwise:
 
-1. **Pick a source.** The listener's pick (`?peer=&path=`) comes first, then the first untried copy that passes the profile's minimum, in its order ([soulseek.md](soulseek.md#source-rules)): the streaming profile when the player started the fetch, the saving one when a save did. With no known source the fetch searches for the song first (`finding`).
+1. **Pick a source.** The listener's pick (`?peer=&path=`: a copy a search found, or one finished in the cache, `Fetcher::picked`; a search's copies are kept 6 hours, a pick as long as its queue entry) comes first, then the first untried copy that passes the profile's minimum, in its order ([soulseek.md](soulseek.md#source-rules)): the streaming profile when the player started the fetch, the saving one when a save did. With no known source the fetch searches for the song first (`finding`).
 2. **None passes.** When copies exist but none passes the minimum, the profile's `below` decides:
    - `playBest`: the best of them plays; the `stream` event says `belowMinimum: true`, so the player can show a badge;
    - `keepLooking`: search again, up to 3 searches 20 s apart, then fail with "no copy meets your streaming minimum";

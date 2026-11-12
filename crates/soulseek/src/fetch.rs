@@ -1899,6 +1899,24 @@ impl Fetcher {
         Some(stream_event(&f, &f.now()))
     }
 
+    /// A peer's copy the listener picked (`?peer=&path=`), as lull knows it: from the song's
+    /// searches, else its finished file in the stream cache. A pick stays with its queue entry
+    /// for as long as the queue does, and searches are kept 6 hours: before (2026-11-12), a song
+    /// picked one day was refused the next ("not a known source") although all of it was here,
+    /// and the player took the refusal for a copy it couldn't play.
+    pub async fn picked(&self, track: &Track, wanted: &SourceRef) -> Result<Option<SourceRef>> {
+        if let Some(s) = self.sources.get(track, wanted) {
+            return Ok(Some(s.source_ref()));
+        }
+        Ok(self
+            .cache
+            .complete(&track.id)
+            .await?
+            .into_iter()
+            .find(|e| e.source.user == wanted.user && e.source.path == wanted.path)
+            .map(|e| e.source))
+    }
+
     /// The copy the song's live fetch has now.
     pub fn playing_copy(&self, track: &TrackId) -> Option<SourceRef> {
         self.live(track)?.now().source.map(|s| s.source_ref())
@@ -3017,6 +3035,79 @@ mod tests {
                 queue: 0,
                 length: Some(200),
             }
+        }
+
+        #[tokio::test]
+        async fn a_pick_kept_past_its_search_plays_its_finished_copy() -> Result<()> {
+            // Live (2026-11-12): a copy of TLC's "No Scrubs" picked the day before, all of it in
+            // the cache, was refused ("not a known source for this song"): the search that found
+            // it was forgotten after 6 hours, and the queue kept the pick.
+            let bytes: Vec<u8> = vec![5u8; 300_000];
+            let peer = Peer {
+                per_tick: 32_768,
+                overwrite: false,
+                reported: None,
+                settles: Duration::ZERO,
+            };
+            let fake = Fake::start(HashMap::from([(REMOTE.to_owned(), bytes.clone())]), peer)
+                .await
+                .map_err(|e| Error::internal(e.to_string()))?;
+            let db = lull_core::db::Db::memory()?;
+            db.migrate(&crate::MIGRATIONS)?;
+            let bus = Bus::new();
+            let cache = Cache::new(db.clone(), Services::new(bus.clone()), fake.root.clone(), u64::MAX / 2);
+            let peers = Peers::load(db.clone()).await?;
+            // The hub as it was, then as it is a day later: the same cache, its searches forgotten.
+            let hub = || {
+                let sources = Sources::new(peers.clone(), Vec::new());
+                Fetcher::new(
+                    fake.slskd.clone(),
+                    Arc::new(RwLock::new(fake.layout.clone())),
+                    cache.clone(),
+                    peers.clone(),
+                    sources.clone(),
+                    Searches::new(fake.slskd.clone(), bus.clone(), db.clone(), sources),
+                    bus.clone(),
+                    Current::from(Rules::default()),
+                    Arc::new(NoYoutube),
+                )
+            };
+            let yesterday = hub();
+            let copy = shared("peer", REMOTE, bytes.len() as u64, "mp3", Some(320), false);
+            yesterday.sources.add(HashMap::from([(track().id, vec![copy.clone()])]));
+            let f = yesterday.stream(track(), Some(copy.source_ref())).await?;
+            assert_eq!(ended(&f).await?.status, Status::Done);
+
+            let today = hub();
+            // The pick as the player's address names it: peer and path.
+            let named = SourceRef {
+                user: "peer".into(),
+                path: REMOTE.into(),
+                size: 0,
+            };
+            let pick = today
+                .picked(&track(), &named)
+                .await?
+                .ok_or_else(|| Error::internal("the picked copy in the cache isn't known"))?;
+            let f = today.stream(track(), Some(pick)).await?;
+            let (chunk, _) = first_bytes(&f).await?;
+            assert!(chunk.iter().all(|b| *b == 5), "the picked copy plays");
+            assert_eq!(
+                fake.starts_of("peer").len(),
+                1,
+                "from the cache: the peer wasn't asked again"
+            );
+
+            let elsewhere = SourceRef {
+                user: "nobody".into(),
+                path: REMOTE.into(),
+                size: 0,
+            };
+            assert!(
+                today.picked(&track(), &elsewhere).await?.is_none(),
+                "a copy lull never had"
+            );
+            Ok(())
         }
 
         #[tokio::test]
