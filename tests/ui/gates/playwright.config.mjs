@@ -79,6 +79,8 @@ export default defineConfig({
     { name: 'phone', testMatch: 'phone.spec.mjs', fullyParallel: true },
     // Esc on search goes back to the page before it, where it was
     { name: 'search-esc', testMatch: 'search-esc.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
+    // source presets (ADR-0017): made, edited, chosen per device and deleted in Settings › Sources; a phone uses Phone
+    { name: 'source-presets', testMatch: 'source-presets.spec.mjs' },
     // Settings › Sources signs a hub's own slskd in to Soulseek from nothing, both keys in one request
     { name: 'settings-soulseek', testMatch: 'settings-soulseek.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // a part still coming never hangs on one push: a missed one is read again, a failed one says so
