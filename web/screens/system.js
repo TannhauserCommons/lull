@@ -1163,7 +1163,7 @@
         <li><span class="sys-ios__ic">${icon('export', null, 'ic-24')}</span><div><b>Tap Share</b><span>The square with an arrow, in Safari's toolbar.</span></div></li>
         <li><span class="sys-ios__ic">${icon('plus', null, 'ic-24')}</span><div><b>Tap Add to Home Screen</b><span>Scroll the share sheet if you don't see it.</span></div></li>
         <li><span class="sys-ios__ic">${icon('check', null, 'ic-24')}</span><div><b>Tap Add</b><span>lull opens full screen, with controls on the lock screen.</span></div></li></ol>
-        <p class="sys-note">${icon('info', null, 'ic-16')}<span>Use Safari. Other browsers on iOS can't add apps to the home screen.</span></p>`,
+        <p class="sys-note">${icon('info', null, 'ic-16')}<span>Safari works on every iOS version. Since iOS 16.4, Chrome, Edge and other browsers can add lull from their Share menu too.</span></p>`,
       foot: html`<button class="btn btn--primary" data-close>Got it</button>` });
   }
   function installApp() {
