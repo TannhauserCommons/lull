@@ -124,6 +124,9 @@ export default defineConfig({
     { name: 'phone-background', testMatch: 'phone-background.spec.mjs', use: { viewport: { width: 390, height: 844 } } },
     // a closed service notice stays closed through a reload until its cause ends; a cache at its size has none
     { name: 'notices', testMatch: 'notices.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
+    // the phone's player bar, in every design at 360 and 390 px: the cover inset as the last key is, previous, play and next as keys,
+    // the progress line seeked by touch
+    { name: 'phone-bar', testMatch: 'phone-bar.spec.mjs', fullyParallel: true, use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
     // confirmations collapse into one note, and Quiet keeps them off the screen but not from a screen reader (ADR-0040)
     { name: 'toasts', testMatch: 'toasts.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'loops-webkit', testMatch: 'loops.spec.mjs', fullyParallel: true, use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },

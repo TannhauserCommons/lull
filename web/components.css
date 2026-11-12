@@ -1386,11 +1386,16 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
    Mini-player + tab bar (phone)
    ===================================================================== */
 .mini, .tabbar { display: none; }
+/* --mini-inset: the room at both ends of the bar, between its edge and the cover on the left and the last key's icon on the
+   right (the key's box, --hit wide round a 20 px icon, takes the rest): equal, so the bar reads as set in one frame */
 .mini {
-  position: relative; grid-area: mini; align-items: center; gap: var(--sp-3); height: var(--mini-h); margin: 0 8px 8px; padding: 0 6px 0 4px;
+  --mini-inset: 14px;
+  position: relative; grid-area: mini; align-items: center; gap: var(--sp-3); height: var(--mini-h); margin: 0 8px 8px; padding: 0 calc(var(--mini-inset) - (var(--hit) - 20px) / 2) 0 var(--mini-inset);
   border: var(--stroke) solid var(--edge); border-radius: 16px; overflow: hidden; touch-action: pan-y;
 }
 .mini > .seek--line { position: absolute; left: 0; right: 0; top: 0; }
+.mini .btn-icon { width: var(--hit); height: var(--hit); }
+.mini .btn-gloss { --size: var(--hit); }
 .mini .bezel-thumb { padding: 3px; border-radius: 8px 8px 14px 8px; }
 .mini .bezel-thumb .cover { --cover-size: 40px; border-radius: 5px; }
 .mini__text { flex: 1; min-width: 0; display: grid; text-align: left; }
