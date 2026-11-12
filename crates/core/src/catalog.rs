@@ -71,6 +71,67 @@ pub const MIGRATIONS: Migrations = Migrations {
             resolved    INTEGER NOT NULL DEFAULT 0
         );
     "#,
+        r#"
+        -- Covers becoming known (`pictured_news`): whoever records them, whichever way. An artist
+        -- whose songs gained a pictured album (a song recorded on one, an album with its cover):
+        -- their bare songs may be the same songs. An album recorded with a cover, or gaining one
+        -- it lacked: the songs on it a page drew without one are told.
+        ALTER TABLE catalog_tracks
+            ADD COLUMN artist_id TEXT GENERATED ALWAYS AS (json_extract(json, '$.artistId')) VIRTUAL;
+        CREATE INDEX catalog_tracks_artist ON catalog_tracks(artist_id);
+        -- No unique key: inside a trigger an outer upsert's conflict rule overrides OR IGNORE, so
+        -- each insert checks for itself (`news`).
+        CREATE TABLE catalog_pictured_news (
+            kind  TEXT NOT NULL,            -- 'artist' | 'album'
+            id    TEXT NOT NULL
+        );
+        CREATE INDEX catalog_pictured_news_key ON catalog_pictured_news(kind, id);
+        CREATE TRIGGER catalog_news_song_in AFTER INSERT ON catalog_tracks
+            WHEN EXISTS (SELECT 1 FROM catalog_albums
+                          WHERE id = json_extract(NEW.json, '$.albumId') AND art IS NOT NULL)
+        BEGIN
+            INSERT INTO catalog_pictured_news (kind, id)
+                SELECT 'artist', json_extract(NEW.json, '$.artistId')
+                 WHERE NOT EXISTS (SELECT 1 FROM catalog_pictured_news
+                                    WHERE kind = 'artist' AND id = json_extract(NEW.json, '$.artistId'));
+        END;
+        CREATE TRIGGER catalog_news_song_moved AFTER UPDATE OF json ON catalog_tracks
+            WHEN json_extract(OLD.json, '$.albumId') IS NOT json_extract(NEW.json, '$.albumId')
+             AND EXISTS (SELECT 1 FROM catalog_albums
+                          WHERE id = json_extract(NEW.json, '$.albumId') AND art IS NOT NULL)
+        BEGIN
+            INSERT INTO catalog_pictured_news (kind, id)
+                SELECT 'artist', json_extract(NEW.json, '$.artistId')
+                 WHERE NOT EXISTS (SELECT 1 FROM catalog_pictured_news
+                                    WHERE kind = 'artist' AND id = json_extract(NEW.json, '$.artistId'));
+        END;
+        CREATE TRIGGER catalog_news_album_in AFTER INSERT ON catalog_albums
+            WHEN NEW.art IS NOT NULL
+        BEGIN
+            INSERT INTO catalog_pictured_news (kind, id)
+                SELECT 'album', NEW.id
+                 WHERE NOT EXISTS (SELECT 1 FROM catalog_pictured_news WHERE kind = 'album' AND id = NEW.id);
+            INSERT INTO catalog_pictured_news (kind, id)
+                SELECT DISTINCT 'artist', a FROM (
+                    SELECT json_extract(NEW.json, '$.artistId') AS a
+                    UNION SELECT artist_id FROM catalog_tracks WHERE album_id = NEW.id)
+                 WHERE a IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM catalog_pictured_news WHERE kind = 'artist' AND id = a);
+        END;
+        CREATE TRIGGER catalog_news_album_pictured AFTER UPDATE OF art ON catalog_albums
+            WHEN OLD.art IS NULL AND NEW.art IS NOT NULL
+        BEGIN
+            INSERT INTO catalog_pictured_news (kind, id)
+                SELECT 'album', NEW.id
+                 WHERE NOT EXISTS (SELECT 1 FROM catalog_pictured_news WHERE kind = 'album' AND id = NEW.id);
+            INSERT INTO catalog_pictured_news (kind, id)
+                SELECT DISTINCT 'artist', a FROM (
+                    SELECT json_extract(NEW.json, '$.artistId') AS a
+                    UNION SELECT artist_id FROM catalog_tracks WHERE album_id = NEW.id)
+                 WHERE a IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM catalog_pictured_news WHERE kind = 'artist' AND id = a);
+        END;
+    "#,
     ],
 };
 
@@ -330,6 +391,14 @@ pub fn resolution(conn: &Connection, id: &TrackId, now: i64) -> Result<(Option<S
     })
 }
 
+/// Notes that a page drew the bare song without a cover, so a cover its album gains later is
+/// sent to the pages (`asked_songs_on`). Its lookup stays as it was.
+pub fn asked(conn: &Connection, id: &TrackId) -> Result<()> {
+    conn.prepare_cached("INSERT OR IGNORE INTO catalog_resolutions (track_id) VALUES (?1)")?
+        .execute([id.as_str()])?;
+    Ok(())
+}
+
 /// Records a lookup of a bare song that found nothing.
 pub fn missed(conn: &Connection, id: &TrackId, now: i64) -> Result<()> {
     conn.prepare_cached(
@@ -361,6 +430,115 @@ pub fn enrich(conn: &Connection, id: &TrackId, found: &Track, now: i64) -> Resul
     )?
     .execute(params![id.as_str(), now])?;
     Ok(Some(enriched))
+}
+
+/// The artist's songs lull holds on an album whose cover it knows, each with that album: what a
+/// bare song of the artist may be (discovery's `resolve::twin` decides which is the same song).
+/// Any source put them here (catalog search, an album page, a Soulseek folder of a known album).
+pub fn pictured_songs_by(conn: &Connection, artist: &ArtistId) -> Result<Vec<(Track, Album)>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT t.json, a.json FROM catalog_tracks t JOIN catalog_albums a ON a.id = t.album_id
+          WHERE t.artist_id = ?1 AND a.art IS NOT NULL",
+    )?;
+    let rows = stmt.query_map([artist.as_str()], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (track, album) = row?;
+        let parse = |what: &str, j: &str| Error::internal(format!("catalog {what} of {artist}: {j}"));
+        out.push((
+            serde_json::from_str(&track).map_err(|e| parse("song", &e.to_string()))?,
+            serde_json::from_str(&album).map_err(|e| parse("album", &e.to_string()))?,
+        ));
+    }
+    Ok(out)
+}
+
+/// The artist's bare songs (not saved, on an album without a cover here) not yet resolved, at
+/// most `limit`: those a cover lull learns for one of the artist's albums may be for.
+pub fn bare_songs_by(conn: &Connection, artist: &ArtistId, limit: usize) -> Result<Vec<Track>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT t.json FROM catalog_tracks t LEFT JOIN catalog_albums a ON a.id = t.album_id
+          WHERE t.artist_id = ?1 AND a.art IS NULL AND json_extract(t.json, '$.saved') IS NOT 1
+            AND NOT EXISTS (SELECT 1 FROM catalog_resolutions r WHERE r.track_id = t.id AND r.resolved = 1)
+          LIMIT ?2",
+    )?;
+    let rows = stmt.query_map(params![artist.as_str(), limit as i64], |r| r.get::<_, String>(0))?;
+    rows.map(|j| {
+        let j = j?;
+        serde_json::from_str(&j).map_err(|e| Error::internal(format!("catalog song of {artist}: {e}")))
+    })
+    .collect()
+}
+
+/// The songs on `album` that a page drew without a cover (it `asked` about them), at most `limit`.
+pub fn asked_songs_on(conn: &Connection, album: &AlbumId, limit: usize) -> Result<Vec<Track>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT t.json FROM catalog_tracks t JOIN catalog_resolutions r ON r.track_id = t.id
+          WHERE t.album_id = ?1 AND json_extract(t.json, '$.saved') IS NOT 1 LIMIT ?2",
+    )?;
+    let rows = stmt.query_map(params![album.as_str(), limit as i64], |r| r.get::<_, String>(0))?;
+    rows.map(|j| {
+        let j = j?;
+        serde_json::from_str(&j).map_err(|e| Error::internal(format!("catalog song on {album}: {e}")))
+    })
+    .collect()
+}
+
+/// A cover that became known (see the migration that records them): an artist whose songs may now
+/// find their album's cover, or an album that gained one it lacked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum News {
+    Artist(ArtistId),
+    Album(AlbumId),
+}
+
+/// Takes up to `limit` covers that became known since the last call (each once).
+pub fn pictured_news(conn: &Connection, limit: usize) -> Result<Vec<News>> {
+    let rows: Vec<(String, String)> = conn
+        .prepare_cached("SELECT DISTINCT kind, id FROM catalog_pictured_news LIMIT ?1")?
+        .query_map([limit as i64], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut gone = conn.prepare_cached("DELETE FROM catalog_pictured_news WHERE kind = ?1 AND id = ?2")?;
+    let mut out = Vec::with_capacity(rows.len());
+    for (kind, id) in rows {
+        gone.execute(params![kind, id])?;
+        match kind.as_str() {
+            "album" => out.push(News::Album(AlbumId(id))),
+            _ => out.push(News::Artist(ArtistId(id))),
+        }
+    }
+    Ok(out)
+}
+
+/// The album a bare song names, recorded when lull knew it only from the song (as
+/// `found_album_art` records one), so the art route can look its cover up by name: `None` for a
+/// song that names no album, or is saved (the library has its own).
+pub fn album_named_by(conn: &Connection, song: &Track) -> Result<Option<Album>> {
+    if song.saved || song.album.trim().is_empty() {
+        return Ok(None);
+    }
+    if let Some(known) = album(conn, &song.album_id)? {
+        return Ok(Some(known));
+    }
+    let named = Album {
+        id: song.album_id.clone(),
+        title: song.album.clone(),
+        artist_id: song.artist_id.clone(),
+        artist: song.artist.clone(),
+        year: None,
+        kind: None,
+        released: None,
+        label: None,
+        tags: Vec::new(),
+        saved: crate::model::Saved::None,
+        track_ids: vec![song.id.clone()],
+        duration: None,
+        musicbrainz_id: None,
+    };
+    remember_album(conn, &named, None)?;
+    Ok(Some(named))
 }
 
 fn row<T: serde::de::DeserializeOwned>(conn: &Connection, sql: &str, id: &str) -> Result<Option<T>> {
@@ -564,6 +742,102 @@ mod bare_tests {
             );
             assert!(!is_bare(c, &enriched)?);
             assert_eq!(resolution(c, &bare.id, 100 + RESOLVE_AGAIN_S * 9)?, (None, false));
+            Ok(())
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_cover_becoming_known_is_news_once_whoever_records_it() -> Result<()> {
+        let db = Db::memory()?;
+        db.migrate(&MIGRATIONS)?;
+        db.call(|c| {
+            let on = song("Odetari", "VARIA 0.5", "HEAVY LOVE");
+            let bare = song("Odetari", "", "HEAVY LOVE");
+            let artist = News::Artist(on.artist_id.clone());
+            let varia = News::Album(on.album_id.clone());
+            remember(c, &[bare.clone(), on.clone()])?;
+            assert_eq!(pictured_news(c, 10)?, vec![], "no cover known yet");
+
+            // Known by name only first, then its cover found (Last.fm, the archive).
+            remember_album(c, &album(&on), None)?;
+            assert_eq!(pictured_news(c, 10)?, vec![]);
+            assert!(found_album_art(c, &on.album_id, "https://cdn.example/{size}.jpg")?);
+            let mut news = pictured_news(c, 10)?;
+            news.sort_by_key(|n| format!("{n:?}"));
+            assert_eq!(news, vec![varia.clone(), artist.clone()]);
+            assert_eq!(pictured_news(c, 10)?, vec![], "each once");
+
+            // Refreshed with the same facts: nothing new. A song recorded on it, or moved to it:
+            // its artist.
+            remember_album(c, &album(&on), Some("https://cdn.example/{size}.jpg"))?;
+            remember(c, std::slice::from_ref(&on))?;
+            assert_eq!(pictured_news(c, 10)?, vec![]);
+            remember(c, &[song("Odetari", "VARIA 0.5", "INCOMPLETE")])?;
+            assert_eq!(pictured_news(c, 10)?, vec![artist.clone()]);
+            enrich(c, &bare.id, &on, 100)?;
+            assert_eq!(pictured_news(c, 10)?, vec![artist.clone()]);
+
+            // An album recorded with its cover (catalog search): the album and its artist.
+            let single = song("Odetari", "I'M A BLACKHOLE (STAR)", "I'M A BLACKHOLE (STAR)");
+            remember_album(c, &album(&single), Some("https://cdn.example/{size}.jpg"))?;
+            let mut news = pictured_news(c, 10)?;
+            news.sort_by_key(|n| format!("{n:?}"));
+            assert_eq!(news, vec![News::Album(single.album_id.clone()), artist]);
+            Ok(())
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn bare_songs_and_pictured_songs_by_an_artist() -> Result<()> {
+        let db = Db::memory()?;
+        db.migrate(&MIGRATIONS)?;
+        db.call(|c| {
+            let on = song("Odetari", "VARIA 0.5", "HEAVY LOVE");
+            let bare = song("Odetari", "", "HEAVY LOVE");
+            let mut saved = song("Odetari", "", "GOOD LOYAL THOTS");
+            saved.saved = true;
+            remember(c, &[bare.clone(), on.clone(), saved])?;
+            remember_album(c, &album(&on), Some("https://cdn.example/{size}.jpg"))?;
+            let ids = |ts: Vec<Track>| ts.into_iter().map(|t| t.id).collect::<Vec<_>>();
+            assert_eq!(ids(bare_songs_by(c, &on.artist_id, 10)?), vec![bare.id.clone()]);
+            let held = pictured_songs_by(c, &on.artist_id)?;
+            assert_eq!(
+                held.into_iter().map(|(t, a)| (t.id, a.id)).collect::<Vec<_>>(),
+                vec![(on.id.clone(), on.album_id.clone())]
+            );
+            assert_eq!(asked_songs_on(c, &on.album_id, 10)?, vec![], "no page asked");
+            asked(c, &on.id)?;
+            assert_eq!(ids(asked_songs_on(c, &on.album_id, 10)?), vec![on.id.clone()]);
+            assert_eq!(resolution(c, &on.id, 100)?, (None, true), "asking changes no lookup");
+            enrich(c, &bare.id, &on, 100)?;
+            assert_eq!(bare_songs_by(c, &on.artist_id, 10)?, vec![], "resolved");
+            Ok(())
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_bare_songs_album_is_recorded_to_be_looked_up_by_name() -> Result<()> {
+        let db = Db::memory()?;
+        db.migrate(&MIGRATIONS)?;
+        db.call(|c| {
+            let folder = song("Odetari", "VARIA 0.5", "HEAVY LOVE");
+            let named = album_named_by(c, &folder)?.ok_or_else(|| Error::internal("no album"))?;
+            assert_eq!(
+                (named.id.clone(), named.title.as_str()),
+                (folder.album_id.clone(), "VARIA 0.5")
+            );
+            assert!(
+                super::album(c, &folder.album_id)?.is_some(),
+                "recorded, so the art route can name it"
+            );
+            assert_eq!(
+                album_named_by(c, &song("Odetari", "", "HEAVY LOVE"))?,
+                None,
+                "no name, no lookup"
+            );
             Ok(())
         })
         .await
