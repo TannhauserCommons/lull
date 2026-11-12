@@ -54,7 +54,7 @@
 
 **Switching to the better copy.** With Settings › Sources › "Switch to a better copy while a song plays" on (the default), a song YouTube plays moves to Soulseek's copy once it is ready, lined up and crossfaded so nothing jumps ([streaming.md](streaming.md#better-copies)). In `fallback` the copy is fetched by the streaming profile as soon as YouTube steps in; in `startFast` it is the race's Soulseek side, offered when it is better than YouTube's copy and within the cap. The other way round holds too: under `startFast` YouTube's copy is a target like any, so a peer's copy that started the song moves to YouTube's when the policy names it (a clear step up, passing the minimum, within the cap; [streaming.md](streaming.md#better-copies)). With the setting off, or when the player can't line the copies up, the rule above holds: it plays from the next play.
 
-**Later plays.** `Fetcher::best_cached` takes cached copies in the policy's order (`policy::cached_key`): passing the streaming minimum, within the cap, then the better sounding, whatever their source. With the mode off, cached YouTube copies are ignored; otherwise one plays at once (and `startFast` starts an upgrade beside it).
+**Later plays.** `Fetcher::best_cached` takes cached copies in the policy's order (`policy::cached_key`): within the cap, passing the streaming minimum, then the better sounding, whatever their source. With the mode off, cached YouTube copies are ignored; otherwise one plays at once (and `startFast` starts an upgrade beside it).
 
 ## Badges and quality
 

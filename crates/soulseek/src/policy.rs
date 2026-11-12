@@ -11,6 +11,8 @@
 //!   passing copy. `keepLooking`: only passing copies play, the first ready wins, and with none
 //!   it searches on. `ask`: the first passing copy plays; once the search ends with none, the
 //!   listener picks. `pick` orders the copies tried first (`sources::order`), and so breaks ties.
+//!   `maxKbps` bounds all of it: a copy above the cap starts the song only when no copy within it
+//!   can, and a later play takes a cached copy within it first.
 //! - **Switching mid-song** (`better`, `switch_to`). The best copy that passes the minimum and is
 //!   within the cap, by how it sounds (`rank::sound`: the score's format factor, its bitrate
 //!   scaled toward `maxKbps`; speed decides only what starts), and only for a clear step in sound
@@ -24,6 +26,11 @@ use crate::sources::{self, Ranked, Source};
 /// Whether `copy` passes the streaming minimum (kbps floor, formats, lossless only).
 pub fn passes(p: &StreamProfile, copy: &Source, duration: Option<u32>) -> bool {
     copy.meets(&p.minimum, duration)
+}
+
+/// Whether `copy` is within the streaming cap (`maxKbps`; lossless counts as above any cap).
+pub fn within_cap(p: &StreamProfile, copy: &Source, duration: Option<u32>) -> bool {
+    copy.quality(duration).within(p.max_kbps)
 }
 
 /// Whether `copy` may be fetched to start the song: one passing the minimum always, one below it
@@ -58,7 +65,23 @@ pub enum Start<'a> {
 /// What the song starts on, given the copies found so far (`copies`, in the profile's order;
 /// those that failed left out) and whether the search for more still runs.
 pub fn start<'a>(p: &StreamProfile, copies: &[Seen<'a>], searching: bool, duration: Option<u32>) -> Start<'a> {
+    // Within the cap first: a copy above it starts the song only when none within it can.
+    let within = |s: &&Seen| within_cap(p, s.copy, duration);
     let mut ready = copies.iter().filter(|s| s.ready);
+    if let Some(s) = ready.clone().filter(within).find(|s| passes(p, s.copy, duration)) {
+        return Start::Play(s.copy);
+    }
+    if p.below == StreamBelow::PlayBest
+        && let Some(s) = ready.clone().find(within)
+    {
+        return Start::Play(s.copy);
+    }
+    if copies
+        .iter()
+        .any(|s| !s.ready && within(&s) && may_start(p, s.copy, duration))
+    {
+        return Start::Wait;
+    }
     if let Some(s) = ready.clone().find(|s| passes(p, s.copy, duration)) {
         return Start::Play(s.copy);
     }
@@ -124,8 +147,8 @@ pub fn better(
     worth.into_iter().map(|(_, r)| r).collect()
 }
 
-/// The order a later play takes cached copies in, best first: passing the minimum, within the
-/// cap, then how it sounds. A cached copy needs no speed.
+/// The order a later play takes cached copies in, best first: within the cap, passing the
+/// minimum, then how it sounds. A cached copy needs no speed.
 pub fn cached_key(
     p: &StreamProfile,
     preferred: &[String],
@@ -133,8 +156,8 @@ pub fn cached_key(
     duration: Option<u32>,
 ) -> (bool, bool, std::cmp::Reverse<u8>) {
     (
+        !within_cap(p, copy, duration),
         !passes(p, copy, duration),
-        !copy.quality(duration).within(p.max_kbps),
         std::cmp::Reverse(sound(p, preferred, copy, duration)),
     )
 }
@@ -249,6 +272,41 @@ mod tests {
                 arrivals.iter().map(|(c, t)| (c.user.as_str(), *t)).collect::<Vec<_>>()
             );
         }
+    }
+
+    #[test]
+    fn a_copy_above_the_cap_starts_the_song_only_when_none_within_it_can() {
+        // Live (2026-11-12): a 320 minimum and cap; a peer's FLAC sent first and started the song.
+        let flac = copy("peer", "flac", 0);
+        let yt = copy("YouTube", "webm", 160);
+        let mp3 = copy("other", "mp3", 320);
+        let capped = |below| {
+            let mut p = profile(320, below);
+            p.max_kbps = 320;
+            p
+        };
+        use StreamBelow::*;
+        let table: Vec<Row> = vec![
+            // YouTube's Opus is within the cap, if below the minimum: under playBest it plays.
+            (PlayBest, vec![(&flac, 1), (&yt, 2)], 3, ("YouTube", 2)),
+            // A passing copy within the cap is waited for too.
+            (PlayBest, vec![(&flac, 1), (&mp3, 2)], 3, ("other", 2)),
+            // Nothing within the cap may start: the FLAC is the last resort.
+            (KeepLooking, vec![(&flac, 1), (&yt, 2)], 3, ("peer", 1)),
+            (PlayBest, vec![(&flac, 1)], 3, ("peer", 1)),
+        ];
+        for (below, arrivals, search_ends, (who, when)) in table {
+            assert_eq!(
+                race(&capped(below), &arrivals, search_ends),
+                (who.to_owned(), when),
+                "{below:?}, arrivals {:?}",
+                arrivals.iter().map(|(c, t)| (c.user.as_str(), *t)).collect::<Vec<_>>()
+            );
+        }
+        // A later play takes the cached copy within the cap, below the minimum or not.
+        let p = capped(PlayBest);
+        assert!(cached_key(&p, &[], &yt, SONG) < cached_key(&p, &[], &flac, SONG));
+        assert!(cached_key(&p, &[], &mp3, SONG) < cached_key(&p, &[], &yt, SONG));
     }
 
     #[test]

@@ -110,6 +110,15 @@ The owner: "why won't YouTube play even at start fast when YouTube's copy is fou
   - YouTube's copy below the minimum plays only under `playBest`;
   - otherwise a Soulseek peer that was only slow goes on;
   - with nothing on Soulseek, `keepLooking` fails and `ask` offers it.
-- **Cached copies:** a later play takes one passing the minimum first, then one within the cap, then the better sounding (`policy::cached_key`), whatever its source.
+- **Cached copies:** a later play takes one within the cap first, then one passing the minimum, then the better sounding (`policy::cached_key`; order corrected 2026-11-12, below), whatever its source.
 - **A better copy may be YouTube's.** While start fast makes YouTube a source, its copy is one of the targets the policy weighs mid-song. The upgrade fetches whatever copy the policy names, from either source, and the switch is the same: lined up, or the next play. Example: under a 128 minimum, a peer's MP3 128 that started the song is followed by YouTube's Opus 160.
 - **A copy that has played through gives way to a better cached one** on the next play, whatever either's source. Before, only a finished YouTube copy did.
+
+## Update 2026-11-12: the cap is a maximum
+
+The owner: a song "upgraded above my maximum bitrate from YouTube Opus". Marlon Funaki's "Metaphor", under a 320 kbps minimum and a 320 kbps cap (`playBest`), started on a peer's FLAC: Soulseek's side of the race sent first, and the policy counted a copy passing the minimum before one within the cap, at the start, in the order copies are tried and among cached copies.
+
+**Decision.** `maxKbps` bounds what streams. A copy above it starts the song only when no copy within it can (`policy::start`); the order tries every copy within the cap first, passing ones first on each side (`sources::order`); a later play takes a cached copy within the cap first (`policy::cached_key`). In the race, Soulseek's copy above the cap that sends first waits for YouTube's lookup, and starts the song only when YouTube has no copy that may. Under `playBest`, YouTube's Opus 160 below a 320 minimum therefore plays before a FLAC above a 320 cap; under `keepLooking` or `ask`, where a copy below the minimum never starts the song, the FLAC is the last resort.
+
+**Alternative.** A cap no copy ever crosses: with only copies above it, the song wouldn't play. Not chosen without the owner.
+

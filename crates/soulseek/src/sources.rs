@@ -339,8 +339,9 @@ impl Sources {
     }
 }
 
-/// Sorts ranked sources for a profile and marks which pass its minimum. Streaming also puts
-/// copies within its bitrate cap before those above it, among passing copies and among the rest.
+/// Sorts ranked sources for a profile and marks which pass its minimum. Streaming puts every
+/// copy within its bitrate cap before those above it, passing copies first on each side: the cap
+/// bounds what streams, and a copy above it is taken only when none within it is (2026-11-12).
 pub fn order(mut ranked: Vec<Ranked>, duration: Option<u32>, rules: &Rules, purpose: Purpose) -> Vec<Ranked> {
     let min = rules.minimum(purpose);
     let cap = match purpose {
@@ -356,8 +357,8 @@ pub fn order(mut ranked: Vec<Ranked>, duration: Option<u32>, rules: &Rules, purp
     ranked.sort_by(|a, b| {
         a.queue_too_long
             .cmp(&b.queue_too_long)
-            .then(b.meets.cmp(&a.meets))
             .then(a.above_max.cmp(&b.above_max))
+            .then(b.meets.cmp(&a.meets))
             .then_with(|| match rules.pick(purpose) {
                 Pick::Fastest => fastest(a, b),
                 Pick::Highest => b
@@ -520,6 +521,11 @@ pub(crate) mod tests {
         );
         assert!(ordered.iter().any(|r| r.peer == "fast-320" && r.above_max));
         assert!(ordered.iter().any(|r| r.peer == "fast-128" && !r.meets && !r.above_max));
+        let at = |peer: &str| ordered.iter().position(|r| r.peer == peer);
+        assert!(
+            at("fast-128") < at("fast-320"),
+            "a copy within the cap, below the minimum, before one above the cap"
+        );
 
         let save = order(peers(), Some(240), &capped, Purpose::Save);
         assert_eq!(save[0].peer, "slow-flac", "the saving order has no cap");
