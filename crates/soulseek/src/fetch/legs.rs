@@ -131,6 +131,8 @@ pub(super) struct Leg {
 pub(super) struct Started {
     pub copy: Copy,
     pub leg: Option<Leg>,
+    /// Keeps other races off this copy until the fetch shows it as its source.
+    pub claim: Option<super::lanes::Claim>,
 }
 
 /// How a leg ended without failing the copy.
@@ -164,15 +166,15 @@ impl Fetcher {
         stop: &mut watch::Receiver<bool>,
     ) -> Outcome<PathBuf> {
         let failed = |e: Error| Err(Stop::Failed(reason(&e)));
-        let (mut copy, mut first) = match started {
-            Some(Started { copy, leg }) => (copy, leg),
+        let (mut copy, mut first, claim) = match started {
+            Some(Started { copy, leg, claim }) => (copy, leg, claim),
             None => {
                 // lull's file, and slskd's for the leg running, can both hold the whole copy.
                 self.cache
                     .make_room(source.size.saturating_mul(2))
                     .await
                     .map_err(failed)?;
-                (self.open_copy(f, source).await.map_err(failed)?, None)
+                (self.open_copy(f, source).await.map_err(failed)?, None, None)
             }
         };
         let below = !source.meets(&f.profile.minimum, f.track.duration);
@@ -188,9 +190,11 @@ impl Fetcher {
             p.path = (copy.ranges.total() > 0).then(|| copy.path.clone());
             p.error = None;
         });
+        drop(claim);
         // Each leg starts where a reader waits, else at the first byte missing: after a jump
         // reaches the end, the gap it left fills from its start.
         let mut jump = None;
+        let mut legs_run = 0;
         let outcome = loop {
             let leg = match first.take() {
                 Some(leg) => leg,
@@ -204,6 +208,9 @@ impl Fetcher {
                     }
                 }
             };
+            // Only the first leg is a request lull chose: later ones follow the listener's seeks.
+            let patience = if legs_run == 0 { patience } else { Patience::Patient };
+            legs_run += 1;
             let ended = self
                 .run_leg(f, source, &mut copy, leg, faster, patience, &mut lane, stop)
                 .await;
@@ -356,17 +363,13 @@ impl Fetcher {
                 }
             }
             self.copy_leg(copy, &mut leg, From::Own).await.map_err(failed)?;
-            if lane.is_some() && copy.ranges.total() > 0 {
+            if lane.is_some() && leg.front > leg.start {
                 // The first byte is here: no longer a request waiting on a peer.
                 lane.take();
             }
             // A request that isn't the listener's own gives way when no byte has come in
             // `FIRST_BYTE`, queued or not (ADR-0018); a pick or a save keeps its patience below.
-            if patience == Patience::Brisk
-                && copy.ranges.total() == 0
-                && leg.front == leg.start
-                && leg.begun.elapsed() > FIRST_BYTE
-            {
+            if patience == Patience::Brisk && leg.front == leg.start && leg.begun.elapsed() > FIRST_BYTE {
                 self.end_leg(source, &mut leg, t.as_ref()).await;
                 return Err(Ok(Skip::Unavailable(format!(
                     "{} sent no byte in {} s",

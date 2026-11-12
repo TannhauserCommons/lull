@@ -21,7 +21,7 @@ use futures_util::stream::FuturesUnordered;
 use lull_core::quality::Band;
 use tokio::sync::watch;
 
-use super::lanes::{Permit, Priority};
+use super::lanes::{Claim, Permit, Priority};
 use super::legs::{Copy, Leg, Started, Watch, watch_leg};
 use super::{Fetch, Fetcher, OUTRUN, POLL, SLOW_AFTER, Stop, reason, stopped};
 use crate::slskd::{Phase, Transfer};
@@ -37,6 +37,8 @@ pub(super) const FIRST_BYTE: Duration = Duration::from_secs(6);
 const JUDGE_AFTER: Duration = Duration::from_secs(3);
 /// ...by the bytes of its last this long.
 const JUDGE_WINDOW: Duration = Duration::from_secs(2);
+/// How long a candidate another fetch has in use is waited for before it is passed over.
+const BLOCKED_FOR: Duration = Duration::from_secs(12);
 /// How often a lane's file is looked at.
 const TICK: Duration = Duration::from_millis(250);
 
@@ -49,11 +51,11 @@ pub(super) struct Round {
 /// What a race came to.
 pub(super) enum Raced {
     /// A lane passed the gate.
-    Won(Box<Winner>, Report),
+    Won(Box<Winner>),
     /// No lane sent; one queue is kept (the shortest, at the best band tried).
-    Kept(Box<Lane>, Report),
+    Kept(Box<Lane>),
     /// Nothing sent.
-    Lost(Report),
+    Lost,
 }
 
 /// The copy that won: its source and what it has running.
@@ -68,11 +70,16 @@ pub(super) struct Report {
     pub bands: Vec<Band>,
     pub asked: usize,
     pub cancelled: usize,
+    /// From the race's start to the winner passing the gate, or to its end without one.
     pub took: Duration,
+    pub winner: Option<String>,
+    /// The race's one line is written.
+    pub said: bool,
 }
 
 #[derive(Default)]
 struct Counts {
+    won_at: Mutex<Option<Instant>>,
     asked: AtomicUsize,
     cancelled: AtomicUsize,
 }
@@ -81,6 +88,10 @@ struct Counts {
 pub(super) struct Lane {
     source: Source,
     copy: Copy,
+    /// The file is this lane's own: no partial or finished copy was there to begin with, and
+    /// nothing else uses it (the claim), so cancelling the lane forgets it.
+    created: bool,
+    claim: Claim,
     leg: Leg,
     t: Option<Transfer>,
     polled: Instant,
@@ -162,13 +173,41 @@ struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
-    fn next(&self) -> Option<Source> {
-        if self.left.load(Ordering::Relaxed) == 0 {
-            return None;
+    /// The next candidate no lane or other fetch has, claimed. A candidate in use elsewhere waits
+    /// its turn (the other race may let it go) for a while, then is passed over.
+    async fn next(&self, fetcher: &Fetcher, f: &Fetch, over: &mut watch::Receiver<bool>) -> Option<(Source, Claim)> {
+        let began = Instant::now();
+        loop {
+            if self.left.load(Ordering::Relaxed) == 0 || *over.borrow() {
+                return None;
+            }
+            let held = fetcher.held_elsewhere(f);
+            let blocked = {
+                let mut queue = self.candidates.lock().ok()?;
+                let found = queue.iter().enumerate().find_map(|(i, s)| {
+                    if held.iter().any(|h| s.is(h)) {
+                        return None;
+                    }
+                    fetcher.lanes.claim(&s.user, &s.path).map(|c| (i, c))
+                });
+                if let Some((i, claim)) = found {
+                    let source = queue.remove(i)?;
+                    self.left.fetch_sub(1, Ordering::Relaxed);
+                    return Some((source, claim));
+                }
+                if queue.is_empty() {
+                    return None;
+                }
+                began.elapsed() < BLOCKED_FOR
+            };
+            if !blocked {
+                return None;
+            }
+            tokio::select! {
+                () = tokio::time::sleep(Duration::from_millis(200)) => {}
+                _ = over.wait_for(|o| *o) => return None,
+            }
         }
-        let source = self.candidates.lock().ok()?.pop_front()?;
-        self.left.fetch_sub(1, Ordering::Relaxed);
-        Some(source)
     }
 }
 
@@ -181,11 +220,11 @@ impl Fetcher {
         rounds: Vec<Round>,
         priority: Priority,
         stop: &mut watch::Receiver<bool>,
+        report: &mut Report,
     ) -> Result<Raced, Stop> {
         let began = Instant::now();
         let counts = Counts::default();
         let kept: Mutex<Option<(Band, Box<Lane>)>> = Mutex::new(None);
-        let mut report = Report::default();
         let mut outcome: Result<Option<Lane>, Stop> = Ok(None);
         for round in rounds {
             report.bands.push(round.band);
@@ -198,32 +237,45 @@ impl Fetcher {
             }
         }
         let kept = kept.into_inner().ok().flatten();
-        let report = |counts: &Counts| Report {
-            asked: counts.asked.load(Ordering::Relaxed),
-            cancelled: counts.cancelled.load(Ordering::Relaxed),
-            took: began.elapsed(),
-            ..report.clone()
+        let won_at = counts.won_at.lock().ok().and_then(|w| *w);
+        let done = |report: &mut Report, counts: &Counts, to: Option<Instant>, winner: Option<String>| {
+            report.asked = counts.asked.load(Ordering::Relaxed);
+            report.cancelled = counts.cancelled.load(Ordering::Relaxed);
+            report.took = to.unwrap_or_else(Instant::now).duration_since(began);
+            report.winner = winner;
         };
         match outcome {
             Ok(Some(lane)) => {
                 if let Some((_, lane)) = kept {
-                    self.cancel_lane(*lane, &counts).await;
+                    self.cancel_lane(*lane, &counts, true).await;
                 }
-                let Lane { source, copy, leg, .. } = lane;
-                let winner = Winner {
+                done(report, &counts, won_at, Some(lane.source.user.clone()));
+                let Lane {
                     source,
-                    started: Started { copy, leg: Some(leg) },
+                    copy,
+                    leg,
+                    claim,
+                    ..
+                } = lane;
+                let started = Started {
+                    copy,
+                    leg: Some(leg),
+                    claim: Some(claim),
                 };
-                Ok(Raced::Won(Box::new(winner), report(&counts)))
+                Ok(Raced::Won(Box::new(Winner { source, started })))
             }
-            Ok(None) => Ok(match kept {
-                Some((_, lane)) => Raced::Kept(lane, report(&counts)),
-                None => Raced::Lost(report(&counts)),
-            }),
+            Ok(None) => {
+                done(report, &counts, None, None);
+                Ok(match kept {
+                    Some((_, lane)) => Raced::Kept(lane),
+                    None => Raced::Lost,
+                })
+            }
             Err(e) => {
                 if let Some((_, lane)) = kept {
-                    self.cancel_lane(*lane, &counts).await;
+                    self.cancel_lane(*lane, &counts, true).await;
                 }
+                done(report, &counts, None, None);
                 Err(e)
             }
         }
@@ -258,11 +310,14 @@ impl Fetcher {
         while let Some(done) = workers.next().await {
             match done {
                 Ok(Some(lane)) if won.is_none() => {
+                    if let Ok(mut at) = counts.won_at.lock() {
+                        *at = Some(Instant::now());
+                    }
                     won = Some(lane);
                     ctx.over.send_replace(true);
                 }
                 // Two lanes passed together: the second didn't win.
-                Ok(Some(lane)) => self.cancel_lane(lane, counts).await,
+                Ok(Some(lane)) => self.cancel_lane(lane, counts, true).await,
                 Ok(None) => {}
                 Err(stop) => {
                     error.get_or_insert(stop);
@@ -273,7 +328,7 @@ impl Fetcher {
         match (error, won) {
             (Some(e), won) => {
                 if let Some(lane) = won {
-                    self.cancel_lane(lane, counts).await;
+                    self.cancel_lane(lane, counts, true).await;
                 }
                 Err(e)
             }
@@ -290,7 +345,7 @@ impl Fetcher {
             if *over.borrow() {
                 return Ok(None);
             }
-            let Some(source) = ctx.next() else {
+            let Some((source, claim)) = ctx.next(self, f, &mut over).await else {
                 return Ok(None);
             };
             let permit = tokio::select! {
@@ -298,7 +353,7 @@ impl Fetcher {
                 _ = over.wait_for(|o| *o) => return Ok(None),
                 () = stopped(&mut stop) => return Err(Stop::Cancelled),
             };
-            let mut lane = match self.open_lane(f, source, permit).await {
+            let mut lane = match self.open_lane(f, source, claim, permit).await {
                 Ok(lane) => lane,
                 Err(Skipped::Peer(why)) => {
                     tracing::debug!(why, "a lane's peer didn't take the request");
@@ -310,13 +365,15 @@ impl Fetcher {
             match self.tend(f, &mut lane, Mode::Round, &mut over, &mut stop).await {
                 LaneEnd::Passed => return Ok(Some(lane)),
                 LaneEnd::Silent if lane.queued => self.keep_queue(lane, ctx).await,
-                LaneEnd::Silent | LaneEnd::Slow | LaneEnd::Failed(_) => self.cancel_lane(lane, ctx.counts).await,
+                LaneEnd::Silent | LaneEnd::Slow => self.cancel_lane(lane, ctx.counts, true).await,
+                // The peer dropped the request: not lull's cancel.
+                LaneEnd::Failed(_) => self.cancel_lane(lane, ctx.counts, false).await,
                 LaneEnd::Over => {
-                    self.cancel_lane(lane, ctx.counts).await;
+                    self.cancel_lane(lane, ctx.counts, true).await;
                     return Ok(None);
                 }
                 LaneEnd::Stopped => {
-                    self.cancel_lane(lane, ctx.counts).await;
+                    self.cancel_lane(lane, ctx.counts, true).await;
                     return Err(Stop::Cancelled);
                 }
             }
@@ -324,8 +381,25 @@ impl Fetcher {
     }
 
     /// Requests `source`: room in the cache, lull's file for it, the first leg.
-    async fn open_lane(&self, f: &Fetch, source: Source, permit: Permit) -> Result<Lane, Skipped> {
+    async fn open_lane(&self, f: &Fetch, source: Source, claim: Claim, permit: Permit) -> Result<Lane, Skipped> {
         let failed = |e: lull_core::Error| Skipped::Race(Stop::Failed(reason(&e)));
+        let copy_ref = source.source_ref();
+        // A copy already finished in the cache is someone's: a lane never rewrites it.
+        if self
+            .cache
+            .finished(&f.track.id, &copy_ref)
+            .await
+            .map_err(failed)?
+            .is_some()
+        {
+            return Err(Skipped::Peer("the copy is already here".into()));
+        }
+        let created = self
+            .cache
+            .partial(&f.track.id, &copy_ref)
+            .await
+            .map_err(failed)?
+            .is_none();
         self.cache
             .make_room(source.size.saturating_mul(2))
             .await
@@ -340,11 +414,11 @@ impl Fetcher {
                 let why = match skip {
                     super::Skip::Stalled(r) | super::Skip::Unavailable(r) | super::Skip::Slow(r) => r,
                 };
-                self.forget_copy(&source, copy).await;
+                self.forget_copy(&source, copy, created).await;
                 return Err(Skipped::Peer(why));
             }
             Err(Err(stop)) => {
-                self.forget_copy(&source, copy).await;
+                self.forget_copy(&source, copy, created).await;
                 return Err(Skipped::Race(stop));
             }
         };
@@ -359,6 +433,8 @@ impl Fetcher {
             samples: VecDeque::from([(now, leg.front)]),
             source,
             copy,
+            created,
+            claim,
             leg,
             t: None,
             polled: now - POLL,
@@ -423,7 +499,8 @@ impl Fetcher {
             if mode == Mode::Round && lane.first_byte.is_none() && now.duration_since(lane.asked) > FIRST_BYTE {
                 return LaneEnd::Silent;
             }
-            if lane.sending_for(now).is_some_and(|s| s >= SLOW_AFTER) {
+            // The kept queue stays on as long as the song plays; a round's lane gives way.
+            if mode == Mode::Round && lane.sending_for(now).is_some_and(|s| s >= SLOW_AFTER) {
                 return LaneEnd::Slow;
             }
         }
@@ -436,7 +513,7 @@ impl Fetcher {
         let rank = |band: Band, lane: &Lane| (band, std::cmp::Reverse(lane.source.queue));
         let loser = {
             let Ok(mut kept) = ctx.kept.lock() else {
-                return self.cancel_lane(lane, ctx.counts).await;
+                return self.cancel_lane(lane, ctx.counts, true).await;
             };
             match kept.take() {
                 Some((band, old)) if rank(band, &old) >= rank(ctx.band, &lane) => {
@@ -452,61 +529,68 @@ impl Fetcher {
                 }
             }
         };
-        self.cancel_lane(*loser, ctx.counts).await;
+        self.cancel_lane(*loser, ctx.counts, true).await;
     }
 
-    /// The kept queue, while the song plays: it wins if it starts sending and passes the gate; one
-    /// that sends but never outruns the song runs on quietly (`Raced::Won` with `quiet`), to be
-    /// there for the next play; a queue place never reached is left when the fetch stops.
+    /// The kept queue, while the song plays: it wins if it starts sending and passes the gate
+    /// (a copy all here does too); once it has sent it runs on after the song ends, and a queue
+    /// place never reached is left when the fetch stops.
     pub(super) async fn wait_kept(
         &self,
         f: &Fetch,
         mut lane: Lane,
         stop: &mut watch::Receiver<bool>,
-    ) -> Result<(Winner, bool), Stop> {
+    ) -> Result<Winner, Stop> {
         let (_hold, mut over) = watch::channel(false);
         let counts = Counts::default();
         match self.tend(f, &mut lane, Mode::Kept, &mut over, stop).await {
-            end @ (LaneEnd::Passed | LaneEnd::Slow) => {
-                let quiet = matches!(end, LaneEnd::Slow);
-                let Lane { source, copy, leg, .. } = lane;
-                Ok((
-                    Winner {
-                        source,
-                        started: Started { copy, leg: Some(leg) },
+            LaneEnd::Passed => {
+                let Lane {
+                    source,
+                    copy,
+                    leg,
+                    claim,
+                    ..
+                } = lane;
+                Ok(Winner {
+                    source,
+                    started: Started {
+                        copy,
+                        leg: Some(leg),
+                        claim: Some(claim),
                     },
-                    quiet,
-                ))
-            }
-            LaneEnd::Stopped => {
-                self.cancel_lane(lane, &counts).await;
-                Err(Stop::Cancelled)
+                })
             }
             LaneEnd::Failed(why) => {
-                self.cancel_lane(lane, &counts).await;
+                self.cancel_lane(lane, &counts, false).await;
                 Err(Stop::Failed(why))
             }
-            LaneEnd::Silent | LaneEnd::Over => {
-                self.cancel_lane(lane, &counts).await;
+            LaneEnd::Stopped | LaneEnd::Silent | LaneEnd::Slow | LaneEnd::Over => {
+                self.cancel_lane(lane, &counts, true).await;
                 Err(Stop::Cancelled)
             }
         }
     }
 
     /// Cancels a lane's request and forgets what it brought: its partial file is deleted, never
-    /// cached. A peer cancelled while it was sending is counted against its day (`lanes`).
-    async fn cancel_lane(&self, mut lane: Lane, counts: &Counts) {
+    /// cached, when the file is the lane's own. `own`: lull cancelled it (not the peer dropping
+    /// it); a peer cancelled that way while it was sending is counted against its day (`lanes`).
+    async fn cancel_lane(&self, mut lane: Lane, counts: &Counts, own: bool) {
         let sent = lane.leg.front > lane.leg.start;
         self.end_leg(&lane.source, &mut lane.leg, lane.t.as_ref()).await;
-        if sent {
+        if sent && own {
             self.lanes.cancelled(&lane.source.user);
         }
         counts.cancelled.fetch_add(1, Ordering::Relaxed);
-        self.forget_copy(&lane.source, lane.copy).await;
+        self.forget_copy(&lane.source, lane.copy, lane.created).await;
     }
 
     /// Deletes lull's file for a copy nobody will play and its cache record, if any.
-    async fn forget_copy(&self, source: &Source, copy: Copy) {
+    async fn forget_copy(&self, source: &Source, copy: Copy, created: bool) {
+        if !created {
+            // A partial an earlier fetch left stays: it is its own.
+            return;
+        }
         let path = copy.path.clone();
         drop(copy);
         if let Err(e) = tokio::fs::remove_file(&path).await

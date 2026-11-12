@@ -35,6 +35,22 @@ struct Inner {
     state: Mutex<State>,
     /// Cancels of a sending upload by peer: the day (days since 1970) and how many.
     cancels: Mutex<HashMap<String, (i64, u32)>>,
+    /// Copies (peer, path) a lane has asked for or a race winner is bringing: nobody else asks.
+    claimed: Mutex<std::collections::HashSet<(String, String)>>,
+}
+
+/// A copy claimed for one lane; released when dropped.
+pub(super) struct Claim {
+    lanes: Lanes,
+    copy: (String, String),
+}
+
+impl Drop for Claim {
+    fn drop(&mut self) {
+        if let Ok(mut claimed) = self.lanes.inner.claimed.lock() {
+            claimed.remove(&self.copy);
+        }
+    }
 }
 
 #[derive(Default)]
@@ -120,6 +136,16 @@ impl Lanes {
                 state.used += 1;
             }
         }
+    }
+
+    /// Claims the copy of `user`'s file at `path`, unless a lane already has it.
+    pub(super) fn claim(&self, user: &str, path: &str) -> Option<Claim> {
+        let copy = (user.to_owned(), path.to_owned());
+        let mut claimed = self.inner.claimed.lock().ok()?;
+        claimed.insert(copy.clone()).then(|| Claim {
+            lanes: self.clone(),
+            copy,
+        })
     }
 
     /// Whether `peer` may be raced: fewer than `CANCELS_A_DAY` of its sending uploads were cancelled today.

@@ -7,6 +7,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
+use std::time::Instant;
 
 use tokio::sync::watch;
 
@@ -16,7 +17,7 @@ use super::{Fetch, Fetcher, Patience, Skip, Status, Stop, key, reason, stopped};
 use crate::budget::Lane as SearchLane;
 use crate::policy::{self, Bar};
 use crate::rules::Purpose;
-use crate::sources::{Ranked, Source};
+use crate::sources::Ranked;
 
 impl Fetcher {
     /// The rounds to race for a song playing `bar.playing`: copies in a higher band that the
@@ -54,12 +55,31 @@ impl Fetcher {
     }
 
     /// The better copy of the song playing (ADR-0018): its candidates are raced, and the winner's
-    /// running leg carries on here to the end. Nothing of it touches the playing fetch.
+    /// running leg carries on here to the end. Nothing of it touches the playing fetch. However
+    /// the race ends, it leaves one line in the log (`said`).
     pub(super) async fn better_copy(
         &self,
         f: &Fetch,
         bar: &Bar,
         stop: &mut watch::Receiver<bool>,
+    ) -> Result<PathBuf, Stop> {
+        let began = Instant::now();
+        let mut report = Report::default();
+        let result = self.raced_copy(f, bar, stop, &mut report, began).await;
+        if !report.said {
+            report.took = began.elapsed();
+            self.said(f, &mut report);
+        }
+        result
+    }
+
+    async fn raced_copy(
+        &self,
+        f: &Fetch,
+        bar: &Bar,
+        stop: &mut watch::Receiver<bool>,
+        report: &mut Report,
+        began: Instant,
     ) -> Result<PathBuf, Stop> {
         let mut rounds = self.rounds(f, bar);
         if rounds.is_empty() {
@@ -82,28 +102,29 @@ impl Fetcher {
             p.status = Status::Finding;
             p.peers_found = peers;
         });
-        let (winner, quiet) = match self.race_lanes(f, rounds, Priority::Race, stop).await? {
-            Raced::Won(winner, report) => {
-                self.said(f, &report, Some(&winner.source));
-                (*winner, false)
-            }
-            Raced::Kept(lane, report) => {
-                self.said(f, &report, None);
+        let winner = match self.race_lanes(f, rounds, Priority::Race, stop, report).await? {
+            Raced::Won(winner) => *winner,
+            Raced::Kept(lane) => {
                 self.stays(
                     f,
                     &format!("no better copy sent in time ({}); a queue is kept", report.summary()),
                 );
-                self.wait_kept(f, *lane, stop).await?
+                let kept = self.wait_kept(f, *lane, stop).await;
+                report.took = began.elapsed();
+                report.winner = kept.as_ref().ok().map(|w| w.source.user.clone());
+                self.said(f, report);
+                kept?
             }
-            Raced::Lost(report) => {
-                self.said(f, &report, None);
+            Raced::Lost => {
                 self.stays(f, &format!("no better copy sent in time ({})", report.summary()));
+                self.said(f, report);
                 return Err(Stop::Failed("no better copy sent in time".into()));
             }
         };
-        // A winner is offered `ready` from its first event; a kept queue that sent slowly only
-        // finishes, for the next play.
-        f.won.store(!quiet, Ordering::Relaxed);
+        if !report.said {
+            self.said(f, report);
+        }
+        f.won.store(true, Ordering::Relaxed);
         let attempt = f.now().attempt + 1;
         let source = winner.source.clone();
         match self
@@ -134,13 +155,14 @@ impl Fetcher {
     }
 
     /// The one line a race leaves in the log.
-    fn said(&self, f: &Fetch, report: &Report, winner: Option<&Source>) {
+    fn said(&self, f: &Fetch, report: &mut Report) {
+        report.said = true;
         tracing::info!(
             track = %f.track.id,
             job = f.job_id,
             bands = ?report.bands,
             lanes = report.asked,
-            winner = winner.map_or("none", |s| s.user.as_str()),
+            winner = report.winner.as_deref().unwrap_or("none"),
             secs = report.took.as_secs_f32(),
             cancels = report.cancelled,
             "better-copy race"

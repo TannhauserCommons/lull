@@ -844,7 +844,7 @@ impl Fetcher {
                 Beside::Better,
                 &f.profile,
             ) {
-                tracing::info!(track = %u.track.id, job = u.job_id, "fetching a better copy beside the one playing");
+                tracing::debug!(track = %u.track.id, job = u.job_id, "fetching a better copy beside the one playing");
             }
         }
     }
