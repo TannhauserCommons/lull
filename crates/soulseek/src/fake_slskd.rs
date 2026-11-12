@@ -343,9 +343,12 @@ fn shared_files(s: &Shared) -> Vec<(&String, &Vec<u8>)> {
     s.files.iter().filter(|(path, _)| !path.contains('|')).collect()
 }
 
+/// A file a peer shares: its remote path, and the bitrate its answer gives.
+type SharedFile = (String, Option<u32>);
+
 /// What search `n` (1-based) finds among `answers`, as Soulseek matches: a file whose path holds
 /// every word of the search text; a peer with no such file doesn't answer.
-fn found(s: &Shared, n: usize) -> Vec<(&Answer, Vec<&(String, Option<u32>)>)> {
+fn found(s: &Shared, n: usize) -> Vec<(&Answer, Vec<&SharedFile>)> {
     let text = s
         .searches
         .lock()
