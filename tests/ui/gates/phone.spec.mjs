@@ -41,3 +41,18 @@ for (const design of designs) {
     expect(r.right, 'inside the screen').toBeLessThanOrEqual(390);
   });
 }
+
+test('the Search tab puts the cursor in the search field, from another page and on search itself', async ({ page }) => {
+  await openScreen(page, '/home');
+  const field = page.locator('#disc-q');
+  const tab = page.locator('[data-region="tabbar"] [data-nav="search"]');
+  await tab.tap();
+  await expect(field).toBeFocused();
+  await expect(page.locator('input[aria-hidden="true"][type="search"]'), 'the stand-in for the keyboard is gone').toHaveCount(0);
+  await page.keyboard.type('amber');
+  await expect(field).toHaveValue('amber');
+  await field.blur();
+  await tab.tap();
+  await expect(field, 'pressed again on search').toBeFocused();
+  await expect.poll(() => page.evaluate(() => document.querySelector('#disc-q').selectionStart), 'the cursor after the words').toBe(5);
+});
