@@ -181,15 +181,16 @@
   </section>
 
   <!-- phone: mini-player + 4-tab bar -->
-  <section class="mini s-panel" id="mini" aria-label="Now playing" data-drop="play" data-region="mini">
+  <section class="mini s-panel" id="mini" aria-label="Now playing" data-drop="play" data-region="mini" data-fit-row>
     <div class="seek seek--line" data-seek="player" aria-hidden="true">
       <div class="seek__track"><div class="seek__xfer"></div><div class="seek__bufs"></div><div class="seek__played"></div></div>
       <div class="seek__target"></div>
     </div>
     <a class="bezel-thumb" id="mini-thumb" href="#/now" aria-label="Open Now Playing"></a>
-    <a class="mini__text" href="#/now" data-fit-row><span class="mini__title" id="mini-title"></span><span class="mini__sub" id="mini-sub" data-fit-keep></span><span class="mini__chip" data-fit="1" aria-hidden="true"></span></a>
+    <a class="mini__text" href="#/now" data-fit-row data-fit-keep><span class="mini__title" id="mini-title"></span><span class="mini__sub" id="mini-sub" data-fit-keep></span><span class="mini__chip" data-fit="1" aria-hidden="true"></span></a>
     <a class="mini__private" data-bind="private" href="#/settings/privacy" hidden aria-label="Private listening is on. Open its setting"><svg class="ic" aria-hidden="true"><use href="#i-eye-off"/></svg>Private</a>
-    <button class="btn-icon btn-icon--bare" data-act="connect" aria-haspopup="dialog" aria-expanded="false" aria-label="Play on another device"><svg class="ic" aria-hidden="true"><use href="#i-connect"/></svg></button>
+    <button class="btn-icon btn-icon--bare" data-fit="1" data-act="connect" aria-haspopup="dialog" aria-expanded="false" aria-label="Play on another device"><svg class="ic" aria-hidden="true"><use href="#i-connect"/></svg></button>
+    <button class="btn-icon btn-icon--bare" data-act="prev" aria-label="Previous"><svg class="ic" aria-hidden="true"><use href="#i-prev"/></svg></button>
     <button class="btn-gloss btn-gloss--40" data-act="play" data-bind="play" aria-label="Play"><i class="btn-gloss__spin" aria-hidden="true"></i><svg class="ic ic-play" aria-hidden="true"><use href="#i-play"/></svg></button>
     <button class="btn-icon btn-icon--bare" data-act="next" aria-label="Next"><svg class="ic" aria-hidden="true"><use href="#i-next"/></svg></button>
   </section>

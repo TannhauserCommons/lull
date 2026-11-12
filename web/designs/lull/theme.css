@@ -1907,7 +1907,7 @@
   :root[data-design="lull"] .mini :is(.mini__title, .mini__title a) { color: var(--v-ink); text-shadow: none; }
   :root[data-design="lull"] .mini :is(.mini__sub, .mini__sub a, .mini__artist) { color: var(--v-ink-2); opacity: 1; }
   :root[data-design="lull"] .mini .btn-icon { width: var(--hit); height: var(--hit); color: var(--v-clear-ink); background: none; box-shadow: none; }
-  :root[data-design="lull"] .mini .btn-gloss { margin: 0 4px; width: 46px; height: 46px; }
+  :root[data-design="lull"] .mini .btn-gloss { margin: 0; width: 46px; height: 46px; }
   :root[data-design="lull"] .tabbar :is(.tab, a) { color: var(--v-clear-ink); text-shadow: none; background: var(--v-clear); box-shadow: var(--v-clear-sh); }
   :root[data-design="lull"] .tabbar [aria-current="page"] { color: #fff; background: var(--v-gel); border-radius: 18px; box-shadow: var(--v-shine), 0 0 0 1px var(--v-gel-edge); text-shadow: 0 1px 0 var(--v-gel-edge); }
 }

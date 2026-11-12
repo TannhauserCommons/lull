@@ -1390,7 +1390,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
    right (the key's box, --hit wide round a 20 px icon, takes the rest): equal, so the bar reads as set in one frame */
 .mini {
   --mini-inset: 14px;
-  position: relative; grid-area: mini; align-items: center; gap: var(--sp-3); height: var(--mini-h); margin: 0 8px 8px; padding: 0 calc(var(--mini-inset) - (var(--hit) - 20px) / 2) 0 var(--mini-inset);
+  position: relative; grid-area: mini; align-items: center; gap: 2px; height: var(--mini-h); margin: 0 8px 8px; padding: 0 calc(var(--mini-inset) - (var(--hit) - 20px) / 2) 0 var(--mini-inset);
   border: var(--stroke) solid var(--edge); border-radius: 16px; overflow: hidden; touch-action: pan-y;
 }
 .mini > .seek--line { position: absolute; left: 0; right: 0; top: 0; }
@@ -1398,13 +1398,13 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .mini .btn-gloss { --size: var(--hit); }
 .mini .bezel-thumb { padding: 3px; border-radius: 8px 8px 14px 8px; }
 .mini .bezel-thumb .cover { --cover-size: 40px; border-radius: 5px; }
-.mini__text { flex: 1; min-width: 0; display: grid; text-align: left; }
+.mini__text { flex: 1; min-width: 0; display: grid; text-align: left; margin: 0 6px; --fit-keep: 100px; }
 .mini__title { font: 800 .9375rem/1.25 var(--f-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini__sub { font: 600 .8125rem/1.3 var(--f-ui); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* a design's state chip beside the song's line (lull's "streaming"): empty and hidden unless a design draws it, and it
-   gives way before it would cover a button or squeeze the line below its readable width (layout.js) */
+   gives way before it would cover a button or squeeze the line below its readable width (layout.js); so does the key for another device */
 .mini__chip { display: none; }
-.mini__chip[data-fit-out] { display: none !important; }
+.mini [data-fit-out] { display: none !important; }
 .mini__from::before { content: " \00b7  "; white-space: pre; }
 .tabbar {
   grid-area: tabs; grid-template-columns: repeat(4, 1fr); height: calc(var(--tab-h) + env(safe-area-inset-bottom));

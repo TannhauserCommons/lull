@@ -47,14 +47,14 @@ for (const design of designs) {
     test.describe(`${design} / ${width}`, () => {
       test.use({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true });
 
-      test('play and next are keys, and the cover has the room the last key has', async ({ page }) => {
+      test('previous, play and next are keys, and the cover has the room the last key has', async ({ page }) => {
         const queue = await playOnBar(page, design, width);
         const bar = await page.evaluate(() => {
           const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
           const hit = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hit'));
           const mini = document.getElementById('mini');
           const keys = {};
-          for (const act of ['play', 'next']) {
+          for (const act of ['prev', 'play', 'next']) {
             const el = mini.querySelector(`[data-act="${act}"]`);
             keys[act] = el && { ...box(el), out: el.hasAttribute('data-fit-out'), shown: el.getClientRects().length > 0 };
           }
@@ -64,7 +64,7 @@ for (const design of designs) {
           return { hit, mini: box(mini), keys, thumb: box(document.getElementById('mini-thumb')), nextIcon: box(mini.querySelector('[data-act="next"] .ic')), parts, scroll: [document.documentElement.scrollWidth, innerWidth],
             miniScroll: [mini.scrollWidth, mini.clientWidth] };
         });
-        for (const act of ['play', 'next']) {
+        for (const act of ['prev', 'play', 'next']) {
           const k = bar.keys[act];
           expect(k, `${act} is on the bar`).toBeTruthy();
           expect(k.shown && !k.out, `${act} stays on the bar`).toBe(true);
@@ -85,6 +85,11 @@ for (const design of designs) {
         expect(bar.scroll[0], 'the page does not scroll sideways').toBeLessThanOrEqual(bar.scroll[1]);
         expect(bar.miniScroll[0], 'the bar holds its parts').toBeLessThanOrEqual(bar.miniScroll[1] + 1);
 
+        // they work: previous goes back a song, next on again
+        await page.tap('#mini [data-act="prev"]');
+        await expect.poll(() => current(page)).toBe(queue[0]);
+        await page.tap('#mini [data-act="next"]');
+        await expect.poll(() => current(page)).toBe(queue[1]);
       });
     });
   }

@@ -4085,7 +4085,7 @@
      catalogue of parts; it also takes the boxes away when the theme in use has none) */
   function renderRegionSlots() { if (App.edges) App.edges.regions(); }
 
-  /* phone mini-player: swipe left/right = next/prev (buttons are the alternative) */
+  /* phone mini-player: swipe left/right = next/prev (the keys beside the play key do the same) */
   (function () {
     var x0 = null;
     document.addEventListener('pointerdown', function (e) { var m = e.target.closest('#mini'); if (m && !e.target.closest('button')) x0 = e.clientX; });
