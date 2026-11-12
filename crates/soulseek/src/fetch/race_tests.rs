@@ -99,6 +99,12 @@ fn bytes_of(user: &str, path: &str, size: usize) -> Vec<u8> {
     (0..size).map(|i| seed.wrapping_add((i % 251) as u8)).collect()
 }
 
+/// A candidate copy's size: `SIZE`, but another rip's (a peer named "rip...") is a little larger,
+/// so it isn't the same file as the others' (no side leg can take its place, ADR-0014).
+fn size_of(user: &str) -> usize {
+    if user.starts_with("rip") { SIZE + 100_000 } else { SIZE }
+}
+
 fn the(user: &str, path: &str) -> SourceRef {
     SourceRef {
         user: user.into(),
@@ -153,7 +159,7 @@ async fn hub(rules: Rules, titles: &[&str], answers: Vec<Answer>) -> Result<Hub>
     }
     for a in &answers {
         for (path, _) in &a.files {
-            files.insert(format!("{}|{path}", a.user), bytes_of(&a.user, path, SIZE));
+            files.insert(format!("{}|{path}", a.user), bytes_of(&a.user, path, size_of(&a.user)));
         }
     }
     let low = Peer {
@@ -1350,5 +1356,112 @@ async fn r28_a_kept_copy_that_arrives_whole_is_offered() -> Result<()> {
     let (offer, seen) = ready_offer(&h, &f, SECS(50)).await;
     let (_, offer) = offer.ok_or_else(|| Error::internal(format!("R28 nothing ready in 50 s; offered {seen:?}")))?;
     assert_eq!(peer_of(&offer), "q", "R28 ready offer: {offer}");
+    Ok(())
+}
+
+// Final review (ADR-0018, R29-R30).
+
+#[tokio::test]
+async fn r29_a_songs_start_never_takes_a_copy_a_race_holds() -> Result<()> {
+    let s = [mp3("Song")];
+    let h = hub(
+        Rules::default(),
+        &["Song"],
+        vec![
+            // A's race takes x, y and w; w is all here first and wins, x and y are cancelled.
+            peer("x", Behaviour::Sends(FAST), 9.0, &s),
+            peer("y", Behaviour::Sends(FAST), 8.0, &s),
+            peer("w", Behaviour::Sends(FASTEST), 1.0, &s),
+            peer("z", Behaviour::Sends(FAST), 0.5, &s),
+        ],
+    )
+    .await?;
+    let t = track("Song");
+    let (ogg, mp3_only) = (profile(&["ogg", "mp3"], 0), profile(&["mp3"], 320));
+    // Device A plays an OGG 128 and races for a 320.
+    h.fetcher
+        .sources
+        .add(HashMap::from([(t.id.clone(), vec![low_ogg("Song")])]));
+    let a = h.fetcher.stream(t.clone(), None, &ogg).await?;
+    on(&a, "lowogg", SECS(10)).await?;
+    let deadline = Instant::now() + SECS(10);
+    while h.began(&["x", "y", "w"]).is_none() {
+        if Instant::now() > deadline {
+            return Err(Error::internal("R29 A's race never began"));
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Device B (MP3 only) starts the song while A's lanes run: it can't join A's OGG.
+    let b = h.fetcher.stream(t.clone(), None, &mp3_only).await?;
+    let p = match ended(&b, SECS(40)).await {
+        Ok(p) => p,
+        Err(_) => {
+            let p = b.now();
+            let user = p.source.as_ref().map(|s| s.user.clone()).unwrap_or_default();
+            let file = p.path.as_ref().map(|f| std::fs::metadata(f).map(|m| m.len()).ok());
+            return Err(Error::internal(format!(
+                "R29 B's song on {user} never ended in 40 s: {:?}, {} of {} bytes in, its file {file:?}",
+                p.status,
+                p.received(),
+                p.size()
+            )));
+        }
+    };
+    let user = p.source.as_ref().map(|s| s.user.clone()).unwrap_or_default();
+    assert_eq!(p.status, Status::Done, "R29 B's song on {user}: {:?}", p.error);
+    let path = p.path.ok_or_else(|| Error::internal("R29 B's copy has no file"))?;
+    let file = std::fs::read(&path).unwrap_or_default();
+    assert!(
+        file == bytes_of(&user, &mp3("Song"), SIZE),
+        "R29 B's copy from {user} isn't whole ({} bytes at {})",
+        file.len(),
+        path.display()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn r30_a_seek_before_the_first_byte_keeps_the_six_second_rule() -> Result<()> {
+    let s = [mp3("Song")];
+    let h = hub(
+        capped(),
+        &["Song"],
+        vec![
+            peer("silent", Behaviour::Silent, 9.0, &s),
+            // Another rip (another size): no side leg on it, only a fallback to it.
+            peer("ripfast", Behaviour::Sends(FAST), 1.0, &s),
+        ],
+    )
+    .await?;
+    let f = h.fetcher.play(track("Song"), None).await?;
+    on(&f, "silent", SECS(15)).await?;
+    let t0 = h
+        .began(&["silent"])
+        .ok_or_else(|| Error::internal("R30 silent never asked"))?;
+    // The listener seeks to three quarters before any byte came.
+    let byte = (SIZE * 3 / 4) as u64;
+    let _seek = f.ask_for(byte);
+    let deadline = t0 + SECS(20);
+    while !(f.now().source.is_some_and(|s| s.user == "ripfast") && f.now().received() > 0) {
+        if Instant::now() > deadline {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let at = since(t0, Instant::now());
+    let silent = h.fake.requests_of("silent");
+    let mut from: Vec<u64> = silent.iter().map(|r| r.offset).collect();
+    from.dedup();
+    assert!(
+        at <= 8.5,
+        "R30 the next peer's bytes after {at:.1} s, over 8.5 (silent asked {} times, from {from:?})",
+        silent.len()
+    );
+    let landed = Instant::now() + SECS(10);
+    while !f.now().ranges.has(byte) && Instant::now() < landed {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(f.now().ranges.has(byte), "R30 the seek's byte never arrived");
     Ok(())
 }
