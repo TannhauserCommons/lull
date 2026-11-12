@@ -94,13 +94,14 @@ for (const design of designs) {
 /* a touch held on a row, as a finger does: a touch's pointerdown, nothing for 700 ms, then the menu is expected open
    before the finger lifts. iOS sends no contextmenu for a long press, so lull has to see the hold itself */
 test('a touch held on a song opens its menu', async ({ page }) => {
-  test.fixme(true, 'M07: only a contextmenu event opens lull\'s menu (app.js), and iOS sends none for a long press');
   await open(page, `/playlist/${ids.playlist}`);
   const row = page.locator('#view .trow[data-track-id]').nth(2);
+  await row.evaluate((el) => el.scrollIntoView({ block: 'center' }));   // clear of the player bar and tab bar
   const b = await row.boundingBox();
   const at = { x: b.x + b.width * 0.45, y: b.y + b.height / 2 };
   await page.evaluate(({ x, y }) => {
     const t = document.elementFromPoint(x, y);
+    if (!t.closest('.trow')) throw new Error('the row is covered by ' + t.className);
     const o = { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: x, clientY: y, bubbles: true, cancelable: true, composed: true };
     t.dispatchEvent(new PointerEvent('pointerdown', o));
     window.__lift = () => t.dispatchEvent(new PointerEvent('pointerup', o));
@@ -111,13 +112,39 @@ test('a touch held on a song opens its menu', async ({ page }) => {
   expect(shown, 'the row\'s menu, open while the finger is still down').toBe(true);
 });
 
+/* the hold is not a scroll or a tap: a finger that moves past a few pixels (a scroll, or a drag of the row) or lifts early
+   opens nothing */
+for (const how of ['moves', 'lifts early']) {
+  test(`a touch that ${how} on a song opens no menu`, async ({ page }) => {
+    await open(page, `/playlist/${ids.playlist}`);
+    const row = page.locator('#view .trow[data-track-id]').nth(2);
+    await row.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    const b = await row.boundingBox();
+    await page.evaluate(({ x, y, how }) => {
+      const t = document.elementFromPoint(x, y);
+      const o = (dx, dy) => ({ pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: x + dx, clientY: y + dy, bubbles: true, cancelable: true, composed: true });
+      t.dispatchEvent(new PointerEvent('pointerdown', o(0, 0)));
+      if (how === 'moves') setTimeout(() => t.dispatchEvent(new PointerEvent('pointermove', o(0, 24))), 150);
+      else setTimeout(() => t.dispatchEvent(new PointerEvent('pointerup', o(0, 0))), 150);
+    }, { x: b.x + b.width * 0.45, y: b.y + b.height / 2, how });
+    await page.waitForTimeout(800);
+    await expect(page.locator('.menu, [role="menu"]')).toHaveCount(0);
+  });
+}
+
 /* a long press on a row or tile is lull's: iOS's link preview and callout would take it */
 test('a held link shows lull\'s menu, not the browser\'s callout', async ({ page, browser }) => {
   test.skip(!isWebkit(browser), '-webkit-touch-callout is WebKit\'s alone');
-  test.fixme(true, 'M07: no -webkit-touch-callout: none on rows and tiles, so iOS shows its link preview on a long press');
   await open(page, '/home');
-  const callout = await page.evaluate(() => [...document.querySelectorAll('#view .tile a[href], #view .trow a[href], #view .disc-pick a[href]')]
-    .filter((a) => a.getClientRects().length).map((a) => getComputedStyle(a).webkitTouchCallout || getComputedStyle(a).getPropertyValue('-webkit-touch-callout')));
+  /* Playwright's WebKit on Windows doesn't know the property (iOS's alone: CSS.supports is false and the computed value
+     empty), so this reads the declarations out of the style sheets: a link counts when a rule that sets it to none matches */
+  const callout = await page.evaluate(async () => {
+    const css = await Promise.all([...document.styleSheets].filter((s) => s.href).map((s) => fetch(s.href).then((r) => r.text())));
+    const none = [];
+    for (const m of css.join('\n').replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{[^{}]*-webkit-touch-callout\s*:\s*none[^{}]*\}/g)) none.push(m[1].trim());
+    return [...document.querySelectorAll('#view .tile a[href], #view .trow a[href], #view .disc-pick a[href]')]
+      .filter((a) => a.getClientRects().length).map((a) => none.some((sel) => a.matches(sel)) ? 'none' : 'default');
+  });
   expect(callout.length).toBeGreaterThan(0);
   expect(callout.filter((c) => c !== 'none'), 'links that still give iOS\'s callout').toEqual([]);
 });

@@ -210,3 +210,17 @@
     transition-duration: 120ms !important;
   }
 }
+
+/* A long press on a row or tile is lull's menu (app.js, "Context menus"), not iOS's link preview and callout, and on a
+   touch screen it must not start selecting the row's words either. Inherited, so the links and covers inside follow. */
+@layer base {
+  .trow, .tile, .disc-pick, .disc-top, .disc-lead, .rail__pl, .lib-hero, .lib-pl__head, .pbar__now, .now-head,
+  :is(.trow, .tile, .disc-pick, .disc-top, .disc-lead, .rail__pl, .lib-hero, .lib-pl__head, .pbar__now, .now-head) :is(a, img) {
+    -webkit-touch-callout: none;
+  }
+  @media (pointer: coarse) {
+    .trow, .tile, .disc-pick, .disc-top, .disc-lead, .rail__pl, .lib-hero, .lib-pl__head, .pbar__now, .now-head {
+      -webkit-user-select: none; user-select: none;
+    }
+  }
+}

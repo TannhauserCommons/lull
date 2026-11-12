@@ -4514,8 +4514,44 @@
     var sel = window.getSelection();
     return !!(sel && !sel.isCollapsed && sel.rangeCount && sel.getRangeAt(0).intersectsNode(e.target));
   }
+  /* A touch held for HOLD_MS on something that has a menu opens it where the finger is. iOS Safari sends no contextmenu
+     for a long press (it shows its link preview, which -webkit-touch-callout: none in base.css turns off); Android Chrome
+     sends one, which this has already answered, so it is swallowed. Moving past SLOP px, lifting, a second finger or the
+     browser taking the touch (pointercancel: a scroll, or a drag of a row) all end the wait, so scrolling and dragging
+     rows are as they were. The click that can follow the lift is swallowed too: the menu is under the finger. */
+  var HOLD_MS = 500, SLOP = 10, held = null, heldOpenedAt = 0, heldLiftedAt = 0;
+  function endHold() { if (held) { clearTimeout(held.timer); held = null; } }
+  document.addEventListener('pointerdown', function (e) {
+    endHold();
+    if (e.pointerType !== 'touch' || !e.isPrimary || !(e.target instanceof Element)) return;
+    if (e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [data-seek]')) return;
+    var h = held = { id: e.pointerId, x: e.clientX, y: e.clientY, target: e.target };
+    h.timer = setTimeout(function () {
+      if (held !== h) return;
+      held = null;
+      var open = contextMenuFor(h.target); if (!open) return;
+      heldOpenedAt = Date.now();
+      App.closePopover();
+      contextAt = { x: h.x, y: h.y };
+      try { open(); } finally { contextAt = null; }
+    }, HOLD_MS);
+  }, { passive: true });
+  document.addEventListener('pointermove', function (e) {
+    if (held && e.pointerId === held.id && Math.hypot(e.clientX - held.x, e.clientY - held.y) > SLOP) endHold();
+  }, { passive: true });
+  ['pointerup', 'pointercancel', 'dragstart'].forEach(function (type) {
+    document.addEventListener(type, function (e) {
+      if (type === 'pointerup' && e.pointerType === 'touch' && Date.now() - heldOpenedAt < 10000 && heldOpenedAt > heldLiftedAt) heldLiftedAt = Date.now();
+      endHold();
+    }, { capture: true, passive: true });
+  });
+  document.addEventListener('click', function (e) {
+    if (Date.now() - heldLiftedAt < 400) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
   document.addEventListener('contextmenu', function (e) {
     if (!(e.target instanceof Element) || keepsNativeMenu(e)) return;
+    if (Date.now() - heldOpenedAt < 1500) { e.preventDefault(); return; }   // Android's, after the hold opened the menu
+    endHold();
     var open = contextMenuFor(e.target); if (!open) return;
     e.preventDefault();
     App.closePopover();
