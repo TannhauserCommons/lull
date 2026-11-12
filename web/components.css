@@ -1511,6 +1511,8 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
     border-radius: var(--r-panel) var(--r-panel) 0 0; border-bottom: 0; transform: translateY(100%); }
   .app[data-ctx="open"] .ctx { transform: none; }
   .toast-region { bottom: calc(var(--mini-h) + var(--tab-h) + 24px + env(safe-area-inset-bottom)); }
+  /* Now Playing hides what the notes stand on: they come down from under its bar, off its transport */
+  .app[data-view="now"] ~ .toast-region { top: calc(52px + env(safe-area-inset-top)); bottom: auto; align-content: start; }
   /* Now Playing = full sheet: the view slides up over everything */
   .app[data-view="now"] .header, .app[data-view="now"] .mini, .app[data-view="now"] .tabbar, .app[data-view="now"] .banner-slot { display: none; }
   .app[data-view="now"] .main { grid-row: 1 / -1; }
