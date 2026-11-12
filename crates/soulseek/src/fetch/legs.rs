@@ -153,8 +153,7 @@ impl Fetcher {
             .make_room(source.size.saturating_mul(2))
             .await
             .map_err(failed)?;
-        let rules = self.rules.get();
-        let below = !source.meets(&rules.stream.minimum, f.track.duration);
+        let below = !source.meets(&f.profile.minimum, f.track.duration);
         let mut copy = self.open_copy(f, source).await.map_err(failed)?;
         self.update(f, |p| {
             p.attempt = attempt;
@@ -534,7 +533,7 @@ impl Fetcher {
     /// Another peer with the same file the copy can come from (ADR-0014, Which peer): the same
     /// size and kind, a free slot in its search answer, no stall on record, not tried for this copy.
     fn other_peer(&self, f: &Fetch, source: &Source, copy: &Copy) -> Option<Source> {
-        let rules = self.rules.get();
+        let rules = self.rules_of(f);
         self.sources
             .ordered(&f.track, &rules, f.purpose)
             .into_iter()
@@ -1053,7 +1052,7 @@ mod tests {
             path: REMOTE.into(),
             size: bytes.len() as u64,
         };
-        let f = fetcher.stream(track(), Some(pick)).await?;
+        let f = fetcher.play(track(), Some(pick)).await?;
         done(&f).await?;
         let p = f.now();
         let path = p.path.ok_or_else(|| Error::internal("no file"))?;
@@ -1101,7 +1100,7 @@ mod tests {
                 ranges: Some(ranges),
             })
             .await?;
-        let f = fetcher.stream(track(), Some(pick)).await?;
+        let f = fetcher.play(track(), Some(pick)).await?;
         done(&f).await?;
         assert_eq!(std::fs::read(&path).map_err(|e| Error::internal(e.to_string()))?, bytes);
         assert_eq!(
@@ -1147,7 +1146,7 @@ mod tests {
             })
             .collect();
         fetcher.sources.add(HashMap::from([(track().id, all)]));
-        let f = fetcher.stream(track(), Some(pick)).await?;
+        let f = fetcher.play(track(), Some(pick)).await?;
         let mut rx = f.progress();
         rx.wait_for(|p| p.received() > 100_000)
             .await

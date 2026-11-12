@@ -14,7 +14,7 @@
 | `prefetch.rs` | Preloading the songs queued next (`PUT /api/stream/prefetch`) |
 | `budget.rs` | One search budget: priorities, rate, pausing while no peer answers |
 | `albums.rs` | `Transfers::album_available`: whether peers share an album, remembered |
-| `rules.rs` | The streaming and saving profiles and peer limits, from the `settings` event |
+| `rules.rs` | The streaming and saving profiles, the source presets and which one each device uses, and peer limits, from the `settings` event |
 | `sources.rs` | Every known peer file per song (pooled across folders), in a profile's order on read |
 | `rank.rs` | The score and its factors. The format factor (`sound`) scales toward the streaming cap wherever streaming ranks copies; better copies are ranked by it alone |
 | `policy.rs` | The streaming policy: what a song starts on and what it switches to, from the streaming profile alone, for a copy of any source (ADR-0012, ADR-0013). Pure: the fetch code gathers copies and asks it |
@@ -153,7 +153,7 @@ A peer that stalled on lull in the last 7 days loses 25 points (`factors.stalled
 
 **A song's copies** are every known file that is the song by [matching](#matching), whatever folder or album a peer keeps it in (`Sources::pool`). Files are held under the `TrackId` their path names, and that names the album folder: live, "Drag Me Down" by Santa Cruz offered the 2 MP3 128s of two soundtrack folders, while 6 more peers shared it under "Santa Cruz - Single - 2016 - Drag Me Down" and others (a FLAC, an OGG 320, an MP3 269). The picker, a stream's fallback, a save, pre-fetching and pre-warming all read the pool; a cover ("(One Direction Cover)") or a remix stays another song. Copies a search came across (an album's folder, another query) don't stand for a search for the song: the picker and a save search for the song itself unless one ran in the last 6 hours (`Sources::searched`); playing and pre-warming search only when no copy is known, so Soulseek isn't asked more often. A copy that arrived is checked by its sound against the catalog's preview of the song, out of the way ([youtube.md#sound-checks](youtube.md#sound-checks), `Fetcher::check_soulseek_copy`): one that isn't the song leaves the pool (`Sources::mark_wrong`, until the hub restarts) and the cache, and the play goes on.
 
-The listener's streaming and saving profiles (ADR-0008, `lull_core::quality`) arrive in the `settings` event (`rules.rs`, ADR-0050); until collection's start-up copy, the defaults apply. `Sources::ordered` lists a song's copies for one profile:
+The listener's streaming and saving profiles (ADR-0008, `lull_core::quality`) arrive in the `settings` event (`rules.rs`, ADR-0050); until collection's start-up copy, the defaults apply. Streaming is per device: each request streams by its device's source preset (ADR-0017, `Rules::profile_for`, [streaming.md](streaming.md#fetches)), and the picker's order, the YouTube copy's format and every fetch for that device follow it; what no device asked for (a save, a retry with no device) streams by Desktop's. `Sources::ordered` lists a song's copies for one profile:
 
 1. **Gate.** A copy `meets` the profile's minimum by `Quality::meets` with the format from its extension (`quality::format_of`: `.aif` is AIFF, `.webm` is YouTube's Opus). Its bitrate is the peer's, else worked out from size and length (the file's, else the song's); a lossy file of unknown bitrate fails a floor.
 2. **Order.** Copies that pass come first, then the rest, each by the profile's `pick`:

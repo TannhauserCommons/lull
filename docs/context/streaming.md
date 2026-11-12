@@ -4,7 +4,14 @@ How `GET /api/stream/{trackId}` plays a song while slskd is still downloading it
 
 ## Fetches
 
-A **fetch** gets one song onto disk. There is at most one live fetch per track, shared by everyone who wants the song (the player streaming it, a save completing it, a [preload](#preloading)), so the bytes cross the network once.
+A **fetch** gets one song onto disk. There is at most one live fetch per track and streaming profile, shared by everyone who wants the song (the player streaming it, a save completing it, a [preload](#preloading)), so the bytes cross the network once.
+
+**Presets** (ADR-0017). Every request streams by the source preset of the device that asks (`Rules::profile_for`: its choice, else Phone for a phone and Desktop otherwise, [api.md](api.md) `GET /api/sources/presets`), and a fetch keeps the profile it was started for (`Fetch::profile`) for all it decides: its start, start fast's race, fallbacks, its better copy, preloads and later plays from the cache. Fetches are kept per song and profile (`Key`):
+- devices whose presets hold the same profile share one fetch, as before;
+- a device of another profile joins a running fetch when it has the copy that device picked, or a copy that suits its profile (`policy::suits`: a format it leaves on, within its cap, passing its minimum) or that its own fetch would take first anyway (`first_choice`); the live map then keeps the fetch under that device's key too. A better copy is offered to them only when it is worth switching to by every profile playing it. One device moving on (`DELETE`, switching copy) lets go of its key; the fetch carries on for the other;
+- otherwise the device gets its own fetch, which never takes a copy another profile's fetch of the song is transferring (`held_elsewhere`), so one copy never downloads twice at once. With only such a copy left it fails, saying another device's preset is fetching it, and playing the song again joins or reads it.
+
+The cache may then hold a copy for each, and each later play takes the best its own preset allows (`best_cached`). A preset changed while a song plays applies from the next opening.
 
 Openings of the song's stream (`Fetcher::stream`) take turns, so two at once join one fetch. Before, each could find no fetch running and start its own; start fast's race then handed the song to Soulseek's copy as the first one's, and a player following the second dropped every event of the copy playing: what had arrived froze on the seek bar, with no speed, and seeks past it were kept and never landed while the song played on (2026-11-08). Two openings at once can come from the player and a download to the device, the player's reopening on every (re)connect of the event stream, or two devices.
 
@@ -84,7 +91,7 @@ When the streaming policy (`policy`) knows a copy worth switching to from the on
 
 ## Preloading
 
-So that next plays at once, the player lists the songs queued after the current one with `PUT /api/stream/prefetch { tracks }` (`prefetch.rs`): at most 3, in queue order, as many as `playback.prefetchCount` (0-3, default 2). Each call replaces the calling device's list (the gate's device id; requests without one share a list).
+So that next plays at once, the player lists the songs queued after the current one with `PUT /api/stream/prefetch { tracks }` (`prefetch.rs`): at most 3, in queue order, as many as `playback.prefetchCount` (0-3, default 2). Each call replaces the calling device's list (the gate's device id; requests without one share a list), preloaded by that device's preset.
 
 - **What starts.** In order, each listed song that isn't saved, finished in the cache or already fetching gets a fetch. Its search runs in the `Prefetch` lane of the search budget, behind the player's searches ([soulseek.md](soulseek.md#search-budget)), and is skipped when one already found copies. The fetch then waits (up to 30 s) while the playing song is still finding a copy or waiting for its first bytes, and the next song waits until this one's bytes flow (up to 30 s), so one peer at a time is asked.
 - **Quietly.** A preload publishes no `stream` events (`transfer` and `job` as usual) and never waits as `choose`. When no copy passes the streaming minimum it starts only under `playBest`; under `keepLooking` or `ask` it doesn't start (or, after fallbacks, fails), and the player's own fetch applies the rule when the song plays. Songs no peer shares are left to the player too.

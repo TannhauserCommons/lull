@@ -1,5 +1,5 @@
 //! The streaming policy (ADR-0012, ADR-0013): what a song starts on, and what it switches to
-//! mid-song, decided by the listener's streaming profile alone (`sources.stream`: `minimum`,
+//! mid-song, decided by the streaming profile alone (the asking device's source preset's: `minimum`,
 //! `below`, `pick`, `maxKbps`). A copy is a copy, whatever its source (a Soulseek peer's,
 //! YouTube's): `youtube.mode` only says when YouTube is searched (`fetch.rs::route`), never how
 //! its copy is judged. Pure: the fetch, race and upgrade code gather the copies and ask here.
@@ -41,6 +41,12 @@ pub fn within_cap(p: &StreamProfile, copy: &Source, duration: Option<u32>) -> bo
 /// the rest of the minimum, which `below` may set aside.
 pub fn allowed(p: &StreamProfile, copy: &Source) -> bool {
     copy.allowed(&p.minimum)
+}
+
+/// Whether `copy` is one the profile streams gladly: a format it leaves on, within its cap and
+/// passing its minimum. A device of another preset joins a fetch only on such a copy (ADR-0017).
+pub fn suits(p: &StreamProfile, copy: &Source, duration: Option<u32>) -> bool {
+    allowed(p, copy) && within_cap(p, copy, duration) && passes(p, copy, duration)
 }
 
 /// Whether `copy` may be fetched to start the song: one passing the minimum always, one below it

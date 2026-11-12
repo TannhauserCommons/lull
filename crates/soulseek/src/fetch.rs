@@ -16,6 +16,12 @@
 //! Better copies: while the policy knows a copy worth switching to from the one the player
 //! streams (`policy::better`), an upgrade fetch gets it beside it; the player switches to it
 //! seamlessly once enough has arrived (docs/context/streaming.md#better-copies).
+//!
+//! Source presets (ADR-0017): each device streams by its own preset's profile, and a fetch keeps
+//! the profile it was started for. Fetches are kept per song and profile (`Key`): devices with
+//! the same profile share one, as before; a device with another joins a running one only on a
+//! copy that suits its own (`policy::suits`), and otherwise fetches its own, never a copy another
+//! fetch of the song is transferring.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -26,6 +32,7 @@ use std::time::{Duration, Instant};
 use lull_core::events::Bus;
 use lull_core::ids::TrackId;
 use lull_core::model::{SourceRef, Track};
+use lull_core::quality::StreamProfile;
 use lull_core::seams::Youtube;
 use lull_core::youtube::{self, Mode, Want as YoutubeWant};
 use lull_core::{Error, Result};
@@ -206,6 +213,9 @@ pub struct Fetch {
     pub track: Track,
     /// Whose profile orders the copies: the player's or a save's.
     pub purpose: Purpose,
+    /// The streaming profile it fetches by: the preset's of the device it was started for
+    /// (ADR-0017), kept for its whole run.
+    pub profile: StreamProfile,
     pub started: i64,
     /// When it began: a search for the song that ended since then is its own (`searched_since`).
     opened: Instant,
@@ -361,6 +371,13 @@ enum Skip {
     Slow(String),
 }
 
+/// Where a fetch is kept: its song, and the streaming profile it fetches by (ADR-0017).
+pub type Key = (TrackId, StreamProfile);
+
+fn key(f: &Fetch) -> Key {
+    (f.track.id.clone(), f.profile.clone())
+}
+
 #[derive(Clone)]
 pub struct Fetcher {
     pub slskd: Slskd,
@@ -372,12 +389,14 @@ pub struct Fetcher {
     pub bus: Bus,
     pub rules: Current,
     pub youtube: Arc<dyn Youtube>,
-    /// What the player reads (or preloads, or a save completes): one fetch per song.
-    live: Arc<Mutex<HashMap<TrackId, Arc<Fetch>>>>,
+    /// What the player reads (or preloads, or a save completes): one fetch per song and
+    /// profile. A device of another profile joining a running fetch maps its own key to it.
+    live: Arc<Mutex<HashMap<Key, Arc<Fetch>>>>,
     /// Better copies fetched beside the one the player has (start fast's Soulseek copy, the
     /// streaming profile's best beside a lesser copy), and saves started while YouTube plays the
-    /// song: out of the player's way, so its song never jumps until the player switches.
-    upgrades: Arc<Mutex<HashMap<TrackId, Arc<Fetch>>>>,
+    /// song: out of the player's way, so its song never jumps until the player switches. Kept
+    /// under the key of the live fetch they are beside.
+    upgrades: Arc<Mutex<HashMap<Key, Arc<Fetch>>>>,
     /// Ended fetches, newest last, for the Activity panel.
     ended: Arc<Mutex<VecDeque<serde_json::Value>>>,
     /// The latest fetches that ended, for a player asking what became of its job.
@@ -441,12 +460,106 @@ impl Fetcher {
         }
     }
 
-    fn live(&self, track: &TrackId) -> Option<Arc<Fetch>> {
-        running(&self.live, track)
+    fn live(&self, key: &Key) -> Option<Arc<Fetch>> {
+        running(&self.live, key)
     }
 
-    fn upgrade(&self, track: &TrackId) -> Option<Arc<Fetch>> {
-        running(&self.upgrades, track)
+    fn upgrade(&self, key: &Key) -> Option<Arc<Fetch>> {
+        running(&self.upgrades, key)
+    }
+
+    /// The rules `f` fetches by: the hub's, with its own streaming profile.
+    fn rules_of(&self, f: &Fetch) -> Rules {
+        self.rules.get().with_stream(&f.profile)
+    }
+
+    /// Where the better copy for what plays under `key` is kept: the key of the fetch playing
+    /// there, which is another profile's when this device joined it.
+    fn lane(&self, key: &Key) -> Key {
+        self.live(key).map_or_else(|| key.clone(), |f| self::key(&f))
+    }
+
+    /// The live fetch of `lane`'s song and profile, whichever devices play it: under its own key,
+    /// or only under the key of a device of another preset that joined it.
+    fn playing_in(&self, lane: &Key) -> Option<Arc<Fetch>> {
+        let live = self.live.lock().ok()?;
+        live.values()
+            .find(|f| self::key(f) == *lane && !matches!(f.now().status, Status::Failed | Status::Cancelled))
+            .cloned()
+    }
+
+    /// The profiles of every device playing `f` (each key the live map keeps it under), its own
+    /// when none does.
+    fn profiles_playing(&self, f: &Fetch) -> Vec<StreamProfile> {
+        let mut profiles: Vec<StreamProfile> = self
+            .live
+            .lock()
+            .map(|l| {
+                l.iter()
+                    .filter(|(_, other)| std::ptr::eq(Arc::as_ptr(other), f))
+                    .map(|((_, p), _)| p.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if profiles.is_empty() {
+            profiles.push(f.profile.clone());
+        }
+        profiles
+    }
+
+    /// Whether the live map keeps `f` under any key but `but`.
+    fn kept_elsewhere(&self, f: &Arc<Fetch>, but: &Key) -> bool {
+        self.live
+            .lock()
+            .is_ok_and(|l| l.iter().any(|(k, other)| k != but && Arc::ptr_eq(other, f)))
+    }
+
+    /// The running fetches of `track` in `map`, whatever their profile, each once.
+    fn of_song(map: &Mutex<HashMap<Key, Arc<Fetch>>>, track: &TrackId) -> Vec<Arc<Fetch>> {
+        let Ok(m) = map.lock() else { return Vec::new() };
+        let mut found: Vec<Arc<Fetch>> = Vec::new();
+        for ((t, _), f) in m.iter() {
+            if t == track
+                && !matches!(f.now().status, Status::Failed | Status::Cancelled)
+                && !found.iter().any(|g| Arc::ptr_eq(g, f))
+            {
+                found.push(f.clone());
+            }
+        }
+        found
+    }
+
+    /// A running fetch of `track` by another profile than `key`'s that a device of `key`'s
+    /// plays rather than fetching its own: on the copy it picked, else on a copy that suits its
+    /// profile (`policy::suits`) or that its own fetch would take first anyway.
+    fn joinable_elsewhere(&self, track: &Track, key: &Key, pick: Option<&SourceRef>) -> Option<Arc<Fetch>> {
+        let profile = &key.1;
+        let first = || {
+            let rules = self.rules.get().with_stream(profile);
+            let (copies, _) = usable(self.sources.ordered(track, &rules, Purpose::Stream));
+            first_choice(&copies, profile, track.duration).map(|r| r.source.source_ref())
+        };
+        Self::of_song(&self.live, &key.0).into_iter().find(|f| {
+            let p = f.now();
+            let Some(s) = p.source.as_ref().filter(|_| f.profile != *profile && !p.ended()) else {
+                return false;
+            };
+            match pick {
+                Some(pick) => s.is(pick),
+                None => policy::suits(profile, s, track.duration) || first().is_some_and(|c| s.is(&c)),
+            }
+        })
+    }
+
+    /// The copies other fetches of `f`'s song by another profile are transferring now: `f` takes
+    /// none of them, so one copy never downloads twice at once.
+    fn held_elsewhere(&self, f: &Fetch) -> Vec<SourceRef> {
+        [&self.live, &self.upgrades]
+            .into_iter()
+            .flat_map(|map| Self::of_song(map, &f.track.id))
+            .filter(|other| other.profile != f.profile && !other.now().ended())
+            .filter_map(|other| other.now().source.map(|s| s.source_ref()))
+            .collect()
     }
 
     /// Every fetch in both maps.
@@ -475,22 +588,27 @@ impl Fetcher {
     /// handed the song to Soulseek's copy as the first one's, and the player, following the
     /// second, dropped every event of the copy playing: it showed what had arrived frozen and
     /// kept seeks that never landed (2026-11-08).
-    pub async fn stream(&self, track: Track, pick: Option<SourceRef>) -> Result<Arc<Fetch>> {
+    ///
+    /// `profile` is the asking device's preset's (ADR-0017): what everything fetched for this
+    /// opening streams by.
+    pub async fn stream(&self, track: Track, pick: Option<SourceRef>, profile: &StreamProfile) -> Result<Arc<Fetch>> {
         let _turn = self.opening.lock().await;
-        self.open(track, pick).await
+        self.open(track, pick, profile).await
     }
 
-    async fn open(&self, track: Track, pick: Option<SourceRef>) -> Result<Arc<Fetch>> {
-        let mode = self.rules.get().youtube.mode;
+    async fn open(&self, track: Track, pick: Option<SourceRef>, profile: &StreamProfile) -> Result<Arc<Fetch>> {
+        let rules = self.rules.get().with_stream(profile);
+        let mode = rules.youtube.mode;
+        let key: Key = (track.id.clone(), profile.clone());
         // The listener picked the better copy already on its way: that fetch plays.
         if let Some(copy) = &pick
-            && self.upgrade_of(&track.id, copy).is_some()
+            && self.upgrade_of(&key, copy).is_some()
         {
-            let f = self.adopt(&track.id, copy, true)?;
+            let f = self.adopt(&track.id, profile, copy, true)?;
             self.cache.touch(&track.id).await?;
             return Ok(f);
         }
-        let live = match self.live(&track.id) {
+        let live = match self.live(&key) {
             Some(f) if pick.is_none() && self.superseded(&f).await? => {
                 self.forget(&f);
                 None
@@ -501,17 +619,21 @@ impl Fetcher {
             let current = f.now().source.map(|s| s.source_ref());
             // A copy in a format streaming switched off (a save's, or one cached before the
             // switch) isn't joined: only the listener's own pick of it plays (`policy::allowed`).
+            // One another preset's fetch moved to (a fallback) is joined only while it suits
+            // this device's.
+            let joined = f.profile != *profile;
             let left_out = pick.is_none()
                 && !f.picked.load(Ordering::Relaxed)
-                && f.now()
-                    .source
-                    .is_some_and(|s| !policy::allowed(&self.rules.get().stream, &s));
+                && f.now().source.is_some_and(|s| match joined {
+                    true => !policy::suits(profile, &s, track.duration),
+                    false => !policy::allowed(profile, &s),
+                });
             // The pick this fetch started with is this fetch, though it fell back to another peer
             // since: the player reopens the song after every fallback with its pick still in the
             // address, and replacing the fetch then started the stalled peer again, in a loop.
             let started_with = pick.is_some() && pick.as_ref() == f.picked_copy.get();
             if left_out {
-                self.replace(&f);
+                self.let_go(&key, &f);
             } else if pick.is_none() || pick == current || started_with {
                 // Start fast: a preload still waiting for a peer becomes the upgrade, and
                 // YouTube starts the song below.
@@ -527,12 +649,23 @@ impl Fetcher {
                     return Ok(f);
                 }
             } else {
-                self.replace(&f);
+                self.let_go(&key, &f);
             }
+        }
+        // Another preset's fetch of the song, on the copy this device picked or one that suits
+        // its preset: it plays here too, so the copy crosses the network once.
+        if let Some(f) = self.joinable_elsewhere(&track, &key, pick.as_ref()) {
+            if let Ok(mut live) = self.live.lock() {
+                live.insert(key, f.clone());
+            }
+            want(&f, |w| w.streaming = true);
+            self.cache.touch(&track.id).await?;
+            self.bus.publish("stream", self.player_event(&f, &f.now()));
+            return Ok(f);
         }
         let cached = match &pick {
             Some(copy) => self.cache.finished(&track.id, copy).await?,
-            None => self.best_cached(&track, Purpose::Stream).await?,
+            None => self.best_cached(&track, Purpose::Stream, &rules).await?,
         }
         .filter(|e| mode != Mode::Off || !youtube::is_youtube(&e.source));
         let f = match cached {
@@ -541,20 +674,32 @@ impl Fetcher {
             Some(entry) => {
                 let on_youtube = youtube::is_youtube(&entry.source);
                 let playing = entry.source.clone();
-                let f = self.cached(track.clone(), entry).await?;
+                let f = self.cached(track.clone(), entry, profile).await?;
                 f.picked.store(pick.is_some(), Ordering::Relaxed);
                 want(&f, |w| w.streaming = true);
                 self.bus.publish("stream", self.player_event(&f, &f.now()));
                 if on_youtube && mode == Mode::StartFast {
-                    self.upgrade_later(track, playing, Instant::now()).await?;
+                    self.upgrade_later(track, playing, Instant::now(), profile).await?;
                 }
                 self.better_later(&f);
                 return Ok(f);
             }
-            None => self.start(track, pick, Purpose::Stream, Want::default(), Slot::Live),
+            None => self.start(track, pick, Purpose::Stream, Want::default(), Slot::Live, profile),
         };
         want(&f, |w| w.streaming = true);
         Ok(f)
+    }
+
+    /// The device playing under `key` lets go of `f` (it switched copy, or `f`'s copy doesn't
+    /// suit it): another preset's device still playing `f` keeps it; otherwise it is replaced.
+    fn let_go(&self, key: &Key, f: &Arc<Fetch>) {
+        if self.kept_elsewhere(f, key) {
+            if let Ok(mut live) = self.live.lock() {
+                live.remove(key);
+            }
+            return;
+        }
+        self.replace(f);
     }
 
     /// A copy that has played through while a better one arrived beside it (`best_cached`, the
@@ -570,7 +715,7 @@ impl Fetcher {
         if !played_out {
             return Ok(false);
         }
-        let cached = self.best_cached(&f.track, Purpose::Stream).await?;
+        let cached = self.best_cached(&f.track, Purpose::Stream, &self.rules_of(f)).await?;
         Ok(cached.is_some_and(|e| !holds(f, &e.source)))
     }
 
@@ -583,12 +728,12 @@ impl Fetcher {
             && f.purpose == Purpose::Stream
             && !f.on_youtube.load(Ordering::Relaxed)
             && want(f, |w| w.prefetch_only());
-        if !aside || self.upgrade(&f.track.id).is_some() {
+        if !aside || self.upgrade(&key(f)).is_some() {
             return false;
         }
         if let (Ok(mut live), Ok(mut upgrades)) = (self.live.lock(), self.upgrades.lock()) {
             live.retain(|_, other| !Arc::ptr_eq(other, f));
-            upgrades.insert(f.track.id.clone(), f.clone());
+            upgrades.insert(key(f), f.clone());
             return true;
         }
         false
@@ -599,20 +744,27 @@ impl Fetcher {
     /// With "Switch to a better copy" on it is the better copy by the streaming profile (within
     /// its cap), so the player can move to it mid-song; off, the saving profile's, for later
     /// plays and saves. Either way it runs on when the player moves on.
-    async fn upgrade_later(&self, track: Track, playing: SourceRef, since: Instant) -> Result<()> {
-        if self.upgrade(&track.id).is_some() {
+    async fn upgrade_later(
+        &self,
+        track: Track,
+        playing: SourceRef,
+        since: Instant,
+        profile: &StreamProfile,
+    ) -> Result<()> {
+        if self.upgrade(&(track.id.clone(), profile.clone())).is_some() {
             return Ok(());
         }
-        let cached = self.best_cached(&track, Purpose::Save).await?;
+        let rules = self.rules.get().with_stream(profile);
+        let cached = self.best_cached(&track, Purpose::Save, &rules).await?;
         if cached.is_some_and(|e| !youtube::is_youtube(&e.source)) {
             return Ok(());
         }
         let bar = self.bar(&track, &playing, Vec::new());
         let (purpose, bar) = match bar {
-            Some(bar) if self.rules.get().switch_to_better => (Purpose::Stream, Some(bar)),
+            Some(bar) if rules.switch_to_better => (Purpose::Stream, Some(bar)),
             _ => (Purpose::Save, None),
         };
-        if let Some(f) = self.start_upgrade(track, purpose, bar, since, Beside::StartFast) {
+        if let Some(f) = self.start_upgrade(track, purpose, bar, since, Beside::StartFast, profile) {
             tracing::info!(track = %f.track.id, job = f.job_id, "fetching Soulseek's copy while YouTube plays");
         }
         Ok(())
@@ -624,7 +776,7 @@ impl Fetcher {
     /// known, the copy playing fails the streaming minimum and the song hasn't been searched
     /// during this play, the upgrade searches again.
     fn better_later(&self, f: &Fetch) {
-        let rules = self.rules.get();
+        let rules = self.rules_of(f);
         let p = f.now();
         let Some(playing) = p.source.as_ref() else {
             return;
@@ -641,7 +793,7 @@ impl Fetcher {
         let Some(bar) = self.bar(&f.track, &playing.source_ref(), avoid) else {
             return;
         };
-        if let Some(u) = self.upgrade(&f.track.id) {
+        if let Some(u) = self.upgrade(&key(f)) {
             let up = u.now();
             let better = up
                 .source
@@ -657,7 +809,14 @@ impl Fetcher {
         let known = self.sources.ordered(&f.track, &rules, Purpose::Stream);
         let worth = !policy::better(&rules.stream, self.sources.preferred(), known, &bar, duration).is_empty();
         if worth || (p.below && !self.sources.searched_since(&f.track.id, f.opened)) {
-            if let Some(u) = self.start_upgrade(f.track.clone(), Purpose::Stream, Some(bar), f.opened, Beside::Better) {
+            if let Some(u) = self.start_upgrade(
+                f.track.clone(),
+                Purpose::Stream,
+                Some(bar),
+                f.opened,
+                Beside::Better,
+                &f.profile,
+            ) {
                 tracing::info!(track = %u.track.id, job = u.job_id, "fetching a better copy beside the one playing");
             }
             return;
@@ -667,13 +826,14 @@ impl Fetcher {
         if rules.youtube.mode != Mode::StartFast {
             return;
         }
-        let (this, track, opened) = (self.clone(), f.track.clone(), f.opened);
+        let (this, track, opened, profile) = (self.clone(), f.track.clone(), f.opened, f.profile.clone());
         tokio::spawn(async move {
-            let still = || this.live(&track.id).is_some_and(|l| want(&l, |w| w.streaming));
-            if this.targets(&track, &bar, &[]).await.is_empty() || !still() {
+            let lane = (track.id.clone(), profile.clone());
+            let still = || this.playing_in(&lane).is_some_and(|l| want(&l, |w| w.streaming));
+            if this.targets(&track, &bar, &[], &rules).await.is_empty() || !still() {
                 return;
             }
-            if let Some(u) = this.start_upgrade(track, Purpose::Stream, Some(bar), opened, Beside::Better) {
+            if let Some(u) = this.start_upgrade(track, Purpose::Stream, Some(bar), opened, Beside::Better, &profile) {
                 tracing::info!(track = %u.track.id, job = u.job_id, "fetching a better copy beside the one playing");
             }
         });
@@ -682,13 +842,12 @@ impl Fetcher {
     /// The copies worth switching to from `bar` (`policy::better`), best first, whatever their
     /// source: Soulseek's known copies, and YouTube's while start fast makes YouTube a source
     /// alongside Soulseek. None of `tried`.
-    async fn targets(&self, track: &Track, bar: &Bar, tried: &[SourceRef]) -> Vec<Ranked> {
-        let rules = self.rules.get();
+    async fn targets(&self, track: &Track, bar: &Bar, tried: &[SourceRef], rules: &Rules) -> Vec<Ranked> {
         let (duration, cap) = (track.duration, rules.stream.max_kbps);
         let untried = |r: &SourceRef| !tried.iter().any(|t| t.user == r.user && t.path == r.path);
         let mut copies: Vec<Ranked> = self
             .sources
-            .ordered(track, &rules, Purpose::Stream)
+            .ordered(track, rules, Purpose::Stream)
             .into_iter()
             .filter(|r| untried(&r.source.source_ref()))
             .collect();
@@ -702,7 +861,7 @@ impl Fetcher {
         {
             copies.push(self.sources.rank_for(theirs, cap, duration));
         }
-        let copies = sources::order(copies, duration, &rules, Purpose::Stream);
+        let copies = sources::order(copies, duration, rules, Purpose::Stream);
         policy::better(&rules.stream, self.sources.preferred(), copies, bar, duration)
     }
 
@@ -718,8 +877,8 @@ impl Fetcher {
 
     /// Whether a preload should fetch the song although a copy is cached: the policy knows a copy
     /// worth switching to from it (`policy::better`; with switching to better copies on).
-    pub fn better_than_cached(&self, track: &Track, cached: &SourceRef) -> bool {
-        let rules = self.rules.get();
+    pub fn better_than_cached(&self, track: &Track, cached: &SourceRef, profile: &StreamProfile) -> bool {
+        let rules = self.rules.get().with_stream(profile);
         let Some(bar) = self.bar(track, cached, Vec::new()) else {
             return false;
         };
@@ -728,33 +887,47 @@ impl Fetcher {
             && !policy::better(&rules.stream, self.sources.preferred(), known, &bar, track.duration).is_empty()
     }
 
-    /// The better copy on its way for the song, when it is `copy`.
-    fn upgrade_of(&self, track: &TrackId, copy: &SourceRef) -> Option<Arc<Fetch>> {
-        self.upgrade(track).filter(|u| holds(u, copy))
+    /// The better copy on its way for what plays under `key`, when it is `copy`.
+    fn upgrade_of(&self, key: &Key, copy: &SourceRef) -> Option<Arc<Fetch>> {
+        self.upgrade(&self.lane(key)).filter(|u| holds(u, copy))
     }
 
-    /// The fetch holding `copy` of the song, live or on its way beside it: what
-    /// `GET /api/stream/{id}/copy` serves, changing nothing.
-    pub fn copy(&self, track: &TrackId, copy: &SourceRef) -> Result<Arc<Fetch>> {
-        self.live(track)
+    /// The fetch holding `copy` of the song, playing for the device of `profile` or on its way
+    /// beside it: what `GET /api/stream/{id}/copy` serves, changing nothing.
+    pub fn copy(&self, track: &TrackId, profile: &StreamProfile, copy: &SourceRef) -> Result<Arc<Fetch>> {
+        let key: Key = (track.clone(), profile.clone());
+        self.live(&key)
             .filter(|f| holds(f, copy))
-            .or_else(|| self.upgrade_of(track, copy))
+            .or_else(|| self.upgrade_of(&key, copy))
             .ok_or_else(|| Error::NotFound("that copy isn't playing or on its way; search again".into()))
     }
 
     /// The player switched to the better copy on its way (seamlessly, or the listener picked
-    /// it): that fetch becomes the song's live one, and the copy it replaces stops once the
-    /// response still playing it has ended.
-    pub fn adopt(&self, track: &TrackId, copy: &SourceRef, picked: bool) -> Result<Arc<Fetch>> {
+    /// it): that fetch becomes the song's live one, for every device playing the one it
+    /// replaces, and the copy it replaces stops once the response still playing it has ended.
+    pub fn adopt(
+        &self,
+        track: &TrackId,
+        profile: &StreamProfile,
+        copy: &SourceRef,
+        picked: bool,
+    ) -> Result<Arc<Fetch>> {
+        let key: Key = (track.clone(), profile.clone());
         let u = self
-            .upgrade_of(track, copy)
+            .upgrade_of(&key, copy)
             .ok_or_else(|| Error::Conflict("that copy is no longer on its way".into()))?;
         let old = {
             let (Ok(mut live), Ok(mut upgrades)) = (self.live.lock(), self.upgrades.lock()) else {
                 return Err(Error::internal("the fetch maps are poisoned"));
             };
             upgrades.retain(|_, other| !Arc::ptr_eq(other, &u));
-            live.insert(track.clone(), u.clone())
+            let old = live.insert(key, u.clone());
+            if let Some(old) = &old {
+                for other in live.values_mut().filter(|other| Arc::ptr_eq(other, old)) {
+                    *other = u.clone();
+                }
+            }
+            old
         };
         u.picked.store(picked, Ordering::Relaxed);
         u.racing.store(false, Ordering::Relaxed);
@@ -779,9 +952,15 @@ impl Fetcher {
 
     /// The player couldn't switch to the better copy on its way (`why`): the copy's job says so,
     /// for Activity, and it plays from the next play. Nothing else changes.
-    pub fn not_switched(&self, track: &TrackId, copy: &SourceRef, why: NotSwitched) -> Result<()> {
+    pub fn not_switched(
+        &self,
+        track: &TrackId,
+        profile: &StreamProfile,
+        copy: &SourceRef,
+        why: NotSwitched,
+    ) -> Result<()> {
         let u = self
-            .upgrade_of(track, copy)
+            .upgrade_of(&(track.clone(), profile.clone()), copy)
             .ok_or_else(|| Error::Conflict("that copy is no longer on its way".into()))?;
         let note = format!("not switched to mid-song: {}; it plays from the next play", why.words());
         tracing::info!(track = %track, job = u.job_id, note, "the player didn't switch to the better copy");
@@ -804,7 +983,7 @@ impl Fetcher {
         });
         if saving > 0 {
             if let Ok(mut upgrades) = self.upgrades.lock() {
-                upgrades.entry(old.track.id.clone()).or_insert(old);
+                upgrades.entry(key(&old)).or_insert(old);
             }
             return;
         }
@@ -834,9 +1013,9 @@ impl Fetcher {
             .upgrades
             .lock()
             .ok()?
-            .get(&f.track.id)
+            .get(&key(f))
             .is_some_and(|u| std::ptr::eq(Arc::as_ptr(u), f));
-        let live = self.live.lock().ok()?.get(&f.track.id).cloned()?;
+        let live = self.playing_in(&key(f))?;
         (beside && want(&live, |w| w.streaming)).then_some(live)
     }
 
@@ -851,21 +1030,24 @@ impl Fetcher {
     }
 
     /// The better copy the player may switch to mid-song: switching is on, the listener didn't
-    /// pick the copy playing, and the copy on its way is worth switching to (`policy::switch_to`).
+    /// pick the copy playing, and the copy on its way is worth switching to (`policy::switch_to`)
+    /// by the profile of every device playing it: one event goes to them all.
     fn offer(&self, f: &Fetch, p: &Progress) -> Option<serde_json::Value> {
-        let rules = self.rules.get();
-        if !rules.switch_to_better || f.picked.load(Ordering::Relaxed) {
+        if !self.rules.get().switch_to_better || f.picked.load(Ordering::Relaxed) {
             return None;
         }
         let playing = p.source.as_ref()?.source_ref();
-        let u = self.upgrade(&f.track.id)?;
+        let u = self.upgrade(&key(f))?;
         let up = u.now();
         let duration = f.track.duration;
         let bar = self.bar(&f.track, &playing, Vec::new())?;
-        let s = up
-            .source
-            .as_ref()
-            .filter(|s| !s.is(&playing) && policy::switch_to(&rules.stream, s, &bar.playing, duration))?;
+        let profiles = self.profiles_playing(f);
+        let s = up.source.as_ref().filter(|s| {
+            !s.is(&playing)
+                && profiles
+                    .iter()
+                    .all(|profile| policy::switch_to(profile, s, &bar.playing, duration))
+        })?;
         Some(json!({
             "peer": s.user,
             "path": s.path,
@@ -877,12 +1059,11 @@ impl Fetcher {
         }))
     }
 
-    /// The song's best finished copy in the cache by `purpose`'s profile (none of YouTube's
-    /// while YouTube is off, nor for streaming one in a format it switched off): what a later
-    /// play (`policy::cached_key`, any source alike) or a save (passing the saving minimum, then
-    /// its order) takes.
-    pub async fn best_cached(&self, track: &Track, purpose: Purpose) -> Result<Option<Entry>> {
-        let rules = self.rules.get();
+    /// The song's best finished copy in the cache by `purpose`'s profile in `rules` (none of
+    /// YouTube's while YouTube is off, nor for streaming one in a format it switched off): what a
+    /// later play (`policy::cached_key`, any source alike) or a save (passing the saving minimum,
+    /// then its order) takes. A copy fetched for another preset is one more cached copy.
+    pub async fn best_cached(&self, track: &Track, purpose: Purpose, rules: &Rules) -> Result<Option<Entry>> {
         let duration = track.duration;
         let mut entries = self.cache.complete(&track.id).await?;
         entries.retain(|e| rules.youtube.mode != Mode::Off || !youtube::is_youtube(&e.source));
@@ -899,7 +1080,7 @@ impl Fetcher {
                 known(e).map(|s| policy::cached_key(&rules.stream, self.sources.preferred(), &s, duration))
             }),
             Purpose::Save => {
-                let ordered = self.sources.ordered(track, &rules, purpose);
+                let ordered = self.sources.ordered(track, rules, purpose);
                 best_first(entries, |e| {
                     let meets = known(e).is_some_and(|s| s.meets(rules.minimum(purpose), duration));
                     let at = ordered.iter().position(|r| r.source.is(&e.source));
@@ -912,17 +1093,18 @@ impl Fetcher {
 
     /// The upgrade is no longer wanted (YouTube didn't start the song after all, and the
     /// player's fetch looks for a Soulseek copy itself), unless a save is completing it.
-    fn drop_upgrade(&self, track: &TrackId) {
-        if let Some(f) = self.upgrade(track)
+    fn drop_upgrade(&self, key: &Key) {
+        if let Some(f) = self.upgrade(key)
             && want(&f, |w| w.saving == 0)
         {
             self.cancel_fetch(&f);
         }
     }
 
-    /// Warms a song's YouTube copy (the match and its extraction), so start fast starts it at once.
-    pub fn warm(&self, track: Track) {
-        let (youtube, max_kbps) = (self.youtube.clone(), self.rules.get().stream.max_kbps);
+    /// Warms a song's YouTube copy (the match and its extraction) within `max_kbps`, so start
+    /// fast starts it at once.
+    pub fn warm(&self, track: Track, max_kbps: u32) {
+        let youtube = self.youtube.clone();
         tokio::spawn(async move {
             if let Err(e) = youtube.find_later(&track, YoutubeWant::Stream { max_kbps }).await {
                 tracing::debug!(error = %e, track = %track.id, "warming a YouTube copy");
@@ -930,39 +1112,56 @@ impl Fetcher {
         });
     }
 
-    /// Preloads a song a device listed: a fetch that publishes no `stream` events and leaves
-    /// once finished, so its file is evictable like any other. A live fetch is just marked; a
-    /// running upgrade is the preload.
-    pub fn prefetch(&self, track: Track) -> Arc<Fetch> {
-        if let Some(f) = self.live(&track.id) {
+    /// Preloads a song a device of `profile` listed: a fetch that publishes no `stream` events
+    /// and leaves once finished, so its file is evictable like any other. A live fetch is just
+    /// marked; a running upgrade, or another preset's fetch on a copy that suits this one, is the
+    /// preload.
+    pub fn prefetch(&self, track: Track, profile: &StreamProfile) -> Arc<Fetch> {
+        let key: Key = (track.id.clone(), profile.clone());
+        if let Some(f) = self.live(&key) {
             want(&f, |w| w.prefetch = true);
             return f;
         }
-        if let Some(f) = self.upgrade(&track.id) {
+        if let Some(f) = self
+            .upgrade(&key)
+            .or_else(|| self.joinable_elsewhere(&track, &key, None))
+        {
             return f;
         }
         let listed = Want {
             prefetch: true,
             ..Want::default()
         };
-        self.start(track, None, Purpose::Stream, listed, Slot::Live)
+        self.start(track, None, Purpose::Stream, listed, Slot::Live, profile)
     }
 
-    /// Whether the song has a live fetch (or an upgrade); a live one is marked as listed for
-    /// preloading.
-    pub fn list_live(&self, track: &TrackId) -> bool {
-        self.live(track).inspect(|f| want(f, |w| w.prefetch = true)).is_some() || self.upgrade(track).is_some()
+    /// Whether the song has a fetch for a device of `profile` (live, an upgrade, or another
+    /// preset's on a copy that suits it); a live one is marked as listed for preloading.
+    pub fn list_live(&self, track: &Track, profile: &StreamProfile) -> bool {
+        let key: Key = (track.id.clone(), profile.clone());
+        self.live(&key).inspect(|f| want(f, |w| w.prefetch = true)).is_some()
+            || self.upgrade(&key).is_some()
+            || self.joinable_elsewhere(track, &key, None).is_some()
     }
 
-    /// Preloads no device lists any more (not in `keep`) are cancelled after a grace period,
-    /// unless by then the player streams them, a save needs them or a device lists them again.
-    pub fn unlist(&self, keep: &std::collections::HashSet<TrackId>) {
+    /// Preloads no device lists any more (none of their keys in `keep`) are cancelled after a
+    /// grace period, unless by then the player streams them, a save needs them or a device lists
+    /// them again.
+    pub fn unlist(&self, keep: &std::collections::HashSet<Key>) {
         let dropped: Vec<Arc<Fetch>> = match self.live.lock() {
-            Ok(live) => live
-                .values()
-                .filter(|f| !keep.contains(&f.track.id) && want(f, |w| std::mem::take(&mut w.prefetch)))
-                .cloned()
-                .collect(),
+            Ok(live) => {
+                let listed = |f: &Arc<Fetch>| live.iter().any(|(k, other)| Arc::ptr_eq(other, f) && keep.contains(k));
+                let mut dropped: Vec<Arc<Fetch>> = Vec::new();
+                for f in live.values() {
+                    if !listed(f)
+                        && !dropped.iter().any(|d| Arc::ptr_eq(d, f))
+                        && want(f, |w| std::mem::take(&mut w.prefetch))
+                    {
+                        dropped.push(f.clone());
+                    }
+                }
+                dropped
+            }
             Err(_) => return,
         };
         if dropped.is_empty() {
@@ -1000,10 +1199,10 @@ impl Fetcher {
                 && (p.source.as_ref().is_some_and(|s| s.is(&source))
                     || (p.status == Status::Finding && f.on_youtube.load(Ordering::Relaxed) == from_youtube))
         };
-        let running = self
-            .live(&track.id)
-            .filter(joinable)
-            .or_else(|| self.upgrade(&track.id).filter(joinable));
+        let running = Self::of_song(&self.live, &track.id)
+            .into_iter()
+            .chain(Self::of_song(&self.upgrades, &track.id))
+            .find(joinable);
         let f = match running {
             Some(f) => f,
             None => match self.cache.finished(&track.id, &source).await? {
@@ -1021,13 +1220,14 @@ impl Fetcher {
         Ok(path)
     }
 
-    /// A save's own fetch: out of the player's way when the player is streaming something else.
+    /// A save's own fetch: out of the player's way, beside the song's live fetch, when the
+    /// player is streaming something else. Its profile only places it.
     fn start_save(&self, track: Track, source: SourceRef) -> Arc<Fetch> {
-        let slot = match self.live(&track.id) {
-            Some(_) => Slot::Upgrade,
-            None => Slot::Live,
+        let (slot, profile) = match Self::of_song(&self.live, &track.id).first() {
+            Some(f) => (Slot::Upgrade, f.profile.clone()),
+            None => (Slot::Live, self.rules.get().stream),
         };
-        self.start(track, Some(source), Purpose::Save, Want::default(), slot)
+        self.start(track, Some(source), Purpose::Save, Want::default(), slot, &profile)
     }
 
     /// Holds the fetch for a save until it ends: its file and the copy it came from.
@@ -1061,25 +1261,39 @@ impl Fetcher {
         }
     }
 
-    /// The player moved on (skip, next): cancel unless a save still needs the song or a
-    /// device lists it to preload. Start fast's Soulseek copy runs on (it is for later plays and
-    /// saves); a better copy fetched only for switching mid-song stops unless a save needs it.
-    pub fn stop_streaming(&self, track: &TrackId) {
-        if let Some(u) = self.upgrade(track)
-            && u.beside == Some(Beside::Better)
-            && want(&u, |w| w.unwanted())
-        {
-            self.cancel_fetch(&u);
-        }
-        let Some(f) = self.live.lock().ok().and_then(|l| l.get(track).cloned()) else {
-            return;
+    /// The player of `profile` moved on (skip, next): cancel unless a save still needs the song,
+    /// a device lists it to preload or another preset's device still plays it. Start fast's
+    /// Soulseek copy runs on (it is for later plays and saves); a better copy fetched only for
+    /// switching mid-song stops unless a save needs it.
+    pub fn stop_streaming(&self, track: &TrackId, profile: &StreamProfile) {
+        let key: Key = (track.clone(), profile.clone());
+        let Some(f) = self.live.lock().ok().and_then(|l| l.get(&key).cloned()) else {
+            return self.stop_better(&key);
         };
+        if self.kept_elsewhere(&f, &key) {
+            if let Ok(mut live) = self.live.lock() {
+                live.remove(&key);
+            }
+            return;
+        }
+        self.stop_better(&self::key(&f));
         let unwanted = want(&f, |w| {
             w.streaming = false;
             w.unwanted()
         });
         if unwanted {
             self.cancel_fetch(&f);
+        }
+    }
+
+    /// The better copy fetched only for switching the song playing under `lane` stops, unless a
+    /// save needs it.
+    fn stop_better(&self, lane: &Key) {
+        if let Some(u) = self.upgrade(lane)
+            && u.beside == Some(Beside::Better)
+            && want(&u, |w| w.unwanted())
+        {
+            self.cancel_fetch(&u);
         }
     }
 
@@ -1091,8 +1305,9 @@ impl Fetcher {
         Ok(())
     }
 
-    /// Runs a failed or cancelled transfer again, from the start of the source list.
-    pub fn retry(&self, job_id: &str) -> Result<String> {
+    /// Runs a failed or cancelled transfer again, from the start of the source list, by the
+    /// asking device's `profile`.
+    pub fn retry(&self, job_id: &str, profile: &StreamProfile) -> Result<String> {
         let ended = self
             .ended
             .lock()
@@ -1102,7 +1317,7 @@ impl Fetcher {
         let track: Track =
             serde_json::from_value(row["track"].clone()).map_err(|e| Error::internal(format!("transfer row: {e}")))?;
         Ok(self
-            .start(track, None, Purpose::Stream, Want::default(), Slot::Live)
+            .start(track, None, Purpose::Stream, Want::default(), Slot::Live, profile)
             .job_id
             .clone())
     }
@@ -1132,9 +1347,9 @@ impl Fetcher {
     /// The copies of the song playing or on their way, the better one first: a save that can
     /// take one of them needs no second transfer.
     pub fn copies_here(&self, track: &TrackId) -> Vec<SourceRef> {
-        [self.upgrade(track), self.live(track)]
+        Self::of_song(&self.upgrades, track)
             .into_iter()
-            .flatten()
+            .chain(Self::of_song(&self.live, track))
             .filter_map(|f| f.now().source.map(|s| s.source_ref()))
             .collect()
     }
@@ -1163,14 +1378,22 @@ impl Fetcher {
         }
     }
 
-    fn new_fetch(&self, track: Track, purpose: Purpose, progress: Progress, wanted: Want, slot: Slot) -> Arc<Fetch> {
-        let f = self.fetch(track, purpose, progress, wanted, None, Instant::now(), None);
+    fn new_fetch(
+        &self,
+        track: Track,
+        purpose: Purpose,
+        progress: Progress,
+        wanted: Want,
+        slot: Slot,
+        profile: &StreamProfile,
+    ) -> Arc<Fetch> {
+        let f = self.fetch(track, purpose, progress, wanted, None, Instant::now(), None, profile);
         let map = match slot {
             Slot::Live => &self.live,
             Slot::Upgrade => &self.upgrades,
         };
         if let Ok(mut m) = map.lock() {
-            m.insert(f.track.id.clone(), f.clone());
+            m.insert(key(&f), f.clone());
         }
         f
     }
@@ -1186,11 +1409,13 @@ impl Fetcher {
         bar: Option<Bar>,
         opened: Instant,
         beside: Option<Beside>,
+        profile: &StreamProfile,
     ) -> Arc<Fetch> {
         let n = self.next.fetch_add(1, Ordering::Relaxed);
         Arc::new(Fetch {
             job_id: format!("job-{:x}{n}", lull_core::now()),
             purpose,
+            profile: profile.clone(),
             started: lull_core::now(),
             opened,
             progress: watch::channel(progress).0,
@@ -1216,7 +1441,7 @@ impl Fetcher {
         })
     }
 
-    async fn cached(&self, track: Track, e: Entry) -> Result<Arc<Fetch>> {
+    async fn cached(&self, track: Track, e: Entry, profile: &StreamProfile) -> Result<Arc<Fetch>> {
         self.cache.touch(&track.id).await?;
         let source = self
             .sources
@@ -1226,7 +1451,7 @@ impl Fetcher {
         // Every source's copy is judged by the streaming profile, YouTube's too.
         let below = source
             .as_ref()
-            .is_some_and(|s| !policy::passes(&self.rules.get().stream, s, track.duration));
+            .is_some_and(|s| !policy::passes(profile, s, track.duration));
         let f = self.new_fetch(
             track,
             Purpose::Stream,
@@ -1240,13 +1465,22 @@ impl Fetcher {
             },
             Want::default(),
             Slot::Live,
+            profile,
         );
         f.on_youtube.store(on_youtube, Ordering::Relaxed);
         Ok(f)
     }
 
-    fn start(&self, track: Track, pick: Option<SourceRef>, purpose: Purpose, wanted: Want, slot: Slot) -> Arc<Fetch> {
-        let f = self.new_fetch(track, purpose, Progress::new(Status::Finding), wanted, slot);
+    fn start(
+        &self,
+        track: Track,
+        pick: Option<SourceRef>,
+        purpose: Purpose,
+        wanted: Want,
+        slot: Slot,
+        profile: &StreamProfile,
+    ) -> Arc<Fetch> {
+        let f = self.new_fetch(track, purpose, Progress::new(Status::Finding), wanted, slot, profile);
         f.picked
             .store(pick.is_some() && purpose == Purpose::Stream, Ordering::Relaxed);
         if let Some(p) = &pick {
@@ -1265,6 +1499,7 @@ impl Fetcher {
         bar: Option<Bar>,
         opened: Instant,
         beside: Beside,
+        profile: &StreamProfile,
     ) -> Option<Arc<Fetch>> {
         let f = self.fetch(
             track,
@@ -1274,16 +1509,17 @@ impl Fetcher {
             bar,
             opened,
             Some(beside),
+            profile,
         );
         {
             let mut upgrades = self.upgrades.lock().ok()?;
             let running = upgrades
-                .get(&f.track.id)
+                .get(&key(&f))
                 .is_some_and(|u| !matches!(u.now().status, Status::Failed | Status::Cancelled));
             if running {
                 return None;
             }
-            upgrades.insert(f.track.id.clone(), f.clone());
+            upgrades.insert(key(&f), f.clone());
         }
         self.spawn(f.clone(), None);
         Some(f)
@@ -1385,7 +1621,7 @@ impl Fetcher {
     async fn race(&self, f: &Fetch, stop: &mut watch::Receiver<bool>) -> Result<PathBuf, Stop> {
         self.search_beside(f);
         // A preload that made way is Soulseek's side already.
-        let mut soulseek = self.upgrade(&f.track.id).or_else(|| self.racer(f));
+        let mut soulseek = self.upgrade(&key(f)).or_else(|| self.racer(f));
         // Soulseek's copy sent first but is above the streaming cap: it starts the song only when
         // YouTube has no copy that may (`policy::start`, within the cap first).
         let mut held = false;
@@ -1488,7 +1724,7 @@ impl Fetcher {
             (Ok(Err(Stop::Failed(yt))), _) => {
                 tracing::info!(track = %f.track.id, why = yt, "YouTube didn't play the song; looking on Soulseek");
                 f.on_youtube.store(false, Ordering::Relaxed);
-                self.drop_upgrade(&f.track.id);
+                self.drop_upgrade(&key(f));
                 match self.soulseek_then_youtube(f, None, false, stop).await {
                     Err(Stop::Failed(why)) => Err(Stop::Failed(format!("{why}; YouTube: {yt}"))),
                     other => other,
@@ -1508,16 +1744,22 @@ impl Fetcher {
     /// player's fetch from the start, in the profile's order, of copies that may start the song
     /// (`policy::may_start`: passing the minimum, or any under `playBest`).
     fn racer(&self, f: &Fetch) -> Option<Arc<Fetch>> {
-        let u = self.start_upgrade(f.track.clone(), Purpose::Stream, None, f.opened, Beside::Racer)?;
+        let u = self.start_upgrade(
+            f.track.clone(),
+            Purpose::Stream,
+            None,
+            f.opened,
+            Beside::Racer,
+            &f.profile,
+        )?;
         tracing::info!(track = %f.track.id, job = u.job_id, "racing Soulseek's copy against YouTube's");
         Some(u)
     }
 
     /// Whether Soulseek's side of the race (`u`) is on a copy above the streaming cap.
     fn above_cap(&self, f: &Fetch, u: Option<&Arc<Fetch>>) -> bool {
-        let rules = self.rules.get();
         u.and_then(|u| u.now().source)
-            .is_some_and(|s| !policy::within_cap(&rules.stream, &s, f.track.duration))
+            .is_some_and(|s| !policy::within_cap(&f.profile, &s, f.track.duration))
     }
 
     /// The copy `copy` as known: a peer's from its search, YouTube's from its own facts.
@@ -1530,13 +1772,13 @@ impl Fetcher {
     /// Whether `copy` may start the song (`policy::may_start`).
     fn may_start(&self, f: &Fetch, copy: &SourceRef) -> bool {
         self.known(f, copy)
-            .is_some_and(|s| policy::may_start(&self.rules.get().stream, &s, f.track.duration))
+            .is_some_and(|s| policy::may_start(&f.profile, &s, f.track.duration))
     }
 
     /// YouTube's copy (`youtube`) has its first bytes here: whether the policy starts the song on
     /// Soulseek's side instead, its bytes here at the same moment (`policy::start`).
     fn soulseek_starts(&self, f: &Fetch, youtube: &SourceRef, soulseek: Option<&Arc<Fetch>>) -> bool {
-        let rules = self.rules.get();
+        let rules = self.rules_of(f);
         let duration = f.track.duration;
         let theirs = soulseek
             .map(|u| u.now())
@@ -1573,7 +1815,7 @@ impl Fetcher {
         youtube: SourceRef,
         stop: &mut watch::Receiver<bool>,
     ) -> Result<PathBuf, Stop> {
-        let rules = self.rules.get();
+        let rules = self.rules_of(f);
         let duration = f.track.duration;
         let (copies, _) = self.untried(f, &[], &rules);
         let ours = self.known(f, &youtube);
@@ -1598,7 +1840,7 @@ impl Fetcher {
         youtube: Option<&SourceRef>,
         stop: &mut watch::Receiver<bool>,
     ) -> Result<PathBuf, Stop> {
-        let rules = self.rules.get();
+        let rules = self.rules_of(f);
         let (mut choices, _) = self.untried(f, &[], &rules);
         choices.extend(
             youtube
@@ -1616,9 +1858,8 @@ impl Fetcher {
     fn hand_over(&self, f: &Fetch, u: &Arc<Fetch>, why: &str) {
         if let (Ok(mut live), Ok(mut upgrades)) = (self.live.lock(), self.upgrades.lock()) {
             upgrades.retain(|_, other| !Arc::ptr_eq(other, u));
-            let ours = live.get(&f.track.id).is_some_and(|l| std::ptr::eq(Arc::as_ptr(l), f));
-            if ours {
-                live.insert(f.track.id.clone(), u.clone());
+            for l in live.values_mut().filter(|l| std::ptr::eq(Arc::as_ptr(l), f)) {
+                *l = u.clone();
             }
         }
         u.racing.store(false, Ordering::Relaxed);
@@ -1738,7 +1979,7 @@ impl Fetcher {
         // fails as Soulseek's search did, and `ask` offers YouTube's copy with Soulseek's.
         if !self.may_start(f, &copy) {
             f.on_youtube.store(false, Ordering::Relaxed);
-            let rules = self.rules.get();
+            let rules = self.rules_of(f);
             if gave_way {
                 tracing::info!(track = %f.track.id, "YouTube's copy is below the streaming minimum: Soulseek goes on");
                 return self.soulseek(f, None, stop.clone()).await;
@@ -1762,7 +2003,7 @@ impl Fetcher {
         f.on_youtube.store(true, Ordering::Relaxed);
         self.update(f, |p| p.status = Status::Finding);
         let wanted = YoutubeWant::Stream {
-            max_kbps: self.rules.get().stream.max_kbps,
+            max_kbps: f.profile.max_kbps,
         };
         // A preload's lookup waits behind the player's (and a `find` of the same song raises it).
         let later = want(f, |w| w.prefetch_only());
@@ -1801,7 +2042,7 @@ impl Fetcher {
             return Err(Stop::Failed(format!("{} is not a YouTube copy", copy_ref.path)));
         };
         let attempt = f.now().attempt + 1;
-        let below = !policy::passes(&self.rules.get().stream, &source, f.track.duration);
+        let below = !policy::passes(&f.profile, &source, f.track.duration);
         let begin = |p: &mut Progress| {
             p.attempt = attempt;
             p.source = Some(source.clone());
@@ -1934,7 +2175,7 @@ impl Fetcher {
         };
         let f = match job_id {
             Some(_) => self.all().into_iter().find(is),
-            None => self.live.lock().ok()?.get(track).cloned(),
+            None => Self::of_song(&self.live, track).into_iter().next(),
         }
         .or_else(|| self.ended_fetches.lock().ok()?.iter().rev().find(|f| is(f)).cloned())?;
         if f.now().status != Status::Failed {
@@ -1965,16 +2206,19 @@ impl Fetcher {
             .map(|e| e.source))
     }
 
-    /// The copy the song's live fetch has now.
-    pub fn playing_copy(&self, track: &TrackId) -> Option<SourceRef> {
-        self.live(track)?.now().source.map(|s| s.source_ref())
+    /// The copy the song's live fetch for a device of `profile` has now.
+    pub fn playing_copy(&self, track: &TrackId, profile: &StreamProfile) -> Option<SourceRef> {
+        self.live(&(track.clone(), profile.clone()))?
+            .now()
+            .source
+            .map(|s| s.source_ref())
     }
 
     /// The listener said a copy isn't the song ("Right song? No", ADR-0016): it leaves the cache
     /// and the song's live fetch lets go of it, so the player's next opening takes the next copy.
     pub async fn refused(&self, track: &TrackId, copy: &SourceRef) -> Result<()> {
-        if let Some(f) = self.live(track).filter(|f| holds(f, copy)) {
-            self.forget(&f);
+        for f in Self::of_song(&self.live, track).iter().filter(|f| holds(f, copy)) {
+            self.forget(f);
         }
         self.cache.forget(copy).await
     }
@@ -2029,7 +2273,7 @@ impl Fetcher {
             let faster = match pick {
                 Some(_) => 0.0,
                 None => {
-                    let (left, _) = self.untried(f, &tried, &self.rules.get());
+                    let (left, _) = self.untried(f, &tried, &self.rules_of(f));
                     left.iter().map(|r| r.expected).fold(0.0, f64::max)
                 }
             };
@@ -2092,7 +2336,7 @@ impl Fetcher {
         if let Some(bar) = &f.bar {
             return self.better_source(f, bar, tried, stop).await;
         }
-        let rules = self.rules.get();
+        let rules = self.rules_of(f);
         let mut searches = 0;
         loop {
             let (mut copies, skipped) = self.untried(f, tried, &rules);
@@ -2110,19 +2354,15 @@ impl Fetcher {
             }
             let peers = copies.len() + tried.len();
             self.update(f, |p| p.peers_found = peers);
-            if let Some(passing) = copies.iter().find(|r| r.meets && !r.above_max) {
-                return Ok(passing.source.clone());
-            }
-            // A copy above the streaming cap only when none within it may start the song.
-            let within_may_start = copies
-                .iter()
-                .any(|r| !r.above_max && policy::may_start(&rules.stream, &r.source, f.track.duration));
-            if !within_may_start && let Some(passing) = copies.iter().find(|r| r.meets) {
+            if let Some(passing) = first_choice(&copies, &rules.stream, f.track.duration).filter(|r| r.meets) {
                 return Ok(passing.source.clone());
             }
             let Some(best) = copies.first() else {
                 return Err(Stop::Failed(
                     match (skipped.queued_out, skipped.left_out, tried.is_empty()) {
+                        _ if skipped.held > 0 && f.purpose == Purpose::Stream => {
+                            "the only other copy is being fetched for another device's preset now; play the song again in a moment".into()
+                        }
                         (0, 0, true) => "no peer shares this song right now".into(),
                         (0, 0, false) => "no other peer shares this song right now".into(),
                         (0, n, _) => format!(
@@ -2196,8 +2436,9 @@ impl Fetcher {
     ) -> Result<Source, Stop> {
         let mut searched = false;
         loop {
+            let rules = self.rules_of(f);
             let targets = tokio::select! {
-                t = self.targets(&f.track, bar, tried) => t,
+                t = self.targets(&f.track, bar, tried, &rules) => t,
                 () = stopped(stop) => return Err(Stop::Cancelled),
             };
             if let Some(best) = targets.into_iter().next() {
@@ -2215,20 +2456,22 @@ impl Fetcher {
         }
     }
 
-    /// Untried copies in the profile's order, and how many were left out for a long queue.
+    /// Untried copies in the profile's order, and how many were left out for a long queue. Not
+    /// one another preset's fetch of the song is transferring (`held_elsewhere`).
     fn untried(&self, f: &Fetch, tried: &[SourceRef], rules: &Rules) -> (Vec<Ranked>, Skipped) {
-        let mut skipped = Skipped::default();
-        let copies = self
+        let held = self.held_elsewhere(f);
+        let untried = self
             .sources
             .ordered(&f.track, rules, f.purpose)
             .into_iter()
-            .filter(|r| !tried.iter().any(|t| r.source.is(t)))
-            .filter(|r| {
-                skipped.left_out += usize::from(r.left_out);
-                skipped.queued_out += usize::from(r.queue_too_long && !r.left_out);
-                !r.left_out && !r.queue_too_long
-            })
+            .filter(|r| !tried.iter().any(|t| r.source.is(t)));
+        let (copies, mut skipped) = usable(untried);
+        let before = copies.len();
+        let copies: Vec<Ranked> = copies
+            .into_iter()
+            .filter(|r| !held.iter().any(|h| r.source.is(h)))
             .collect();
+        skipped.held = before - copies.len();
         (copies, skipped)
     }
 
@@ -2251,7 +2494,7 @@ impl Fetcher {
         tokio::select! {
             _ = tokio::time::sleep(CHOOSE_WAIT) => Err(Stop::Failed(format!(
                 "no copy meets your streaming minimum ({}), and none was chosen",
-                self.rules.get().stream.minimum
+                f.profile.minimum
             ))),
             _ = stopped(stop) => Err(Stop::Cancelled),
         }
@@ -2289,18 +2532,50 @@ impl Fetcher {
     }
 }
 
-/// Copies a fetch passes over without trying: their peer's queue is too long, or (streaming) their
-/// format is switched off.
+/// Copies a fetch passes over without trying: their peer's queue is too long, (streaming) their
+/// format is switched off, or another preset's fetch of the song is transferring them.
 #[derive(Debug, Default, Clone, Copy)]
 struct Skipped {
     queued_out: usize,
     left_out: usize,
+    held: usize,
 }
 
 impl Skipped {
     fn none(&self) -> bool {
-        self.queued_out == 0 && self.left_out == 0
+        self.queued_out == 0 && self.left_out == 0 && self.held == 0
     }
+}
+
+/// The copies a fetch may take, in their order: none whose format is switched off or whose peer's
+/// queue is too long, and how many were left out for each.
+fn usable(ordered: impl IntoIterator<Item = Ranked>) -> (Vec<Ranked>, Skipped) {
+    let mut skipped = Skipped::default();
+    let copies = ordered
+        .into_iter()
+        .filter(|r| {
+            skipped.left_out += usize::from(r.left_out);
+            skipped.queued_out += usize::from(r.queue_too_long && !r.left_out);
+            !r.left_out && !r.queue_too_long
+        })
+        .collect();
+    (copies, skipped)
+}
+
+/// What a fetch by `p` takes first of `copies` (in its order, usable): the first passing the
+/// minimum within the cap; one passing above the cap only when no copy within it may start the
+/// song; else, under `playBest`, the first of them. `None` leaves it to the `below` rule.
+fn first_choice<'a>(copies: &'a [Ranked], p: &StreamProfile, duration: Option<u32>) -> Option<&'a Ranked> {
+    if let Some(passing) = copies.iter().find(|r| r.meets && !r.above_max) {
+        return Some(passing);
+    }
+    let within_may_start = copies
+        .iter()
+        .any(|r| !r.above_max && policy::may_start(p, &r.source, duration));
+    if !within_may_start && let Some(passing) = copies.iter().find(|r| r.meets) {
+        return Some(passing);
+    }
+    copies.first().filter(|_| p.below == StreamBelow::PlayBest)
 }
 
 /// Where a fetch gets the song, by the listener's YouTube mode (docs/context/youtube.md).
@@ -2505,9 +2780,9 @@ impl NotSwitched {
 }
 
 /// Where a fetch is a running fetch in `map`, not one that failed or was cancelled.
-fn running(map: &Mutex<HashMap<TrackId, Arc<Fetch>>>, track: &TrackId) -> Option<Arc<Fetch>> {
+fn running(map: &Mutex<HashMap<Key, Arc<Fetch>>>, key: &Key) -> Option<Arc<Fetch>> {
     let m = map.lock().ok()?;
-    m.get(track)
+    m.get(key)
         .filter(|f| !matches!(f.now().status, Status::Failed | Status::Cancelled))
         .cloned()
 }
@@ -2595,6 +2870,16 @@ fn job_row(f: &Fetch, p: &Progress) -> serde_json::Value {
         "unplayable": p.unplayable,
         "note": p.note,
     })
+}
+
+/// Tests play as a device of the hub's own profile (Desktop's, or the one a test's rules set),
+/// unless they say which.
+#[cfg(test)]
+impl Fetcher {
+    pub async fn play(&self, track: Track, pick: Option<SourceRef>) -> Result<Arc<Fetch>> {
+        let profile = self.rules.get().stream;
+        self.stream(track, pick, &profile).await
+    }
 }
 
 #[cfg(test)]
@@ -2986,7 +3271,7 @@ mod tests {
                 finds: Default::default(),
             });
             let fetcher = with_youtube(&fake, rules, youtube).await?;
-            let p = ended(&fetcher.stream(track(), None).await?).await?;
+            let p = ended(&fetcher.play(track(), None).await?).await?;
             assert_eq!(p.status, Status::Done, "{:?}", p.error);
             let playing = p.source.map(|s| s.source_ref().path).unwrap_or_default();
             assert!(playing.contains("rightupload"), "{playing}");
@@ -3012,7 +3297,7 @@ mod tests {
                 finds: Default::default(),
             });
             let fetcher = with_youtube(&fake, rules, youtube).await?;
-            let p = ended(&fetcher.stream(track(), Some(upload("wrongupload"))).await?).await?;
+            let p = ended(&fetcher.play(track(), Some(upload("wrongupload"))).await?).await?;
             assert_eq!(p.status, Status::Done, "{:?}", p.error);
             assert_eq!(p.attempt, 1);
             Ok(())
@@ -3064,7 +3349,7 @@ mod tests {
             // first and only then Soulseek's search. Now they run at once.
             let (fake, fetcher) = start_fast(false).await?;
             let t0 = std::time::Instant::now();
-            let p = ended(&fetcher.stream(track(), None).await?).await?;
+            let p = ended(&fetcher.play(track(), None).await?).await?;
             let took = t0.elapsed();
             assert_eq!(p.status, Status::Done, "{:?}", p.error);
             assert_eq!(p.source.map(|s| s.user), Some("peer".to_owned()));
@@ -3082,7 +3367,7 @@ mod tests {
             // Nothing known: the one search finds the peer's copy (1 s) while YouTube's lookup
             // takes 3 s, so Soulseek's copy starts the song and YouTube's never downloads.
             let (fake, fetcher) = start_fast(true).await?;
-            let opened = fetcher.stream(track(), None).await?;
+            let opened = fetcher.play(track(), None).await?;
             let p = ended(&opened).await?;
             assert_eq!(p.status, Status::Done, "{:?}", p.error);
             assert_eq!(p.source.map(|s| s.user), Some("peer".to_owned()));
@@ -3169,7 +3454,7 @@ mod tests {
             let yesterday = hub();
             let copy = shared("peer", REMOTE, bytes.len() as u64, "mp3", Some(320), false);
             yesterday.sources.add(HashMap::from([(track().id, vec![copy.clone()])]));
-            let f = yesterday.stream(track(), Some(copy.source_ref())).await?;
+            let f = yesterday.play(track(), Some(copy.source_ref())).await?;
             assert_eq!(ended(&f).await?.status, Status::Done);
 
             let today = hub();
@@ -3183,7 +3468,7 @@ mod tests {
                 .picked(&track(), &named)
                 .await?
                 .ok_or_else(|| Error::internal("the picked copy in the cache isn't known"))?;
-            let f = today.stream(track(), Some(pick)).await?;
+            let f = today.play(track(), Some(pick)).await?;
             let (chunk, _) = first_bytes(&f).await?;
             assert!(chunk.iter().all(|b| *b == 5), "the picked copy plays");
             assert_eq!(
@@ -3226,11 +3511,11 @@ mod tests {
             let flac = shared("trisska", FLAC, bytes.len() as u64, "flac", None, true);
             fetcher.sources.add(HashMap::from([(track().id, vec![flac.clone()])]));
             // The YouTube copy plays; start fast fetches Soulseek's copy beside it.
-            let yt = fetcher.stream(track(), None).await?;
+            let yt = fetcher.play(track(), None).await?;
             let _ = ended(&yt).await?;
             tokio::time::sleep(Duration::from_millis(300)).await;
             // The listener picks the FLAC.
-            let picked = fetcher.stream(track(), Some(flac.source_ref())).await?;
+            let picked = fetcher.play(track(), Some(flac.source_ref())).await?;
             let p = ended(&picked).await?;
             assert_eq!(p.status, Status::Done, "{:?}", p.error);
             tokio::time::sleep(Duration::from_secs(2)).await;
@@ -3272,7 +3557,7 @@ mod tests {
             fetcher
                 .sources
                 .add(HashMap::from([(track().id, vec![picked.clone(), other])]));
-            let mut f = fetcher.stream(track(), Some(picked.source_ref())).await?;
+            let mut f = fetcher.play(track(), Some(picked.source_ref())).await?;
             let mut jobs = vec![f.job_id.clone()];
             let mut seen = 0;
             let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
@@ -3283,7 +3568,7 @@ mod tests {
                 if attempt > seen {
                     seen = attempt;
                     // The player's reopen: the same song, its pick still in the address.
-                    f = fetcher.stream(track(), Some(picked.source_ref())).await?;
+                    f = fetcher.play(track(), Some(picked.source_ref())).await?;
                     if !jobs.contains(&f.job_id) {
                         jobs.push(f.job_id.clone());
                         seen = 0;
@@ -3410,7 +3695,7 @@ mod tests {
             fetcher.sources.add(HashMap::from([(track().id, vec![known])]));
             fetcher.sources.mark_searched(&track().id);
 
-            let opened = fetcher.stream(track(), None).await?;
+            let opened = fetcher.play(track(), None).await?;
             let (chunk, took) = first_bytes(&opened).await?;
             assert!(chunk.iter().all(|b| *b == 5), "the response serves the peer's copy");
             assert!(
@@ -3483,7 +3768,7 @@ mod tests {
             fetcher.sources.mark_searched(&track().id);
             let mut rx = fetcher.bus.subscribe();
 
-            let (a, b) = tokio::join!(fetcher.stream(track(), None), fetcher.stream(track(), None));
+            let (a, b) = tokio::join!(fetcher.play(track(), None), fetcher.play(track(), None));
             let (a, b) = (a?, b?);
             assert!(
                 Arc::ptr_eq(&a, &b),
@@ -3534,12 +3819,12 @@ mod tests {
                 Timed::new(Duration::ZERO, true),
             )
             .await?;
-            let yt = fetcher.stream(track(), None).await?;
+            let yt = fetcher.play(track(), None).await?;
             let (chunk, _) = first_bytes(&yt).await?;
             assert!(chunk.iter().all(|b| *b == 7), "YouTube's copy plays");
             assert!(yt.successor().is_none());
             let up = fetcher
-                .upgrade(&track().id)
+                .upgrade(&(track().id, fetcher.rules.get().stream))
                 .ok_or_else(|| Error::internal("Soulseek's copy stopped"))?;
             let u = ended(&up).await?;
             assert_eq!(u.status, Status::Done, "{:?}", u.error);
@@ -3571,7 +3856,7 @@ mod tests {
                 .source
                 .map(|s| s.source_ref())
                 .ok_or_else(|| Error::internal("no copy"))?;
-            let switched = fetcher.adopt(&track().id, &copy, false)?;
+            let switched = fetcher.adopt(&track().id, &fetcher.rules.get().stream, &copy, false)?;
             let event = fetcher.event(&switched);
             assert_eq!(event["replaces"], serde_json::json!(yt.job_id), "{event}");
             let note = switched.now().note.unwrap_or_default();
@@ -3596,11 +3881,11 @@ mod tests {
                 Timed::new(Duration::ZERO, true),
             )
             .await?;
-            let yt = fetcher.stream(track(), None).await?;
+            let yt = fetcher.play(track(), None).await?;
             let (chunk, _) = first_bytes(&yt).await?;
             assert!(chunk.iter().all(|b| *b == 7), "YouTube's copy plays");
             let up = fetcher
-                .upgrade(&track().id)
+                .upgrade(&(track().id, fetcher.rules.get().stream))
                 .ok_or_else(|| Error::internal("Soulseek's copy stopped"))?;
             let mut rx = up.progress();
             let _ = tokio::time::timeout(Duration::from_secs(30), rx.wait_for(|p| p.source.is_some())).await;
@@ -3634,7 +3919,7 @@ mod tests {
                 fetcher.sources.add(HashMap::from([(track().id, vec![known])]));
                 fetcher.sources.mark_searched(&track().id);
 
-                let opened = fetcher.stream(track(), None).await?;
+                let opened = fetcher.play(track(), None).await?;
                 let (chunk, _) = first_bytes(&opened).await?;
                 let playing = last(&opened);
                 let event = fetcher.event(&playing);
@@ -3644,7 +3929,7 @@ mod tests {
                     assert!(chunk.iter().all(|b| *b == 7), "{below:?}: YouTube's copy plays");
                     assert_eq!(event["belowMinimum"], true, "{below:?}: {event}");
                     let up = fetcher
-                        .upgrade(&track().id)
+                        .upgrade(&(track().id, fetcher.rules.get().stream))
                         .ok_or_else(|| Error::internal("no passing copy beside"))?;
                     assert_eq!(ended(&up).await?.status, Status::Done);
                     assert_eq!(fetcher.event(&playing)["upgrade"]["peer"], "peer", "{below:?}");
@@ -3683,7 +3968,7 @@ mod tests {
                 youtube.clone(),
             )
             .await?;
-            let f = fetcher.stream(track(), None).await?;
+            let f = fetcher.play(track(), None).await?;
             let p = ended(&f).await?;
             assert_eq!(p.status, Status::Failed, "{p:?}");
             assert_eq!(youtube.downloads.load(std::sync::atomic::Ordering::Relaxed), 0);
@@ -3696,7 +3981,7 @@ mod tests {
                 youtube.clone(),
             )
             .await?;
-            let f = fetcher.stream(track(), None).await?;
+            let f = fetcher.play(track(), None).await?;
             let (chunk, _) = first_bytes(&f).await?;
             assert!(chunk.iter().all(|b| *b == 7), "YouTube's copy plays");
             assert_eq!(fetcher.event(&last(&f))["belowMinimum"], true, "and says it is below");
@@ -3708,7 +3993,7 @@ mod tests {
                 Timed::new(Duration::ZERO, true),
             )
             .await?;
-            let f = fetcher.stream(track(), None).await?;
+            let f = fetcher.play(track(), None).await?;
             let mut rx = f.progress();
             let asked = tokio::time::timeout(Duration::from_secs(10), rx.wait_for(|p| p.status == Status::Choosing))
                 .await
@@ -3733,11 +4018,11 @@ mod tests {
             let known = shared("peer", REMOTE, bytes.len() as u64, "mp3", Some(144), false);
             fetcher.sources.add(HashMap::from([(track().id, vec![known])]));
             fetcher.sources.mark_searched(&track().id);
-            let yt = fetcher.stream(track(), None).await?;
+            let yt = fetcher.play(track(), None).await?;
             let (chunk, _) = first_bytes(&yt).await?;
             assert!(chunk.iter().all(|b| *b == 7), "YouTube's copy plays");
             let up = fetcher
-                .upgrade(&track().id)
+                .upgrade(&(track().id, fetcher.rules.get().stream))
                 .ok_or_else(|| Error::internal("Soulseek's copy stopped"))?;
             assert_eq!(ended(&up).await?.status, Status::Done, "it is kept for later plays");
             for _ in 0..10 {
@@ -3768,7 +4053,7 @@ mod tests {
             fetcher.sources.add(HashMap::from([(track().id, vec![flac])]));
             fetcher.sources.mark_searched(&track().id);
 
-            let opened = fetcher.stream(track(), None).await?;
+            let opened = fetcher.play(track(), None).await?;
             let (chunk, _) = first_bytes(&opened).await?;
             let playing = last(&opened);
             let event = fetcher.event(&playing);
@@ -3813,11 +4098,11 @@ mod tests {
                 .add(HashMap::from([(track().id, vec![queuer, busy, free])]));
             fetcher.sources.mark_searched(&track().id);
 
-            let yt = fetcher.stream(track(), None).await?;
+            let yt = fetcher.play(track(), None).await?;
             let (chunk, _) = first_bytes(&yt).await?;
             assert!(chunk.iter().all(|b| *b == 7), "YouTube's copy plays");
             let up = fetcher
-                .upgrade(&track().id)
+                .upgrade(&(track().id, fetcher.rules.get().stream))
                 .ok_or_else(|| Error::internal("Soulseek's copy stopped"))?;
             let t0 = std::time::Instant::now();
             let p = tokio::time::timeout(Duration::from_secs(15), up.progress().wait_for(|p| p.ended()))
@@ -3856,14 +4141,17 @@ mod tests {
             fetcher.sources.add(HashMap::from([(track().id, vec![flac])]));
             fetcher.sources.mark_searched(&track().id);
 
-            let opened = fetcher.stream(track(), None).await?;
+            let opened = fetcher.play(track(), None).await?;
             let (chunk, _) = first_bytes(&opened).await?;
             let playing = last(&opened);
             let event = fetcher.event(&playing);
             assert_eq!(event["peer"], lull_core::youtube::PEER, "{event}");
             assert!(chunk.iter().all(|b| *b == 7), "YouTube's Opus plays, Opus being on");
             assert!(event["upgrade"].is_null(), "the FLAC is never offered: {event}");
-            assert!(fetcher.upgrade(&track().id).is_none(), "nor fetched beside it");
+            assert!(
+                fetcher.upgrade(&(track().id, fetcher.rules.get().stream)).is_none(),
+                "nor fetched beside it"
+            );
             Ok(())
         }
 
@@ -3899,10 +4187,112 @@ mod tests {
                     ranges: None,
                 })
                 .await?;
-            let stream = fetcher.best_cached(&track(), crate::rules::Purpose::Stream).await?;
-            let save = fetcher.best_cached(&track(), crate::rules::Purpose::Save).await?;
+            let stream = fetcher
+                .best_cached(&track(), crate::rules::Purpose::Stream, &fetcher.rules.get())
+                .await?;
+            let save = fetcher
+                .best_cached(&track(), crate::rules::Purpose::Save, &fetcher.rules.get())
+                .await?;
             assert!(stream.is_none(), "streaming leaves the FLAC alone");
             assert_eq!(save.map(|e| e.source), Some(flac.source_ref()), "a save still takes it");
+            Ok(())
+        }
+
+        /// A FLAC and an MP3 320 of the song, from two peers, sent at a pace that keeps a fetch
+        /// running while another device opens the song; the hub's own profile (Desktop's) takes
+        /// the highest quality first.
+        async fn flac_and_mp3() -> Result<(Fake, Fetcher, Source, Source)> {
+            const FLAC: &str = "Music\\Artist\\Album\\01 - Song.flac";
+            let peer = Peer {
+                per_tick: 8_192,
+                overwrite: false,
+                reported: None,
+                settles: Duration::ZERO,
+            };
+            let flac_bytes: Vec<u8> = (0..900_000).map(|i| (i % 251) as u8).collect();
+            let mp3_bytes: Vec<u8> = (0..300_000).map(|i| (i % 13) as u8).collect();
+            let (flac_len, mp3_len) = (flac_bytes.len() as u64, mp3_bytes.len() as u64);
+            let fake = Fake::start(
+                HashMap::from([(FLAC.to_owned(), flac_bytes), (REMOTE.to_owned(), mp3_bytes)]),
+                peer,
+            )
+            .await
+            .map_err(|e| Error::internal(e.to_string()))?;
+            let mut rules = Rules::default();
+            rules.stream.pick = lull_core::quality::Pick::Highest;
+            let fetcher = fetcher(&fake, rules).await?;
+            let flac = shared("flacpeer", FLAC, flac_len, "flac", None, true);
+            let mp3 = shared("mp3peer", REMOTE, mp3_len, "mp3", Some(320), false);
+            fetcher
+                .sources
+                .add(HashMap::from([(track().id, vec![flac.clone(), mp3.clone()])]));
+            fetcher.sources.mark_searched(&track().id);
+            Ok((fake, fetcher, flac, mp3))
+        }
+
+        #[tokio::test]
+        async fn a_phone_never_joins_the_desktops_flac_and_each_gets_the_best_its_preset_allows() -> Result<()> {
+            // A listener on an iPhone on mobile data got FLAC (2026-11-12): every device streamed
+            // by the hub's one profile, and a phone opening a song a desktop was fetching joined
+            // its fetch. Phone (ADR-0017): at most 320 kbps, the lossless formats off.
+            let (fake, fetcher, flac, mp3) = flac_and_mp3().await?;
+            let desktop = fetcher.rules.get().stream;
+            let phone = lull_core::presets::phone_from(&desktop);
+
+            let on_desktop = fetcher.stream(track(), None, &desktop).await?;
+            let on_phone = fetcher.stream(track(), None, &phone).await?;
+            assert!(!Arc::ptr_eq(&on_desktop, &on_phone), "the phone fetches its own copy");
+            let (at_desk, at_phone) = (ended(&on_desktop).await?, ended(&on_phone).await?);
+            let source = |p: &super::super::Progress| p.source.as_ref().map(|s| s.source_ref());
+            assert_eq!(
+                source(&at_phone),
+                Some(mp3.source_ref()),
+                "the phone streams the MP3 320"
+            );
+            assert_eq!(at_desk.status, Status::Done, "the desktop's FLAC carries on beside it");
+            assert_eq!(source(&at_desk), Some(flac.source_ref()));
+            assert_eq!(fake.starts().len(), 2, "one transfer of each copy");
+
+            // Later plays: the cache holds both, and each preset takes its own best of them.
+            let cached = |profile: &lull_core::quality::StreamProfile| {
+                let rules = fetcher.rules.get().with_stream(profile);
+                let fetcher = fetcher.clone();
+                async move {
+                    Ok::<_, Error>(
+                        fetcher
+                            .best_cached(&track(), crate::rules::Purpose::Stream, &rules)
+                            .await?
+                            .map(|e| e.source),
+                    )
+                }
+            };
+            assert_eq!(cached(&phone).await?, Some(mp3.source_ref()));
+            assert_eq!(cached(&desktop).await?, Some(flac.source_ref()));
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn a_phone_joins_a_desktops_fetch_of_a_copy_its_preset_takes_and_leaves_it_running() -> Result<()> {
+            // Only the MP3 320 is shared: it suits both presets, so it crosses the network once,
+            // and the phone moving on leaves the desktop's song playing.
+            let (fake, fetcher, flac, mp3) = flac_and_mp3().await?;
+            fetcher.sources.mark_wrong(&track().id, &flac.source_ref());
+            let desktop = fetcher.rules.get().stream;
+            let phone = lull_core::presets::phone_from(&desktop);
+
+            let on_desktop = fetcher.stream(track(), None, &desktop).await?;
+            let mut rx = on_desktop.progress();
+            tokio::time::timeout(Duration::from_secs(10), rx.wait_for(|p| p.source.is_some()))
+                .await
+                .map_err(|_| Error::internal("no copy"))?
+                .map_err(|_| Error::internal("gone"))?;
+            let on_phone = fetcher.stream(track(), None, &phone).await?;
+            assert!(Arc::ptr_eq(&on_desktop, &on_phone), "one fetch for both");
+            fetcher.stop_streaming(&track().id, &phone);
+            let at_desk = ended(&on_desktop).await?;
+            assert_eq!(at_desk.status, Status::Done, "the desktop still plays it");
+            assert_eq!(at_desk.source.map(|s| s.source_ref()), Some(mp3.source_ref()));
+            assert_eq!(fake.starts().len(), 1, "one transfer");
             Ok(())
         }
 
@@ -3953,11 +4343,11 @@ mod tests {
             fetcher.sources.add(HashMap::from([(track().id, vec![fast, other])]));
             fetcher.sources.mark_searched(&track().id);
 
-            let yt = fetcher.stream(track(), None).await?;
+            let yt = fetcher.play(track(), None).await?;
             let (chunk, _) = first_bytes(&yt).await?;
             assert!(chunk.iter().all(|b| *b == 7), "YouTube's copy plays");
             let up = fetcher
-                .upgrade(&track().id)
+                .upgrade(&(track().id, fetcher.rules.get().stream))
                 .ok_or_else(|| Error::internal("Soulseek's copy stopped"))?;
             assert_eq!(up.now().source.map(|s| s.user).as_deref(), Some("remasterer"));
             assert_eq!(ended(&up).await?.status, Status::Done);
@@ -3996,7 +4386,7 @@ mod tests {
             fetcher.sources.add(HashMap::from([(track().id, vec![known])]));
             fetcher.sources.mark_searched(&track().id);
 
-            let opened = fetcher.stream(track(), None).await?;
+            let opened = fetcher.play(track(), None).await?;
             let (chunk, _) = first_bytes(&opened).await?;
             assert!(chunk.iter().all(|b| *b == 5), "the peer's MP3 128 starts the song");
             let playing = last(&opened);
@@ -4023,16 +4413,18 @@ mod tests {
                 Timed::new(Duration::ZERO, true),
             )
             .await?;
-            let yt = fetcher.stream(track(), None).await?;
+            let yt = fetcher.play(track(), None).await?;
             first_bytes(&yt).await?;
             let up = fetcher
-                .upgrade(&track().id)
+                .upgrade(&(track().id, fetcher.rules.get().stream))
                 .ok_or_else(|| Error::internal("no Soulseek copy beside"))?;
             // The listener skips while Soulseek's copy is still on its way.
-            fetcher.stop_streaming(&track().id);
+            fetcher.stop_streaming(&track().id, &fetcher.rules.get().stream);
             let u = ended(&up).await?;
             assert_eq!(u.status, Status::Done, "{:?}", u.error);
-            let cached = fetcher.best_cached(&track(), crate::rules::Purpose::Stream).await?;
+            let cached = fetcher
+                .best_cached(&track(), crate::rules::Purpose::Stream, &fetcher.rules.get())
+                .await?;
             assert_eq!(
                 cached.map(|e| e.source.user),
                 Some("peer".to_owned()),
@@ -4050,7 +4442,7 @@ mod tests {
                 Timed::new(Duration::ZERO, false),
             )
             .await?;
-            let opened = fetcher.stream(track(), None).await?;
+            let opened = fetcher.play(track(), None).await?;
             // The player's request was made before YouTube said it has nothing: it gets the peer's copy.
             let (chunk, _) = first_bytes(&opened).await?;
             assert!(chunk.iter().all(|b| *b == 5));
@@ -4081,11 +4473,11 @@ mod tests {
             .await?;
             let low = shared("low", LOW, bytes.len() as u64, "mp3", Some(128), false);
             fetcher.sources.add(HashMap::from([(track().id, vec![low])]));
-            let f = fetcher.stream(track(), None).await?;
+            let f = fetcher.play(track(), None).await?;
             assert_eq!(ended(&f).await?.source.map(|s| s.user), Some("low".to_owned()));
             let mut up = None;
             for _ in 0..100 {
-                up = fetcher.upgrade(&track().id);
+                up = fetcher.upgrade(&(track().id, fetcher.rules.get().stream));
                 if up.is_some() {
                     break;
                 }
@@ -4122,7 +4514,7 @@ mod tests {
             let known = shared("peer", REMOTE, bytes.len() as u64, "mp3", Some(320), false);
             fetcher.sources.add(HashMap::from([(track().id, vec![known])]));
             fetcher.sources.mark_searched(&track().id);
-            let opened = fetcher.stream(track(), None).await?;
+            let opened = fetcher.play(track(), None).await?;
             let (chunk, took) = first_bytes(&opened).await?;
             println!(
                 "start fast, known Soulseek copy, 15 s YouTube lookup: first byte after {:.2} s, from {}",
@@ -4174,7 +4566,7 @@ mod tests {
                 finds: Default::default(),
             });
             let fetcher = with_youtube(&fake, rules, youtube).await?;
-            let f = fetcher.stream(track(), None).await?;
+            let f = fetcher.play(track(), None).await?;
             let p = ended(&f).await?;
             assert_eq!(p.status, Status::Done, "{:?}", p.error);
             assert!(p.unverified, "the player asks: right song?");
@@ -4182,7 +4574,7 @@ mod tests {
             // "No": the copy leaves, and the song's next opening takes the next upload.
             let first = upload("firstupload");
             fetcher.refused(&track().id, &first).await?;
-            let next = ended(&fetcher.stream(track(), None).await?).await?;
+            let next = ended(&fetcher.play(track(), None).await?).await?;
             let playing = next.source.map(|s| s.source_ref().path).unwrap_or_default();
             assert!(playing.contains("otherupload"), "{playing}");
             Ok(())
@@ -4204,7 +4596,7 @@ mod tests {
             let mut rules = Rules::default();
             rules.youtube.mode = lull_core::youtube::Mode::StartFast;
             let fetcher = fetcher(&fake, rules).await?;
-            let opened = fetcher.stream(track(), None).await?;
+            let opened = fetcher.play(track(), None).await?;
             let p = ended(&opened).await?;
             // YouTube had no copy, so Soulseek's side of the race became the player's fetch.
             let failed = last(&opened);
@@ -4225,7 +4617,7 @@ mod tests {
                 path: REMOTE.into(),
                 size: 50_000,
             };
-            let done = fetcher.stream(track(), Some(pick)).await?;
+            let done = fetcher.play(track(), Some(pick)).await?;
             assert_eq!(ended(&done).await?.status, Status::Done);
             let answer = fetcher
                 .output_error(&track().id, Some(&done.job_id), "Kitchen")
@@ -4256,7 +4648,7 @@ mod tests {
                 .map_err(|e| Error::internal(e.to_string()))?;
             let mut rules = Rules::default();
             rules.youtube.mode = lull_core::youtube::Mode::StartFast;
-            let f = fetcher(&fake, rules).await?.stream(track(), None).await?;
+            let f = fetcher(&fake, rules).await?.play(track(), None).await?;
             let p = ended(&f).await?;
             assert_eq!(p.status, Status::Failed);
             let error = p.error.unwrap_or_default();
@@ -4287,7 +4679,7 @@ mod tests {
                 path: REMOTE.into(),
                 size: bytes.len() as u64,
             };
-            let f = fetcher.stream(track(), Some(pick)).await?;
+            let f = fetcher.play(track(), Some(pick)).await?;
             let p = ended(&f).await?;
             assert_eq!(p.status, Status::Done, "the fetch failed: {:?}", p.error);
             let path = p.path.ok_or_else(|| Error::internal("no file"))?;
@@ -4313,7 +4705,7 @@ mod tests {
                 path: REMOTE.into(),
                 size: bytes.len() as u64,
             };
-            let f = fetcher.stream(track(), Some(pick)).await?;
+            let f = fetcher.play(track(), Some(pick)).await?;
             // The player's request from the start, read while the transfer runs, finishes and
             // the file moves under it.
             let resp = crate::stream::serve(f.clone(), &axum::http::HeaderMap::new()).await?;
@@ -4390,7 +4782,7 @@ mod tests {
         #[tokio::test]
         async fn a_peer_sending_slower_than_the_song_gives_way_and_is_ranked_by_what_it_sent_next_time() -> Result<()> {
             let (_fake, fetcher, song, bytes) = liar_and_honest().await?;
-            let f = fetcher.stream(song.clone(), None).await?;
+            let f = fetcher.play(song.clone(), None).await?;
             let p = ended(&f).await?;
             assert_eq!(p.status, Status::Done, "{:?}", p.error);
             assert_eq!(
@@ -4433,7 +4825,7 @@ mod tests {
                 path: REMOTE.into(),
                 size: 2_000_000,
             };
-            let f = fetcher.stream(song, Some(pick)).await?;
+            let f = fetcher.play(song, Some(pick)).await?;
             tokio::time::sleep(Duration::from_secs(13)).await;
             let p = f.now();
             assert_eq!(p.source.as_ref().map(|s| s.user.as_str()), Some("liar"));
@@ -4486,12 +4878,12 @@ mod tests {
                 path: REMOTE.into(),
                 size: bytes.len() as u64,
             };
-            let f = fetcher.stream(song.clone(), Some(liar)).await?;
+            let f = fetcher.play(song.clone(), Some(liar)).await?;
             let before = listen(&f, size, 20.0).await;
             fetcher.cancel_fetch(&f);
             // A fresh hub's first play of the song, then a second play once lull has measured both.
             let (fake2, fetcher2, song2, _) = liar_and_honest().await?;
-            let f = fetcher2.stream(song2.clone(), None).await?;
+            let f = fetcher2.play(song2.clone(), None).await?;
             let first = listen(&f, size, 20.0).await;
             ended(&f).await?;
             fetcher2.cancel_fetch(&f);
@@ -4509,7 +4901,7 @@ mod tests {
                 let path = e.map_err(|e| Error::internal(e.to_string()))?.path();
                 std::fs::remove_file(path).map_err(|e| Error::internal(e.to_string()))?;
             }
-            let f = fetcher2.stream(song2, None).await?;
+            let f = fetcher2.play(song2, None).await?;
             let second = listen(&f, size, 20.0).await;
             for (what, (first_sound, stalls, stalled)) in [
                 ("before", before),

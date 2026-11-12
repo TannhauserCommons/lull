@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use axum::Extension;
 use axum::extract::rejection::JsonRejection;
-use axum::extract::{Path, Query, State};
+use axum::extract::{FromRequestParts, Path, Query, State};
+use axum::http::request::Parts;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::routing::{delete, get, post, put};
@@ -14,6 +15,7 @@ use axum::{Json, Router};
 use lull_core::devices::Device;
 use lull_core::ids::TrackId;
 use lull_core::model::{SourceRef, Track};
+use lull_core::quality::StreamProfile;
 use lull_core::youtube::{self, Mode, Want};
 use lull_core::{Error, Result};
 use serde::Deserialize;
@@ -45,6 +47,19 @@ fn routes() -> Router<Arc<Service>> {
         .route("/api/cache/clear", post(clear_cache))
 }
 
+/// The streaming profile of the asking device's source preset (ADR-0017): what everything
+/// fetched or ordered for the request streams by.
+struct Asking(StreamProfile);
+
+impl FromRequestParts<Arc<Service>> for Asking {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, svc: &Arc<Service>) -> std::result::Result<Self, Self::Rejection> {
+        let device = parts.extensions.get::<Device>().map(|d| d.id.as_str());
+        Ok(Asking(svc.rules.get().profile_for(device, &parts.headers)))
+    }
+}
+
 #[derive(Deserialize)]
 struct SearchQuery {
     q: String,
@@ -64,14 +79,20 @@ struct For {
 /// Sources in the order the streaming profile (or with `?for=save`, the saving one) takes
 /// them, each marked whether it passes the minimum. A song nothing is known about yet starts
 /// a search for it; the answer then says `done: false` and the picker asks again.
-async fn sources(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(q): Query<For>) -> Result<Json<Value>> {
+async fn sources(
+    State(svc): State<Arc<Service>>,
+    Path(id): Path<String>,
+    Query(q): Query<For>,
+    Asking(profile): Asking,
+) -> Result<Json<Value>> {
     let purpose = match q.purpose.as_deref() {
         None | Some("stream") => Purpose::Stream,
         Some("save") => Purpose::Save,
         Some(other) => return Err(Error::BadRequest(format!("for={other}: stream or save"))),
     };
     let track = svc.track(&TrackId(id)).await?;
-    let ranked = svc.sources.ordered(&track, &svc.rules.get(), purpose);
+    let rules = svc.rules.get().with_stream(&profile);
+    let ranked = svc.sources.ordered(&track, &rules, purpose);
     let mut searching = svc.searches.searching_for(&track);
     // Copies other searches came across (an album's folder, another query) don't stand for a
     // search for the song: live, two soundtrack folders' copies kept six more peers' unseen.
@@ -85,7 +106,7 @@ async fn sources(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(
         searching = true;
     }
     let youtube = match purpose {
-        Purpose::Stream => youtube_row(&svc, &track).await,
+        Purpose::Stream => youtube_row(&svc, &track, &rules).await,
         Purpose::Save => YoutubeRow::Off,
     };
     let (youtube, finding) = match youtube {
@@ -119,8 +140,7 @@ enum YoutubeRow {
 /// copy the player's YouTube path would play (the streaming cap's), with its chip ("YouTube ·
 /// Opus 160"). Lossy, it has no score: the picker lists it after the peers. `meets`: it passes
 /// the streaming minimum (`policy::passes`), as a peer's copy does.
-async fn youtube_row(svc: &Service, track: &Track) -> YoutubeRow {
-    let rules = svc.rules.get();
+async fn youtube_row(svc: &Service, track: &Track, rules: &crate::rules::Rules) -> YoutubeRow {
     if rules.youtube.mode == Mode::Off {
         return YoutubeRow::Off;
     }
@@ -164,15 +184,16 @@ async fn stream(
     State(svc): State<Arc<Service>>,
     Path(id): Path<String>,
     Query(pick): Query<Pick>,
+    Asking(profile): Asking,
     headers: HeaderMap,
 ) -> Result<Response> {
     let track = svc.track(&TrackId(id)).await?;
     let pick = match (pick.peer, pick.path) {
-        (Some(peer), Some(path)) => Some(known_source(&svc, &track, peer, path).await?),
+        (Some(peer), Some(path)) => Some(known_source(&svc, &track, peer, path, &profile).await?),
         (None, None) => None,
         _ => return Err(Error::BadRequest("peer and path go together".into())),
     };
-    let fetch = svc.fetcher.stream(track, pick).await?;
+    let fetch = svc.fetcher.stream(track, pick, &profile).await?;
     crate::stream::serve(fetch, &headers).await
 }
 
@@ -199,9 +220,10 @@ async fn copy(
     State(svc): State<Arc<Service>>,
     Path(id): Path<String>,
     Query(copy): Query<Copy>,
+    Asking(profile): Asking,
     headers: HeaderMap,
 ) -> Result<Response> {
-    let fetch = svc.fetcher.copy(&TrackId(id), &copy.source_ref())?;
+    let fetch = svc.fetcher.copy(&TrackId(id), &profile, &copy.source_ref())?;
     crate::stream::serve(fetch, &headers).await
 }
 
@@ -212,10 +234,11 @@ async fn copy(
 async fn switch(
     State(svc): State<Arc<Service>>,
     Path(id): Path<String>,
+    Asking(profile): Asking,
     body: std::result::Result<Json<Copy>, JsonRejection>,
 ) -> Result<Json<Value>> {
     let Json(copy) = body.map_err(|e| Error::BadRequest(e.body_text()))?;
-    let f = svc.fetcher.adopt(&TrackId(id), &copy.source_ref(), false)?;
+    let f = svc.fetcher.adopt(&TrackId(id), &profile, &copy.source_ref(), false)?;
     Ok(Json(svc.fetcher.event(&f)))
 }
 
@@ -232,6 +255,7 @@ struct NotSwitched {
 async fn not_switched(
     State(svc): State<Arc<Service>>,
     Path(id): Path<String>,
+    Asking(profile): Asking,
     body: std::result::Result<Json<NotSwitched>, JsonRejection>,
 ) -> Result<StatusCode> {
     let Json(b) = body.map_err(|e| Error::BadRequest(e.body_text()))?;
@@ -240,7 +264,7 @@ async fn not_switched(
         path: b.path,
         size: 0,
     };
-    svc.fetcher.not_switched(&TrackId(id), &copy, b.why)?;
+    svc.fetcher.not_switched(&TrackId(id), &profile, &copy, b.why)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -280,6 +304,7 @@ struct Answer {
 async fn verify(
     State(svc): State<Arc<Service>>,
     Path(id): Path<String>,
+    Asking(profile): Asking,
     body: std::result::Result<Json<Answer>, JsonRejection>,
 ) -> Result<StatusCode> {
     let Json(a) = body.map_err(|e| Error::BadRequest(e.body_text()))?;
@@ -291,7 +316,7 @@ async fn verify(
     let track = svc.track(&TrackId(id)).await?;
     let copy = svc
         .fetcher
-        .playing_copy(&track.id)
+        .playing_copy(&track.id, &profile)
         .filter(youtube::is_youtube)
         .ok_or_else(|| Error::Conflict("no YouTube copy of this song is playing".into()))?;
     let file = svc
@@ -313,7 +338,13 @@ async fn verify(
 
 /// A picked source must be one a search reported: its size comes from there. A YouTube pick is
 /// the song's YouTube match (remembered from the picker's ask).
-async fn known_source(svc: &Service, track: &Track, peer: String, path: String) -> Result<SourceRef> {
+async fn known_source(
+    svc: &Service,
+    track: &Track,
+    peer: String,
+    path: String,
+    profile: &StreamProfile,
+) -> Result<SourceRef> {
     let wanted = SourceRef {
         user: peer,
         path,
@@ -321,7 +352,7 @@ async fn known_source(svc: &Service, track: &Track, peer: String, path: String) 
     };
     if youtube::is_youtube(&wanted) {
         let want = Want::Stream {
-            max_kbps: svc.rules.get().stream.max_kbps,
+            max_kbps: profile.max_kbps,
         };
         return match svc.fetcher.youtube.find(track, want).await? {
             Some(found) if found.source.path == wanted.path => Ok(found.source),
@@ -349,16 +380,17 @@ struct Prefetch {
 async fn prefetch(
     State(svc): State<Arc<Service>>,
     device: Option<Extension<Device>>,
+    Asking(profile): Asking,
     body: std::result::Result<Json<Prefetch>, JsonRejection>,
 ) -> Result<StatusCode> {
     let Json(body) = body.map_err(|e| Error::BadRequest(e.body_text()))?;
     let device = device.map(|Extension(d)| d.id).unwrap_or_default();
-    crate::prefetch::listed(&svc, device, body.tracks)?;
+    crate::prefetch::listed(&svc, device, profile, body.tracks)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn stop(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> StatusCode {
-    svc.fetcher.stop_streaming(&TrackId(id));
+async fn stop(State(svc): State<Arc<Service>>, Path(id): Path<String>, Asking(profile): Asking) -> StatusCode {
+    svc.fetcher.stop_streaming(&TrackId(id), &profile);
     StatusCode::NO_CONTENT
 }
 
@@ -388,8 +420,12 @@ async fn cancel(State(svc): State<Arc<Service>>, Path(job): Path<String>) -> Res
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn retry(State(svc): State<Arc<Service>>, Path(job): Path<String>) -> Result<Json<Value>> {
-    let job = svc.fetcher.retry(&job)?;
+async fn retry(
+    State(svc): State<Arc<Service>>,
+    Path(job): Path<String>,
+    Asking(profile): Asking,
+) -> Result<Json<Value>> {
+    let job = svc.fetcher.retry(&job, &profile)?;
     Ok(Json(json!({ "jobId": job })))
 }
 
