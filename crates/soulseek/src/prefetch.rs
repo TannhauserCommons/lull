@@ -164,7 +164,7 @@ async fn preload(svc: &Service, id: &TrackId) -> Result<()> {
 fn worth_starting(svc: &Service, track: &lull_core::model::Track) -> bool {
     let rules = svc.rules.get();
     let ordered = svc.sources.ordered(track, &rules, Purpose::Stream);
-    let usable: Vec<_> = ordered.iter().filter(|r| !r.queue_too_long).collect();
+    let usable: Vec<_> = ordered.iter().filter(|r| !r.queue_too_long && !r.left_out).collect();
     !usable.is_empty() && (rules.stream.below == StreamBelow::PlayBest || usable.iter().any(|r| r.meets))
 }
 

@@ -499,11 +499,20 @@ impl Fetcher {
         };
         if let Some(f) = live {
             let current = f.now().source.map(|s| s.source_ref());
+            // A copy in a format streaming switched off (a save's, or one cached before the
+            // switch) isn't joined: only the listener's own pick of it plays (`policy::allowed`).
+            let left_out = pick.is_none()
+                && !f.picked.load(Ordering::Relaxed)
+                && f.now()
+                    .source
+                    .is_some_and(|s| !policy::allowed(&self.rules.get().stream, &s));
             // The pick this fetch started with is this fetch, though it fell back to another peer
             // since: the player reopens the song after every fallback with its pick still in the
             // address, and replacing the fetch then started the stalled peer again, in a loop.
             let started_with = pick.is_some() && pick.as_ref() == f.picked_copy.get();
-            if pick.is_none() || pick == current || started_with {
+            if left_out {
+                self.replace(&f);
+            } else if pick.is_none() || pick == current || started_with {
                 // Start fast: a preload still waiting for a peer becomes the upgrade, and
                 // YouTube starts the song below.
                 if !(pick.is_none() && mode == Mode::StartFast && self.make_way(&f)) {
@@ -869,8 +878,9 @@ impl Fetcher {
     }
 
     /// The song's best finished copy in the cache by `purpose`'s profile (none of YouTube's
-    /// while YouTube is off): what a later play (`policy::cached_key`, any source alike) or a save
-    /// (passing the saving minimum, then its order) takes.
+    /// while YouTube is off, nor for streaming one in a format it switched off): what a later
+    /// play (`policy::cached_key`, any source alike) or a save (passing the saving minimum, then
+    /// its order) takes.
     pub async fn best_cached(&self, track: &Track, purpose: Purpose) -> Result<Option<Entry>> {
         let rules = self.rules.get();
         let duration = track.duration;
@@ -881,6 +891,9 @@ impl Fetcher {
                 .get(track, &e.source)
                 .or_else(|| bare_source(&e.source, duration))
         };
+        if purpose == Purpose::Stream {
+            entries.retain(|e| known(e).is_none_or(|s| policy::allowed(&rules.stream, &s)));
+        }
         let best = match purpose {
             Purpose::Stream => best_first(entries, |e| {
                 known(e).map(|s| policy::cached_key(&rules.stream, self.sources.preferred(), &s, duration))
@@ -2082,12 +2095,12 @@ impl Fetcher {
         let rules = self.rules.get();
         let mut searches = 0;
         loop {
-            let (mut copies, queued_out) = self.untried(f, tried, &rules);
+            let (mut copies, skipped) = self.untried(f, tried, &rules);
             // Once YouTube's copy is ready, the race goes on to a peer with a free slot first.
             if f.youtube_ready.load(Ordering::Relaxed) {
                 copies.sort_by_key(|r| !r.source.free_slot);
             }
-            if copies.is_empty() && queued_out == 0 && tried.is_empty() && searches == 0 {
+            if copies.is_empty() && skipped.none() && tried.is_empty() && searches == 0 {
                 // One beside YouTube's lookup that ended since the fetch began is its search.
                 if !self.sources.searched_since(&f.track.id, f.opened) {
                     self.find(f, stop).await?;
@@ -2108,14 +2121,25 @@ impl Fetcher {
                 return Ok(passing.source.clone());
             }
             let Some(best) = copies.first() else {
-                return Err(Stop::Failed(match (queued_out, tried.is_empty()) {
-                    (0, true) => "no peer shares this song right now".into(),
-                    (0, false) => "no other peer shares this song right now".into(),
-                    (n, _) => format!(
-                        "{n} more peers share this song, each with more than {} people waiting",
-                        rules.max_peer_queue
-                    ),
-                }));
+                return Err(Stop::Failed(
+                    match (skipped.queued_out, skipped.left_out, tried.is_empty()) {
+                        (0, 0, true) => "no peer shares this song right now".into(),
+                        (0, 0, false) => "no other peer shares this song right now".into(),
+                        (0, n, _) => format!(
+                            "{n} more {} of this song, but none in a format you stream ({})",
+                            if n == 1 {
+                                "peer shares a copy"
+                            } else {
+                                "peers share copies"
+                            },
+                            rules.stream.minimum.formats_named()
+                        ),
+                        (n, _, _) => format!(
+                            "{n} more peers share this song, each with more than {} people waiting",
+                            rules.max_peer_queue
+                        ),
+                    },
+                ));
             };
             if f.racing.load(Ordering::Relaxed) && !policy::may_start(&rules.stream, &best.source, f.track.duration) {
                 // Racing YouTube: a copy below the minimum races only under `playBest`.
@@ -2192,14 +2216,20 @@ impl Fetcher {
     }
 
     /// Untried copies in the profile's order, and how many were left out for a long queue.
-    fn untried(&self, f: &Fetch, tried: &[SourceRef], rules: &Rules) -> (Vec<Ranked>, usize) {
-        let (copies, queued_out): (Vec<Ranked>, Vec<Ranked>) = self
+    fn untried(&self, f: &Fetch, tried: &[SourceRef], rules: &Rules) -> (Vec<Ranked>, Skipped) {
+        let mut skipped = Skipped::default();
+        let copies = self
             .sources
             .ordered(&f.track, rules, f.purpose)
             .into_iter()
             .filter(|r| !tried.iter().any(|t| r.source.is(t)))
-            .partition(|r| !r.queue_too_long);
-        (copies, queued_out.len())
+            .filter(|r| {
+                skipped.left_out += usize::from(r.left_out);
+                skipped.queued_out += usize::from(r.queue_too_long && !r.left_out);
+                !r.left_out && !r.queue_too_long
+            })
+            .collect();
+        (copies, skipped)
     }
 
     /// Searches Soulseek for the song ("finding").
@@ -2256,6 +2286,20 @@ impl Fetcher {
         }
         self.bus.publish("transfer", transfer_event(f, &p));
         self.bus.publish("job", job_row(f, &p));
+    }
+}
+
+/// Copies a fetch passes over without trying: their peer's queue is too long, or (streaming) their
+/// format is switched off.
+#[derive(Debug, Default, Clone, Copy)]
+struct Skipped {
+    queued_out: usize,
+    left_out: usize,
+}
+
+impl Skipped {
+    fn none(&self) -> bool {
+        self.queued_out == 0 && self.left_out == 0
     }
 }
 
@@ -3789,6 +3833,76 @@ mod tests {
                 fake.starts_of("busy").is_empty(),
                 "a peer without a free slot was asked"
             );
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn a_format_switched_off_never_streams_even_when_its_copy_sends_first() -> Result<()> {
+            // A listener (2026-11-12): "It's playing FLAC on my phone even though I have FLAC off".
+            // Under `playBest`, a copy in a format switched off only failed the minimum, so a
+            // peer's FLAC that sent before YouTube's Opus started the song.
+            const FLAC: &str = "Music\\Artist\\Album\\01 - Song.flac";
+            let mut rules = start_fast_rules();
+            rules.stream.minimum.formats = vec!["mp3".into(), "opus".into()];
+            rules.stream.below = lull_core::quality::StreamBelow::PlayBest;
+            let bytes: Vec<u8> = (0..900_000).map(|i| (i % 251) as u8).collect();
+            let (_fake, fetcher) = racing(
+                HashMap::from([(FLAC.to_owned(), bytes.clone())]),
+                rules,
+                Timed::opus(Duration::from_secs(1)),
+            )
+            .await?;
+            let flac = shared("peer", FLAC, bytes.len() as u64, "flac", None, true);
+            fetcher.sources.add(HashMap::from([(track().id, vec![flac])]));
+            fetcher.sources.mark_searched(&track().id);
+
+            let opened = fetcher.stream(track(), None).await?;
+            let (chunk, _) = first_bytes(&opened).await?;
+            let playing = last(&opened);
+            let event = fetcher.event(&playing);
+            assert_eq!(event["peer"], lull_core::youtube::PEER, "{event}");
+            assert!(chunk.iter().all(|b| *b == 7), "YouTube's Opus plays, Opus being on");
+            assert!(event["upgrade"].is_null(), "the FLAC is never offered: {event}");
+            assert!(fetcher.upgrade(&track().id).is_none(), "nor fetched beside it");
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn a_later_play_never_takes_a_cached_copy_in_a_format_switched_off() -> Result<()> {
+            // A FLAC cached before the listener switched FLAC off (or by a save) stays for saves,
+            // but streaming fetches a copy in a format left on instead.
+            const FLAC: &str = "Music\\Artist\\Album\\01 - Song.flac";
+            let peer = Peer {
+                per_tick: 16_384,
+                overwrite: false,
+                reported: None,
+                settles: Duration::ZERO,
+            };
+            let fake = Fake::start(HashMap::new(), peer)
+                .await
+                .map_err(|e| Error::internal(e.to_string()))?;
+            let mut rules = Rules::default();
+            rules.stream.minimum.formats = vec!["mp3".into()];
+            let fetcher = fetcher(&fake, rules).await?;
+            let flac = shared("peer", FLAC, 3, "flac", None, true);
+            fetcher.sources.add(HashMap::from([(track().id, vec![flac.clone()])]));
+            let path = fake.root.join("cached.flac");
+            std::fs::write(&path, b"abc").map_err(|e| Error::internal(e.to_string()))?;
+            fetcher
+                .cache
+                .record(crate::cache::Entry {
+                    track: track().id,
+                    source: flac.source_ref(),
+                    path,
+                    complete: true,
+                    used_at: 1,
+                    ranges: None,
+                })
+                .await?;
+            let stream = fetcher.best_cached(&track(), crate::rules::Purpose::Stream).await?;
+            let save = fetcher.best_cached(&track(), crate::rules::Purpose::Save).await?;
+            assert!(stream.is_none(), "streaming leaves the FLAC alone");
+            assert_eq!(save.map(|e| e.source), Some(flac.source_ref()), "a save still takes it");
             Ok(())
         }
 

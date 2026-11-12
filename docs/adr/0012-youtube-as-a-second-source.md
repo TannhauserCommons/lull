@@ -122,6 +122,16 @@ The owner: a song "upgraded above my maximum bitrate from YouTube Opus". Marlon 
 
 **Alternative.** A cap no copy ever crosses: with only copies above it, the song wouldn't play. Not chosen without the owner.
 
+## Update 2026-11-12: a format switched off never streams
+
+A listener: "It's playing FLAC on my phone even though I have FLAC off and maximum set to 320." Formats were part of the streaming minimum only, so under `playBest` a FLAC outside the formats left on was a copy below the minimum like any other: it started the song when it sent first in the race, and a cached one played on later plays. And Settings showed "any format" (none stored) as every format chip off, so FLAC looked switched off when it counted.
+
+**Decision.** A format the streaming profile switches off never streams (`policy::allowed`): it never starts the song under any `below` rule, isn't tried, raced, preloaded or offered as a better copy, a later play skips it in the cache, and a live fetch of it (a save's) isn't joined. Only the listener's own pick of that copy plays it. It is their explicit choice, made for data on a phone, unlike the bitrate floor, which `below` may set aside. A `.webm` counts as Opus (YouTube's), so Opus switched on keeps YouTube. Settings shows "any" as every chip on, and at least one stays on.
+
+**Alternative.** Keep formats inside the minimum and let `below` decide: what played the FLAC. Not chosen.
+
+The cap stays a maximum with a last resort (above); a hard cap is still the owner's call.
+
 ## Update 2026-11-12: once YouTube is ready, a queue is given up
 
 On 2026-11-11 TLC's "No Scrubs" waited for YouTube's lookup (8 s) while Soulseek's side sat 30 s in the queue of the first peer it asked, though many peers shared the song. Asked whether a peer that only queues the race should be waited out, the owner: "Once YouTube is ready".
