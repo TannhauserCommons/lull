@@ -202,7 +202,7 @@
 }
 :root[data-design="skydeck"] .ctx__head { padding: 10px 6px; border-radius: 0; }
 :root[data-design="skydeck"] .ctx__head > .btn-icon { color: var(--sd-ink); }
-:root[data-design="skydeck"] .ctx__head > .btn-icon:hover { background: var(--panel-2); }
+@media (hover: hover) { :root[data-design="skydeck"] .ctx__head > .btn-icon:hover { background: var(--panel-2); } }
 /* the rail's playlists show whole rows only: the list takes the height the rail has left under the tags and sets the rows
    in a column that wraps, so a row that does not fit goes to a second column the card clips (focusing it brings it into
    view), never half a row sliced by the foot. Playlists in the menu above is the way to all of them. If the tags alone
@@ -240,7 +240,7 @@
 :root[data-design="skydeck"] .nav-item::after {
   content: counter(sd-hour, upper-roman); margin-left: auto; font: 700 .75rem/1 Georgia, "Times New Roman", serif; letter-spacing: .08em; color: var(--ink-2);
 }
-:root[data-design="skydeck"] .nav-item:hover { background: var(--panel-2); }
+@media (hover: hover) { :root[data-design="skydeck"] .nav-item:hover { background: var(--panel-2); } }
 :root[data-design="skydeck"] .nav-item[aria-current="page"] { background: var(--sd-ink); color: var(--panel); border-bottom-color: transparent; }
 :root[data-design="skydeck"] .nav-item[aria-current="page"]::after { color: var(--sd-pink-lt); }
 :root[data-design="skydeck"] .nav-item[aria-current="page"]::before {
@@ -269,7 +269,7 @@
 :root[data-design="skydeck"] .header__tools > .btn-icon {
   background: var(--panel); color: var(--sd-ink); border: 1.5px solid var(--sd-ink); box-shadow: var(--sd-lift); --focus: var(--sd-pink);
 }
-:root[data-design="skydeck"] .header__tools > .btn-icon:hover { background: var(--panel-2); }
+@media (hover: hover) { :root[data-design="skydeck"] .header__tools > .btn-icon:hover { background: var(--panel-2); } }
 /* the status tray: one printed stamp a service, an LED in each. Severity reads by the stamp (ok = card, warn = pink,
    down = inked) and by the LED's shape: ok round, warn a diamond, down slashed and pulsing */
 :root[data-design="skydeck"] .tray { background: none; box-shadow: none; border: 0; padding: 0 0 5px; gap: 6px; }
@@ -277,7 +277,7 @@
   height: 32px; padding: 0 13px 0 10px; gap: 0; border-radius: 10px; background: var(--panel); color: var(--sd-ink); border: 1.5px solid var(--sd-ink);
   font: 900 .6875rem/1 var(--f-ui); letter-spacing: .16em; text-transform: uppercase; box-shadow: var(--sd-lift);
 }
-:root[data-design="skydeck"] .tray:hover .tray__pill[data-state="ok"] { background: var(--panel-2); }
+@media (hover: hover) { :root[data-design="skydeck"] .tray:hover .tray__pill[data-state="ok"] { background: var(--panel-2); } }
 :root[data-design="skydeck"] .tray__pill[data-state="warn"] { background: var(--pink-soft); color: var(--sd-ink); }
 :root[data-design="skydeck"] :is(.tray__pill[data-state="down"], .tray--compact .tray__pill[data-worst="down"]) { background: var(--sd-ink); color: var(--panel); }
 :root[data-design="skydeck"] .tray .sg {
@@ -350,7 +350,7 @@
 :root[data-design="skydeck"] .trow.is-playing .trow__art::after { border-radius: 50%; box-shadow: inset 0 0 0 2.5px var(--sd-pink); }
 :root[data-design="skydeck"] .rail__pl .mosaic { border-radius: 50%; }
 :root[data-design="skydeck"] .tile__play { background: var(--sd-ink); color: var(--panel); border-color: var(--sd-ink); box-shadow: 0 0 0 2px var(--panel); }
-:root[data-design="skydeck"] .tile__play:hover { background: var(--sd-pink); }
+@media (hover: hover) { :root[data-design="skydeck"] .tile__play:hover { background: var(--sd-pink); } }
 
 /* =====================================================================
    6. Cards: printed inserts with a double rule, titles in spaced capitals led by a star
@@ -390,11 +390,11 @@
 /* chips (tags, follows, the equaliser's presets, Sources' formats) are printed slips of the card, ruled in ink, wherever
    they sit; a chip or filter pill that is on is inked in, as the menu's place and the segmented controls are */
 :root[data-design="skydeck"] .chip { background: var(--panel); border: 1px solid var(--sd-ink); color: var(--sd-ink); }
-:root[data-design="skydeck"] :is(button.chip, a.chip):hover:not([aria-pressed="true"], .is-on) { background: var(--panel-2); }
+@media (hover: hover) { :root[data-design="skydeck"] :is(button.chip, a.chip):hover:not([aria-pressed="true"], .is-on) { background: var(--panel-2); } }
 :root[data-design="skydeck"] :is(.chip[aria-pressed="true"], .chip.is-on, .pill-filter[aria-pressed="true"]) { background: var(--sd-ink); color: var(--panel); border-color: var(--sd-ink); }
 :root[data-design="skydeck"] .pill-filter[aria-pressed="true"] .lib-count { color: var(--sd-pink-lt); }
 :root[data-design="skydeck"] .btn--primary { background: var(--sd-ink); color: var(--panel); border-color: var(--sd-ink); }
-:root[data-design="skydeck"] .btn--primary:hover { background: #3d3570; }
+@media (hover: hover) { :root[data-design="skydeck"] .btn--primary:hover { background: #3d3570; } }
 /* segmented controls and switches, inked */
 :root[data-design="skydeck"] .seg { border-color: var(--sd-ink); }
 :root[data-design="skydeck"] .seg__ind { background: var(--sd-ink); border-color: var(--sd-ink); box-shadow: none; }
@@ -441,7 +441,7 @@
   :root[data-design="skydeck"] .lib-segs a.pill-filter { min-height: 34px; padding-inline: 10px; }
 }
 :root[data-design="skydeck"] .lib-segs a.pill-filter { flex: none; min-height: 36px; border-color: transparent; background: none; color: var(--sd-ink); box-shadow: none; }
-:root[data-design="skydeck"] .lib-segs a.pill-filter:hover { background: var(--panel-2); }
+@media (hover: hover) { :root[data-design="skydeck"] .lib-segs a.pill-filter:hover { background: var(--panel-2); } }
 :root[data-design="skydeck"] .lib-segs a.pill-filter[aria-current="page"] { background: var(--sd-ink); color: var(--panel); border-color: var(--sd-ink); border-radius: 12px; }
 
 /* stats: printed tiles, a big numeral over a dotted rule; bars inked */
@@ -680,7 +680,7 @@
   border-radius: calc(var(--r-panel) - 2px) calc(var(--r-panel) - 2px) 0 0; padding-top: 12px; padding-bottom: 12px; margin-bottom: 10px;
 }
 :root[data-design="skydeck"] :is(.sheet, .dialog) > .sheet__head .btn-icon { color: var(--sd-ink); border-color: transparent; }
-:root[data-design="skydeck"] :is(.sheet, .dialog) > .sheet__head .btn-icon:hover { background: var(--cream-2); }
+@media (hover: hover) { :root[data-design="skydeck"] :is(.sheet, .dialog) > .sheet__head .btn-icon:hover { background: var(--cream-2); } }
 :root[data-design="skydeck"] .sheet { overflow: hidden; }
 /* desktop: every sheet and dialog floats inside the window with 32 px air under it, lifted off the sky; its body scrolls */
 @media (min-width: 640px) {
@@ -705,7 +705,7 @@
   box-shadow: inset 0 0 0 4px var(--cream), inset 0 0 0 5px var(--sd-soft), var(--sd-lift);
 }
 :root[data-design="skydeck"] .toast .btn-icon { color: var(--sd-ink); }
-:root[data-design="skydeck"] .toast .btn-icon:hover { background: var(--cream-2); }
+@media (hover: hover) { :root[data-design="skydeck"] .toast .btn-icon:hover { background: var(--cream-2); } }
 :root[data-design="skydeck"] .toast--error > .ic { color: var(--sd-pink); }
 :root[data-design="skydeck"] .toast--ok > .ic { color: #2f7a52; }   /* check: #2f7a52 on #f4e8d6 3 */
 
@@ -757,7 +757,7 @@
 :root[data-design="skydeck"] .btn-gloss { background: var(--sd-ink); color: var(--panel); border: 0; box-shadow: 0 0 0 3px var(--panel), 0 0 0 4.5px var(--sd-ink); }
 :root[data-design="skydeck"] .btn-gloss::before { left: -16%; right: -16%; top: -16%; bottom: -16%; height: auto; border-radius: 50%; background: var(--sd-rim) center / contain no-repeat; }
 :root[data-design="skydeck"] .btn-gloss::after { display: none; }
-:root[data-design="skydeck"] .btn-gloss:hover { background: #3d3570; }
+@media (hover: hover) { :root[data-design="skydeck"] .btn-gloss:hover { background: #3d3570; } }
 :root[data-design="skydeck"] .btn-gloss:active { transform: translateY(2px); }
 :root[data-design="skydeck"] .btn-gloss.is-liked { background: var(--sd-pink); }
 :root[data-design="skydeck"] .pbar .btn-gloss { --size: 48px; }
@@ -791,7 +791,7 @@
 :root[data-design="skydeck"] .vol .seek .seek__played { background: var(--sd-ink); }
 :root[data-design="skydeck"] .vol .seek .seek__knob { width: 12px; height: 12px; left: -6px; top: -6px; background: var(--panel); border: 2px solid var(--sd-ink); box-shadow: none; }
 :root[data-design="skydeck"] .pbar__tools { gap: 0; }
-:root[data-design="skydeck"] .pbar .btn-icon--bare:hover { background: var(--panel-2); }
+@media (hover: hover) { :root[data-design="skydeck"] .pbar .btn-icon--bare:hover { background: var(--panel-2); } }
 /* the status line: a printed slip on the card's top edge */
 :root[data-design="skydeck"] .pbar__state {
   background: var(--panel); color: var(--sd-ink); border: 1.5px solid var(--sd-ink); border-bottom: 0; border-radius: 12px 12px 0 0;
@@ -946,7 +946,7 @@
 :root[data-design="skydeck"] .sd-wheel > .seek { width: 100%; }
 :root[data-design="skydeck"] .sd-wheel__keys { display: flex; align-items: center; justify-content: center; gap: 14px; padding-top: 4px; }
 :root[data-design="skydeck"] .sd-wheel__keys .btn-icon { color: var(--sd-ink); }
-:root[data-design="skydeck"] .sd-wheel__keys .btn-icon:hover { background: var(--cream-2); }
+@media (hover: hover) { :root[data-design="skydeck"] .sd-wheel__keys .btn-icon:hover { background: var(--cream-2); } }
 :root[data-design="skydeck"] .sd-wheel__like { position: absolute; top: 14px; right: 16px; }
 :root[data-design="skydeck"] .sd-wheel__like .btn-gloss { --size: 40px; background: var(--cream); color: var(--sd-pink); box-shadow: 0 0 0 1.5px var(--sd-ink); }
 :root[data-design="skydeck"] .sd-wheel__like .btn-gloss::before { display: none; }
@@ -1031,7 +1031,7 @@
 :root[data-design="skydeck"] .sd-mini__cap { flex: 1; align-self: stretch; display: flex; align-items: center; gap: 6px; padding-left: 2px; font: var(--sd-caps); letter-spacing: .22em; text-transform: uppercase; color: var(--ink-2); }
 :root[data-design="skydeck"] .sd-mini__cap::before { content: ""; width: 13px; height: 13px; border-radius: 50%; background: radial-gradient(circle, var(--cream) 0 2.5px, var(--sd-ink) 3px 4px, #d8c3a6 4.5px 5px, var(--sd-ink) 5.5px 6.5px, transparent 7px); }
 :root[data-design="skydeck"] .sd-mini .dk-mini__win { color: var(--sd-ink); }
-:root[data-design="skydeck"] .sd-mini .dk-mini__win:hover { background: var(--cream-2); }
+@media (hover: hover) { :root[data-design="skydeck"] .sd-mini .dk-mini__win:hover { background: var(--cream-2); } }
 /* the window: the cover through the round window, ringed by the printed scale, which turns a round over the song (the
    window's --song-pos); the star on top points at now */
 :root[data-design="skydeck"] :is(.sd-mini, .sd-mini__now) { --song-pos: inherit; }
@@ -1063,7 +1063,7 @@
 :root[data-design="skydeck"] .sd-mini .wave:focus-visible { outline: 2px solid var(--sd-pink); outline-offset: 4px; }
 :root[data-design="skydeck"] .sd-mini__keys { justify-self: stretch; display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 0; }
 :root[data-design="skydeck"] :is(.sd-mini__keys, .sd-mini__foot, .dk-strip__keys) .btn-icon { color: var(--sd-ink); }
-:root[data-design="skydeck"] :is(.sd-mini__keys, .sd-mini__foot, .dk-strip__keys) .btn-icon:hover { background: var(--cream-2); }
+@media (hover: hover) { :root[data-design="skydeck"] :is(.sd-mini__keys, .sd-mini__foot, .dk-strip__keys) .btn-icon:hover { background: var(--cream-2); } }
 :root[data-design="skydeck"] .sd-mini__keys .btn-icon[aria-pressed] { position: relative; }
 :root[data-design="skydeck"] .sd-mini__keys .btn-icon[aria-pressed="true"]::after {
   content: ""; position: absolute; left: 50%; bottom: -1px; width: 12px; height: 12px; margin-left: -6px; background: var(--sd-star) center / contain no-repeat;
@@ -1096,10 +1096,14 @@
 :root[data-design="skydeck"] :is(.sheet, .dialog, .menu, .popover, .card, .ctx) { --sd-scroll: #2b2550; }
 /* the star pointer: a menu's hovered or focused item is inked in, with the pointer star at its end (as the menu's current place) */
 :root[data-design="skydeck"] .menu__item { position: relative; }
-:root[data-design="skydeck"] .menu__item:is(:hover, :focus-visible) { background: var(--sd-ink); color: var(--panel); }
-:root[data-design="skydeck"] .menu__item:is(:hover, :focus-visible) .ic { color: var(--sd-pink-lt); }
-:root[data-design="skydeck"] .menu__item:is(:hover, :focus-visible)::after { content: ""; position: absolute; right: 10px; top: 50%; width: 14px; height: 14px; margin-top: -7px; background: var(--sd-star) center / contain no-repeat; }
-:root[data-design="skydeck"] .menu__item--danger:is(:hover, :focus-visible) { color: var(--sd-pink-lt); }
+:root[data-design="skydeck"] .menu__item:is(:focus-visible) { background: var(--sd-ink); color: var(--panel); }
+@media (hover: hover) { :root[data-design="skydeck"] .menu__item:is(:hover) { background: var(--sd-ink); color: var(--panel); } }
+:root[data-design="skydeck"] .menu__item:is(:focus-visible) .ic { color: var(--sd-pink-lt); }
+@media (hover: hover) { :root[data-design="skydeck"] .menu__item:is(:hover) .ic { color: var(--sd-pink-lt); } }
+:root[data-design="skydeck"] .menu__item:is(:focus-visible)::after { content: ""; position: absolute; right: 10px; top: 50%; width: 14px; height: 14px; margin-top: -7px; background: var(--sd-star) center / contain no-repeat; }
+@media (hover: hover) { :root[data-design="skydeck"] .menu__item:is(:hover)::after { content: ""; position: absolute; right: 10px; top: 50%; width: 14px; height: 14px; margin-top: -7px; background: var(--sd-star) center / contain no-repeat; } }
+:root[data-design="skydeck"] .menu__item--danger:is(:focus-visible) { color: var(--sd-pink-lt); }
+@media (hover: hover) { :root[data-design="skydeck"] .menu__item--danger:is(:hover) { color: var(--sd-pink-lt); } }
 /* dialogs and sheets are the printed card too: a double rule inside, the title in spaced capitals led by a star, and the
    pin at the corner that holds it (the pin's head lights while sound plays, as the rail's) */
 :root[data-design="skydeck"] :is(.dialog, .sheet) { box-shadow: var(--sd-rule), var(--sd-lift); border-radius: 22px; }

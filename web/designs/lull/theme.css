@@ -373,7 +373,7 @@
 :root[data-design="lull"] .ctx__head .badge-count { min-width: 16px; height: 16px; font-size: .625rem; }
 :root[data-design="lull"] .ctx__head [data-act="close-panel"] { position: absolute; top: 11px; right: 24px; width: 24px; height: 24px; border-radius: 50%; color: var(--v-chrome-ink); background: var(--v-chrome-key); box-shadow: var(--v-chrome-sh); }
 :root[data-design="lull"] .ctx__head [data-act="close-panel"] .ic { width: 13px; height: 13px; filter: drop-shadow(0 1px 0 rgba(255, 255, 255, .8)); }
-:root[data-design="lull"] .ctx__head [data-act="close-panel"]:hover { background: var(--v-chrome-key); filter: brightness(1.06); }
+@media (hover: hover) { :root[data-design="lull"] .ctx__head [data-act="close-panel"]:hover { background: var(--v-chrome-key); filter: brightness(1.06); } }
 :root[data-design="lull"] .ctx .trow.is-playing { background: color-mix(in srgb, var(--v-edge-2) 12%, transparent); box-shadow: inset 3px 0 0 var(--v-edge-2); }
 /* queue window: the radio is a 40 px pink strip (name, "keeps adding", switch). Steer drops down
    from it as a little paper panel while the strip is hovered or holds focus, so the queue keeps its rows and ends
@@ -433,7 +433,7 @@
 :root[data-design="lull"] .nav-pill .ic { width: 18px; height: 18px; }
 /* a pill that gave way (layout.js, data-fit) is a round key with its icon */
 :root[data-design="lull"] .header .nav-pill[data-fit-out] { width: 40px; padding: 0; }   /* the icon alone, centred: the text padding stays with the label */
-:root[data-design="lull"] :is(.nav-pill, .header .btn-icon):hover { background: color-mix(in srgb, var(--v-clear), #fff 18%); }
+@media (hover: hover) { :root[data-design="lull"] :is(.nav-pill, .header .btn-icon):hover { background: color-mix(in srgb, var(--v-clear), #fff 18%); } }
 :root[data-design="lull"] :is(.nav-pill, .header .btn-icon)[aria-current="page"], :root[data-design="lull"] .header .btn-icon[aria-pressed="true"] {
   color: #fff; background: var(--v-gel); box-shadow: var(--v-shine), 0 0 0 1px var(--v-gel-edge); text-shadow: 0 1px 0 var(--v-gel-edge);
 }
@@ -525,7 +525,7 @@
 :root[data-design="lull"] .pbar__now :is(.pbar__title a, .pbar__from b) { color: var(--v-lcd-ink); text-shadow: var(--v-lcd-glow); }
 :root[data-design="lull"] .pbar__now :is(.pbar__artist a, .pbar__from) { color: var(--v-lcd-ink-2); font-weight: 800; }
 :root[data-design="lull"] .bezel-thumb { padding: 0; background: none; border: 0; border-radius: 12px; }
-:root[data-design="lull"] .bezel-thumb:hover { background: none; }
+@media (hover: hover) { :root[data-design="lull"] .bezel-thumb:hover { background: none; } }
 :root[data-design="lull"] .pbar__now :is(.cover-zoom, .bezel-thumb) { --song-pos: inherit; }
 :root[data-design="lull"] .pbar__now .bezel-thumb { width: 104px; height: 104px; margin: 4px 0; border-radius: 50%; padding: 6px; background: var(--v-chrome-key); box-shadow: var(--v-chrome-sh), 0 8px 16px -6px rgba(20, 10, 80, .55); }
 :root[data-design="lull"][data-theme="night"] .pbar__now .bezel-thumb { box-shadow: var(--v-chrome-sh), 0 0 24px -4px rgba(150, 110, 255, .6); }
@@ -563,7 +563,7 @@
 :root[data-design="lull"] .pbar .btn-icon { color: var(--v-chrome-ink); }
 :root[data-design="lull"] .pbar :is(.pbar__controls, .pbar__tools) .btn-icon { border-radius: 50%; background: var(--v-chrome-key); box-shadow: var(--v-chrome-sh); border: 0; }
 :root[data-design="lull"] .pbar :is(.pbar__controls, .pbar__tools) .btn-icon .ic { filter: drop-shadow(0 1px 0 rgba(255, 255, 255, .8)); }
-:root[data-design="lull"] .pbar :is(.pbar__controls, .pbar__tools) .btn-icon:hover { filter: brightness(1.06); }
+@media (hover: hover) { :root[data-design="lull"] .pbar :is(.pbar__controls, .pbar__tools) .btn-icon:hover { filter: brightness(1.06); } }
 :root[data-design="lull"] .pbar :is(.pbar__controls, .pbar__tools) .btn-icon:active { transform: translateY(1px); }
 :root[data-design="lull"] .pbar :is(.pbar__controls, .pbar__tools) .btn-icon:is([aria-pressed="true"], .is-on) { color: #fff; background: var(--v-gel); box-shadow: var(--v-shine-sm), 0 0 0 1px var(--v-gel-edge), 0 0 12px rgba(140, 110, 255, .7); }
 :root[data-design="lull"] .pbar :is(.pbar__controls, .pbar__tools) .btn-icon:is([aria-pressed="true"], .is-on) .ic { filter: none; }
@@ -647,21 +647,23 @@
 :root[data-design="lull"] .btn { min-height: 36px; padding: 0 15px; border-width: var(--stroke); font: 800 .875rem/1.1 var(--f-ui); }
 :root[data-design="lull"] .btn:not(.btn--primary, .btn--danger) { color: var(--v-clear-ink); border-color: transparent; border-radius: 999px; }
 :root[data-design="lull"] :where(.btn, .btn-icon:not(.btn-icon--bare), .chip, .pill-filter, .kbd, .tab) { background: var(--l-gel); box-shadow: var(--l-gel-sh); }
-:root[data-design="lull"] :where(.btn, .btn-icon:not(.btn-icon--bare), button.chip, a.chip, .pill-filter):hover { background: var(--l-gel); filter: brightness(1.04); }
+@media (hover: hover) { :root[data-design="lull"] :where(.btn, .btn-icon:not(.btn-icon--bare), button.chip, a.chip, .pill-filter):hover { background: var(--l-gel); filter: brightness(1.04); } }
 :root[data-design="lull"] :where(.btn, .btn-icon, .chip, .pill-filter, .tab, .nav-pill):active { box-shadow: inset 0 2px 4px rgba(43, 38, 80, .3); }
 :root[data-design="lull"] .btn--sm { min-height: 30px; padding: 0 12px; font-size: .8125rem; }
-:root[data-design="lull"] .btn--quiet, :root[data-design="lull"] .btn--quiet:is(:hover, :active) { background: transparent; border-color: transparent; padding: 0 6px; box-shadow: none; filter: none; }
-:root[data-design="lull"] .btn--danger, :root[data-design="lull"] .btn--danger:hover { background: var(--l-hi), var(--l-pink-gloss); border-color: var(--l-pink-edge); color: #fff; text-shadow: 0 1px 0 rgba(90, 20, 70, .6); }
+:root[data-design="lull"] .btn--quiet, :root[data-design="lull"] .btn--quiet:is(:active) { background: transparent; border-color: transparent; padding: 0 6px; box-shadow: none; filter: none; }
+@media (hover: hover) { :root[data-design="lull"] .btn--quiet:is(:hover) { background: transparent; border-color: transparent; padding: 0 6px; box-shadow: none; filter: none; } }
+:root[data-design="lull"] .btn--danger { background: var(--l-hi), var(--l-pink-gloss); border-color: var(--l-pink-edge); color: #fff; text-shadow: 0 1px 0 rgba(90, 20, 70, .6); }
+@media (hover: hover) { :root[data-design="lull"] .btn--danger:hover { background: var(--l-hi), var(--l-pink-gloss); border-color: var(--l-pink-edge); color: #fff; text-shadow: 0 1px 0 rgba(90, 20, 70, .6); } }
 :root[data-design="lull"] .btn-icon { width: 36px; height: 36px; border-width: var(--stroke); border-color: var(--l-rule); }
 :root[data-design="lull"] .btn-icon--bare { border-color: transparent; }
-:root[data-design="lull"] .btn-icon--bare:hover { background: color-mix(in srgb, var(--l-tile) 35%, transparent); }
+@media (hover: hover) { :root[data-design="lull"] .btn-icon--bare:hover { background: color-mix(in srgb, var(--l-tile) 35%, transparent); } }
 :root[data-design="lull"] .btn-icon[aria-pressed="true"] { color: var(--link); }
 :root[data-design="lull"] .btn-icon__badge { background: var(--pink); color: #2b2650; border-color: var(--l-card); }
 :root[data-design="lull"] .chip {
   min-height: 26px; padding: 2px 11px; border: var(--stroke) solid var(--l-rule); color: var(--link);
   font: 700 .8125rem/1.2 var(--f-ui);
 }
-:root[data-design="lull"] button.chip:hover, :root[data-design="lull"] a.chip:hover { border-color: var(--l-edge); }
+@media (hover: hover) { :root[data-design="lull"] button.chip:hover, :root[data-design="lull"] a.chip:hover { border-color: var(--l-edge); } }
 :root[data-design="lull"] .chip[aria-pressed="true"], :root[data-design="lull"] .chip.is-on { background: var(--l-hi-sm), var(--l-gloss); color: #fff; border-color: var(--l-gloss-edge); box-shadow: var(--l-press-sh); text-shadow: 0 1px 0 rgba(40, 25, 110, .55); }
 :root[data-design="lull"] .chip-reason {
   padding: 4px 10px 4px 8px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--pink) 60%, transparent);
@@ -712,7 +714,7 @@
 :root[data-design="lull"] .btn--primary, :root[data-design="lull"] .pill-filter[aria-pressed="true"] {
   background: var(--v-gel); color: #fff; border-color: var(--v-gel-edge); text-shadow: 0 1px 0 var(--v-gel-edge); box-shadow: var(--v-shine), 0 0 0 1px var(--v-gel-edge); margin-bottom: 0;
 }
-:root[data-design="lull"] .btn--primary:hover { background: var(--v-gel); filter: brightness(1.06); }
+@media (hover: hover) { :root[data-design="lull"] .btn--primary:hover { background: var(--v-gel); filter: brightness(1.06); } }
 :root[data-design="lull"] .btn--primary:active { transform: translateY(1px); }
 :root[data-design="lull"] .btn--primary .ic { filter: none; }
 /* the chosen design's picture: the disc's rainbow turns across it on hover. Reduced motion: shown, not turned */
@@ -757,7 +759,7 @@
   gap: 1px; padding: 8px 8px 11px; background: var(--l-card); border: var(--stroke) solid var(--l-edge); border-radius: 14px;
   box-shadow: var(--l-card-stack); margin-bottom: 10px; transition: transform var(--dur-3) var(--ease-spring), box-shadow var(--dur-3) var(--ease-spring);
 }
-:root[data-design="lull"] .tile:hover { transform: translateY(-3px); box-shadow: 0 7px 0 -1.5px var(--stack-1), 0 7px 0 0 var(--l-edge), 0 13px 0 -1.5px var(--stack-2), 0 13px 0 0 var(--l-edge); }
+@media (hover: hover) { :root[data-design="lull"] .tile:hover { transform: translateY(-3px); box-shadow: 0 7px 0 -1.5px var(--stack-1), 0 7px 0 0 var(--l-edge), 0 13px 0 -1.5px var(--stack-2), 0 13px 0 0 var(--l-edge); } }
 :root[data-design="lull"] .tile__art { margin-bottom: 8px; }
 :root[data-design="lull"] .tile__art .cover { border-radius: 10px; }
 :root[data-design="lull"] .tile__title, :root[data-design="lull"] .tile__by, :root[data-design="lull"] .tile__meta { padding: 0 2px; }
@@ -767,7 +769,7 @@
 :root[data-design="lull"] .tile__play, :root[data-design="lull"] .disc-pick__play {
   right: 7px; bottom: 7px; width: 36px; height: 36px; color: var(--v-chrome-ink); background: var(--v-chrome-key); border: 0; box-shadow: var(--v-chrome-sh);
 }
-:root[data-design="lull"] .tile__play:hover { filter: brightness(1.06); }
+@media (hover: hover) { :root[data-design="lull"] .tile__play:hover { filter: brightness(1.06); } }
 :root[data-design="lull"] .tile__play .ic, :root[data-design="lull"] .disc-pick__play .ic { filter: drop-shadow(0 1px 0 rgba(255, 255, 255, .85)); }
 
 /* =====================================================================
@@ -806,7 +808,8 @@
    Track rows, lists
    ===================================================================== */
 :root[data-design="lull"] .trow { border-radius: 12px; min-height: 58px; padding: 5px 8px; }
-:root[data-design="lull"] .trow:hover, :root[data-design="lull"] .trow:focus-within { background: color-mix(in srgb, var(--l-tile) 26%, transparent); }
+:root[data-design="lull"] .trow:focus-within { background: color-mix(in srgb, var(--l-tile) 26%, transparent); }
+@media (hover: hover) { :root[data-design="lull"] .trow:hover { background: color-mix(in srgb, var(--l-tile) 26%, transparent); } }
 :root[data-design="lull"] .trow.is-playing { background: color-mix(in srgb, var(--l-tile) 34%, transparent); }
 :root[data-design="lull"] .trow__title { font: 800 .9375rem/1.25 var(--f-ui); }
 :root[data-design="lull"] .trow__artist, :root[data-design="lull"] .trow__album, :root[data-design="lull"] .trow__added { font: 600 .8125rem/1.3 var(--f-ui); }
@@ -887,7 +890,7 @@
 }
 :root[data-design="lull"] .sheet__title { color: #fff; font: 400 1.25rem/1 var(--f-disp); letter-spacing: .01em; text-transform: lowercase; -webkit-text-stroke: 4px var(--v-edge); paint-order: stroke fill; text-shadow: 0 2px 0 var(--v-edge); transform: skewX(-10deg); transform-origin: 0 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 6px 4px 0; }
 :root[data-design="lull"] .sheet__head .btn-icon { width: 26px; height: 26px; border-radius: 50%; border: 0; color: var(--v-chrome-ink); background: var(--v-chrome-key); box-shadow: var(--v-chrome-sh); }
-:root[data-design="lull"] .sheet__head .btn-icon:hover { background: var(--v-chrome-key); filter: brightness(1.06); }
+@media (hover: hover) { :root[data-design="lull"] .sheet__head .btn-icon:hover { background: var(--v-chrome-key); filter: brightness(1.06); } }
 :root[data-design="lull"] .sheet__body, :root[data-design="lull"] .sheet__foot { background: var(--v-screen); }
 :root[data-design="lull"] .sheet__body { border-radius: 14px 14px 0 0; }
 :root[data-design="lull"] .sheet__body:last-child, :root[data-design="lull"] .sheet__foot { border-radius: 0 0 14px 14px; }
@@ -900,7 +903,8 @@
 :root[data-design="lull"] .sys-ios__ic { background: var(--l-hi-sm), var(--l-tile); color: var(--l-tile-ink); border-color: var(--l-edge); }
 :root[data-design="lull"] .popover, :root[data-design="lull"] .menu { background: var(--v-screen); border: 0; border-radius: 14px; box-shadow: 0 0 0 4px rgba(255, 255, 255, .55), 0 0 0 5px color-mix(in srgb, var(--v-edge) 60%, transparent), 0 14px 26px -12px rgba(30, 10, 110, .55); }
 :root[data-design="lull"] .menu__item { border-radius: 9px; min-height: 40px; font: 700 .875rem/1.2 var(--f-ui); }
-:root[data-design="lull"] .menu__item:hover, :root[data-design="lull"] .menu__item:focus-visible { background: color-mix(in srgb, var(--l-tile) 30%, transparent); }
+:root[data-design="lull"] .menu__item:focus-visible { background: color-mix(in srgb, var(--l-tile) 30%, transparent); }
+@media (hover: hover) { :root[data-design="lull"] .menu__item:hover { background: color-mix(in srgb, var(--l-tile) 30%, transparent); } }
 :root[data-design="lull"] .menu__item .ic { color: var(--link); }
 :root[data-design="lull"] .popover__head { font: 800 1rem/1.2 var(--f-ui); }
 /* toasts: tiny lull windows (title bar with orbs, then the message and its actions) in a slot above the dock's right
@@ -1031,9 +1035,12 @@
   border: 0; border-radius: 10px; background: var(--v-shell); box-shadow: inset 0 0 0 1.5px var(--v-rim), inset 0 0 0 6px var(--v-rib-hi), 0 0 0 1px rgba(60, 30, 160, .5), 0 10px 18px -10px rgba(30, 10, 110, .55);
   transition: transform var(--dur-3) var(--ease-spring), box-shadow var(--dur-3) var(--ease-spring);
 }
-:root[data-design="lull"] .disc-pick:hover, :root[data-design="lull"] .disc-pick:focus-within {
+:root[data-design="lull"] .disc-pick:focus-within {
   transform: translateY(-3px);
 }
+@media (hover: hover) { :root[data-design="lull"] .disc-pick:hover {
+  transform: translateY(-3px);
+} }
 /* a ring around the whole card, plus a mark on the focused control: the title and artist get a focus-coloured
    underline (an outline would be clipped by the title's two-line clamp), the buttons and reason chips their own ring */
 :root[data-design="lull"] .disc-pick:focus-within { outline: 2px solid var(--focus); outline-offset: 3px; }
@@ -1055,7 +1062,7 @@
 :root[data-design="lull"] .disc-pick .cluster:has(.chip-more) > .chip-reason { border: 0; background: none; }
 :root[data-design="lull"] .disc-pick .chip-reason { gap: 4px; padding: 4px 8px 4px 6px; font-size: .75rem; text-transform: lowercase; hyphens: manual; overflow-wrap: normal; }
 :root[data-design="lull"] .disc-pick .chip-reason__name { text-transform: none; white-space: nowrap; text-decoration: none; }
-:root[data-design="lull"] .disc-pick .chip-reason:hover .chip-reason__name { text-decoration: underline; }
+@media (hover: hover) { :root[data-design="lull"] .disc-pick .chip-reason:hover .chip-reason__name { text-decoration: underline; } }
 :root[data-design="lull"] .disc-pick .chip-more { flex: none; height: 20px; min-width: 0; margin: 0 6px 4px -4px; padding: 0 6px; border: 0; border-radius: 999px; background: var(--l-card); font-size: .6875rem; }
 /* sticker peel on hover / focus: lifts, tilts, gets a white die-cut edge, and a sparkle pops once at its corner */
 @keyframes lull-pop { 0% { opacity: 0; transform: scale(.2) rotate(-30deg); } 55% { opacity: 1; transform: scale(1.15) rotate(10deg); } 100% { opacity: 0; transform: scale(.9) rotate(20deg); } }
@@ -1064,12 +1071,18 @@
   background: var(--heart); -webkit-mask: var(--l-spark) center / contain no-repeat; mask: var(--l-spark) center / contain no-repeat;
 }
 @media (prefers-reduced-motion: no-preference) {
-  :root[data-design="lull"]:not([data-motion="reduce"]) .disc-pick:hover .disc-pick__why > :first-child, :root[data-design="lull"]:not([data-motion="reduce"]) .disc-pick:focus-within .disc-pick__why > :first-child {
+  :root[data-design="lull"]:not([data-motion="reduce"]) .disc-pick:focus-within .disc-pick__why > :first-child {
     transform: translateY(-2px) rotate(-2deg); box-shadow: 0 0 0 2px #fff, 0 4px 0 -1px color-mix(in srgb, var(--pink) 70%, transparent);
   }
-  :root[data-design="lull"]:not([data-motion="reduce"]) .disc-pick:hover .disc-pick__why > :first-child::after, :root[data-design="lull"]:not([data-motion="reduce"]) .disc-pick:focus-within .disc-pick__why > :first-child::after {
+@media (hover: hover) { :root[data-design="lull"]:not([data-motion="reduce"]) .disc-pick:hover .disc-pick__why > :first-child {
+    transform: translateY(-2px) rotate(-2deg); box-shadow: 0 0 0 2px #fff, 0 4px 0 -1px color-mix(in srgb, var(--pink) 70%, transparent);
+  } }
+  :root[data-design="lull"]:not([data-motion="reduce"]) .disc-pick:focus-within .disc-pick__why > :first-child::after {
     animation: lull-pop .6s .08s var(--ease-out) both;
   }
+@media (hover: hover) { :root[data-design="lull"]:not([data-motion="reduce"]) .disc-pick:hover .disc-pick__why > :first-child::after {
+    animation: lull-pop .6s .08s var(--ease-out) both;
+  } }
 }
 /* actions appear on hover / focus (a liked heart stays); touch screens always show them */
 :root[data-design="lull"] .disc-pick__play { opacity: 0; }
@@ -1077,8 +1090,8 @@
 :root[data-design="lull"] .disc-pick__end .btn-icon { width: 30px; height: 30px; border-radius: 50%; color: var(--v-chrome-ink); background: var(--v-chrome-key); border: 0; box-shadow: var(--v-chrome-sh); opacity: 0; }
 :root[data-design="lull"] .disc-pick__end .btn-icon .ic { width: 16px; height: 16px; }
 :root[data-design="lull"] .disc-pick__end .btn-icon.is-liked { opacity: 1; color: #fff; background: var(--v-pink); box-shadow: var(--v-shine-sm), 0 0 0 1px #a8226a; }
-:root[data-design="lull"] .disc-pick:hover .disc-pick__play, :root[data-design="lull"] .disc-pick:focus-within .disc-pick__play,
-:root[data-design="lull"] .disc-pick:hover .disc-pick__end .btn-icon, :root[data-design="lull"] .disc-pick:focus-within .disc-pick__end .btn-icon { opacity: 1; }
+:root[data-design="lull"] .disc-pick:focus-within .disc-pick__play, :root[data-design="lull"] .disc-pick:focus-within .disc-pick__end .btn-icon { opacity: 1; }
+@media (hover: hover) { :root[data-design="lull"] .disc-pick:hover .disc-pick__play, :root[data-design="lull"] .disc-pick:hover .disc-pick__end .btn-icon { opacity: 1; } }
 @media (hover: none) { :root[data-design="lull"] .disc-pick__play, :root[data-design="lull"] .disc-pick__end .btn-icon { opacity: 1; } }
 
 /* New releases: two-column list rows (art, title, artist, "Album, Oct 29 * new", play) */
@@ -1090,7 +1103,8 @@
   align-content: center; column-gap: 14px; row-gap: 0; min-height: 60px; padding: 4px 8px 4px 6px; margin: 0;
   background: none; border: 0; border-radius: 12px; box-shadow: none; transform: none;
 }
-:root[data-design="lull"] .disc-home .disc-shelf .tile:hover, :root[data-design="lull"] .disc-home .disc-shelf .tile:focus-within { background: color-mix(in srgb, var(--l-tile) 26%, transparent); transform: none; box-shadow: none; }
+:root[data-design="lull"] .disc-home .disc-shelf .tile:focus-within { background: color-mix(in srgb, var(--l-tile) 26%, transparent); transform: none; box-shadow: none; }
+@media (hover: hover) { :root[data-design="lull"] .disc-home .disc-shelf .tile:hover { background: color-mix(in srgb, var(--l-tile) 26%, transparent); transform: none; box-shadow: none; } }
 :root[data-design="lull"] .disc-home .disc-shelf .tile__art { display: contents; }
 :root[data-design="lull"] .disc-home .disc-shelf .tile__art > a { grid-area: art; align-self: center; }
 :root[data-design="lull"] .disc-home .disc-shelf .tile__art .cover { --cover-size: 52px; width: 52px; border-radius: 8px; }
@@ -1103,10 +1117,11 @@
   color: var(--v-chrome-ink); background: var(--v-chrome-key); border: 0; box-shadow: var(--v-chrome-sh);
 }
 :root[data-design="lull"] .disc-home .disc-shelf .tile__play .ic { width: 14px; height: 14px; }
-:root[data-design="lull"] .disc-home .disc-shelf .tile__play:hover { filter: brightness(1.06); }
+@media (hover: hover) { :root[data-design="lull"] .disc-home .disc-shelf .tile__play:hover { filter: brightness(1.06); } }
 :root[data-design="lull"] .disc-shelf { grid-auto-columns: minmax(148px, min(200px, calc((100% - 5 * 16px) / 6))); }
 :root[data-design="lull"] .disc-tag { border-radius: 12px; }
-:root[data-design="lull"] .disc-tag:hover, :root[data-design="lull"] .disc-tag:focus-within { background: color-mix(in srgb, var(--l-tile) 26%, transparent); }
+:root[data-design="lull"] .disc-tag:focus-within { background: color-mix(in srgb, var(--l-tile) 26%, transparent); }
+@media (hover: hover) { :root[data-design="lull"] .disc-tag:hover { background: color-mix(in srgb, var(--l-tile) 26%, transparent); } }
 
 /* radio starters = pills: sized to their words (name on one line, kind under it), a round art orb with
    a gloss play badge; they wrap to a second row rather than squeeze a name onto three lines */
@@ -1115,7 +1130,8 @@
   position: relative; display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; min-height: 52px; padding: 5px 18px 5px 6px; border-radius: 999px;
   background: var(--v-clear); border: 0; box-shadow: var(--v-clear-sh);
 }
-:root[data-design="lull"] .disc-starter:hover, :root[data-design="lull"] .disc-starter:focus-within { background: color-mix(in srgb, var(--v-clear), #fff 18%); }
+:root[data-design="lull"] .disc-starter:focus-within { background: color-mix(in srgb, var(--v-clear), #fff 18%); }
+@media (hover: hover) { :root[data-design="lull"] .disc-starter:hover { background: color-mix(in srgb, var(--v-clear), #fff 18%); } }
 /* core sets --cover-size inline (48px); the pill's orb is smaller, so this one needs !important */
 :root[data-design="lull"] .disc-starter .cover { --cover-size: 40px !important; width: 40px; flex: none; }
 :root[data-design="lull"] .disc-starter__main { display: grid; min-width: 0; }
@@ -1126,7 +1142,7 @@
 :root[data-design="lull"] .disc-starter__play {
   position: absolute; left: 28px; bottom: 2px; width: 24px; height: 24px; border-radius: 50%; color: var(--v-chrome-ink); background: var(--v-chrome-key); border: 0; box-shadow: var(--v-chrome-sh);
 }
-:root[data-design="lull"] .disc-starter__play:hover { filter: brightness(1.06); }
+@media (hover: hover) { :root[data-design="lull"] .disc-starter__play:hover { filter: brightness(1.06); } }
 :root[data-design="lull"] .disc-starter__play .ic { width: 12px; height: 12px; }
 
 /* loading: skeletons shaped like the real content (tall picks, two-column release rows, starter pills) */
@@ -1213,7 +1229,8 @@
 :root[data-design="lull"] .card:not(.disc-mod > .card) > .label-rule.card-head > .card-head__title { padding-left: 36px; }
 :root[data-design="lull"] .card > .label-rule.card-head::after { background: repeating-linear-gradient(90deg, var(--v-edge-2) 0 2px, transparent 2px 7px) 0 50% / 100% 2px no-repeat; opacity: .4; height: 2px; }
 :root[data-design="lull"] .btn--quiet { border-radius: 999px; padding: 0 12px; color: var(--v-clear-ink); font-weight: 900; background: var(--v-clear); border: 0; box-shadow: var(--v-clear-sh); }
-:root[data-design="lull"] .btn--quiet:is(:hover, :active) { background: color-mix(in srgb, var(--v-clear), #fff 18%); box-shadow: var(--v-clear-sh); padding: 0 12px; }
+:root[data-design="lull"] .btn--quiet:is(:active) { background: color-mix(in srgb, var(--v-clear), #fff 18%); box-shadow: var(--v-clear-sh); padding: 0 12px; }
+@media (hover: hover) { :root[data-design="lull"] .btn--quiet:is(:hover) { background: color-mix(in srgb, var(--v-clear), #fff 18%); box-shadow: var(--v-clear-sh); padding: 0 12px; } }
 /* picks: MiniDiscs */
 :root[data-design="lull"] .disc-pick::before { content: "\25B2  insert this end"; position: absolute; top: 4px; left: 10px; color: var(--v-clear-ink); font: italic 900 .5625rem/1 var(--f-ui); letter-spacing: .08em; opacity: .8; pointer-events: none; }
 :root[data-design="lull"] .disc-pick__art { border-radius: 8px; overflow: visible; }
@@ -1606,7 +1623,7 @@
 :root[data-design="lull"] .dk-strip > .seek--line .seek__played { background: var(--v-edge-2); border-radius: 9px; }
 :root[data-design="lull"] .dk-strip .btn-icon { color: var(--v-chrome-ink); border-radius: 50%; background: var(--v-chrome-key); box-shadow: var(--v-chrome-sh); width: 32px; height: 32px; }
 :root[data-design="lull"] .dk-strip .btn-icon--sm { width: 28px; height: 28px; }
-:root[data-design="lull"] .dk-strip .btn-icon:hover { filter: brightness(1.06); }
+@media (hover: hover) { :root[data-design="lull"] .dk-strip .btn-icon:hover { filter: brightness(1.06); } }
 :root[data-design="lull"] .dk-strip .btn-icon .ic { filter: drop-shadow(0 1px 0 rgba(255, 255, 255, .8)); }
 :root[data-design="lull"] .dk-strip .btn-icon:is([aria-pressed="true"], .is-liked) { color: #fff; background: var(--v-pink); box-shadow: var(--v-shine-sm), 0 0 0 1px #a8226a; }
 :root[data-design="lull"] .dk-strip .dk-sep { background: color-mix(in srgb, var(--v-edge) 30%, transparent); margin: 0 2px; }
@@ -1678,7 +1695,8 @@
     position: relative; display: grid; grid-template-columns: 64px minmax(0, 1fr); grid-template-areas: "art title" "art by" "art meta";
     align-content: center; column-gap: 14px; min-height: 76px; padding: 6px 52px 6px 6px; margin: 0; background: none; border: 0; border-radius: 12px; box-shadow: none; transform: none;
   }
-  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile:is(:hover, :focus-within) { background: color-mix(in srgb, var(--l-tile) 26%, transparent); transform: none; box-shadow: none; }
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile:is(:focus-within) { background: color-mix(in srgb, var(--l-tile) 26%, transparent); transform: none; box-shadow: none; }
+@media (hover: hover) { :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile:is(:hover) { background: color-mix(in srgb, var(--l-tile) 26%, transparent); transform: none; box-shadow: none; } }
   :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__art { display: contents; }
   :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__art > :first-child { grid-area: art; }
   :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__art .cover { width: 64px; border-radius: 8px; }
@@ -1758,7 +1776,7 @@
 /* settings: a control-panel list on lavender beside flat sections */
 :root[data-design="lull"] .sys-nav { background: var(--l-frame); border: 0; border-radius: 12px; box-shadow: inset 0 0 0 var(--stroke) var(--l-rule); }
 /* the item shown as selected (current, or Playback beside the list) keeps its own colours under the pointer */
-:root[data-design="lull"] .sys-nav__item:not(.sys-nav__item--default, [aria-current="page"]):hover { background: color-mix(in srgb, var(--l-tile) 40%, transparent); }
+@media (hover: hover) { :root[data-design="lull"] .sys-nav__item:not(.sys-nav__item--default, [aria-current="page"]):hover { background: color-mix(in srgb, var(--l-tile) 40%, transparent); } }
 :root[data-design="lull"] .sys-nav__item[aria-current="page"] { background: var(--l-hi), var(--l-gloss); color: #fff; box-shadow: var(--l-press-sh), 0 0 0 var(--stroke) var(--l-gloss-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55); }
 :root[data-design="lull"] .sys-nav__item[aria-current="page"] .sys-nav__desc, :root[data-design="lull"] .sys-nav__item[aria-current="page"] .ic { color: #fff; }
 
@@ -1783,7 +1801,7 @@
   position: relative; height: auto; aspect-ratio: 16 / 10; border: var(--stroke) solid var(--l-edge); border-radius: 9px;
 }
 :root[data-design="lull"] .sys-design__pv::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
-:root[data-design="lull"] .sys-design[aria-checked="true"]:hover .sys-design__pv::after { --l-foil: 150deg; background: var(--l-foil-bg); }
+@media (hover: hover) { :root[data-design="lull"] .sys-design[aria-checked="true"]:hover .sys-design__pv::after { --l-foil: 150deg; background: var(--l-foil-bg); } }
 
 /* welcome: the steps sit flat under the ribbon */
 :root[data-design="lull"] .sys-welcome .sparkle { display: none; }

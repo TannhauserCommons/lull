@@ -206,9 +206,10 @@
   box-shadow: var(--stack-sm); transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-1);
 }
 :root[data-design="petal"] :where(.btn--primary, .btn-gloss) { background-color: var(--peri); color: var(--pt-key-ink); }
-:root[data-design="petal"] :where(.btn--primary, .btn-gloss):hover { background-color: var(--pt-key-hi); }
+@media (hover: hover) { :root[data-design="petal"] :where(.btn--primary, .btn-gloss):hover { background-color: var(--pt-key-hi); } }
 :root[data-design="petal"] :where(.pt-win__key, .pbar__controls .btn-icon, .tile__play) { background-color: var(--panel); color: var(--link); }
-:root[data-design="petal"] :where(.pt-win__key, .pbar__controls .btn-icon, .tile__play):is(:hover, [aria-pressed="true"]) { background-color: var(--peri); color: var(--pt-key-ink); }
+:root[data-design="petal"] :where(.pt-win__key, .pbar__controls .btn-icon, .tile__play):is([aria-pressed="true"]) { background-color: var(--peri); color: var(--pt-key-ink); }
+@media (hover: hover) { :root[data-design="petal"] :where(.pt-win__key, .pbar__controls .btn-icon, .tile__play):is(:hover) { background-color: var(--peri); color: var(--pt-key-ink); } }
 :root[data-design="petal"] :where(.btn--primary, .btn--danger, .btn-gloss, .pt-win__key, .pbar__controls .btn-icon, .tile__play):active { transform: translate(2px, 2px); box-shadow: none; }
 :root[data-design="petal"] :is(.btn--primary, .btn--danger) { margin-bottom: 2px; }
 :root[data-design="petal"] .btn-gloss::before { inset: 4px 4px auto; height: 2px; border-radius: 0; background: var(--pt-key-hi); opacity: 1; z-index: 0; }   /* the key's lit top edge */
@@ -287,7 +288,7 @@
   -webkit-mask: var(--px-check) center / contain no-repeat; mask: var(--px-check) center / contain no-repeat;
 }
 :root[data-design="petal"] .btn-icon:not(.btn-icon--bare) { background-color: var(--panel); color: var(--link); }
-:root[data-design="petal"] .btn-icon:not(.btn-icon--bare):hover { background-color: var(--panel-2); }
+@media (hover: hover) { :root[data-design="petal"] .btn-icon:not(.btn-icon--bare):hover { background-color: var(--panel-2); } }
 :root[data-design="petal"] :is(.btn-icon__badge, .badge-count) { border-radius: 0; border-color: var(--line); }
 
 /* like: a 3-frame pixel heart burst plus five petals falling 40 px in steps (both off under reduced motion, base.css) */
@@ -311,7 +312,7 @@
 @keyframes pt-petals { 0% { opacity: 1; transform: translateY(0); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(40px); } }
 
 :root[data-design="petal"] .chip { background-color: var(--lavender); font: 700 .8125rem/1.2 var(--f-ui); min-height: 28px; }
-:root[data-design="petal"] :is(button.chip, a.chip):hover { background-color: var(--peri); }
+@media (hover: hover) { :root[data-design="petal"] :is(button.chip, a.chip):hover { background-color: var(--peri); } }
 /* a pressed chip (a follow, a preset) is state: filled and lifted, as a pressed filter pill */
 :root[data-design="petal"] :is(.chip[aria-pressed="true"], .chip.is-on, .pill-filter[aria-pressed="true"]) { background-color: var(--peri); box-shadow: var(--stack-sm); }
 /* the reason a song was picked is highlighted, not boxed */
@@ -424,7 +425,7 @@
    ===================================================================== */
 :root[data-design="petal"] .trow { border-radius: 0; }
 :root[data-design="petal"] .tlist .trow { background-image: linear-gradient(90deg, var(--pt-rule) 50%, transparent 0); background-size: 6px 2px; background-repeat: repeat-x; background-position: 0 100%; }
-:root[data-design="petal"] .trow:hover { background-color: var(--bg-2); }
+@media (hover: hover) { :root[data-design="petal"] .trow:hover { background-color: var(--bg-2); } }
 :root[data-design="petal"] .trow.is-playing { background-color: var(--pt-row); box-shadow: inset 4px 0 0 var(--heart); }
 :root[data-design="petal"] .trow.is-selected { box-shadow: inset 0 0 0 2px var(--focus); }
 :root[data-design="petal"] .trow__num, :root[data-design="petal"] .now-qcard .now-q__row::after { font: 400 1.125rem/1 var(--f-zine); font-variant-numeric: tabular-nums; color: var(--link); }
@@ -617,7 +618,7 @@
   :root[data-design="petal"] .header__nav > .nav-pill:nth-child(4n+2) { background-color: var(--pt-tab-2); }
   :root[data-design="petal"] .header__nav > .nav-pill:nth-child(4n+3) { background-color: var(--pt-tab-3); }
   :root[data-design="petal"] .header__nav > .nav-pill:nth-child(4n+4) { background-color: var(--pt-tab-4); }
-  :root[data-design="petal"] .nav-pill:hover { transform: translateY(-3px); }
+  @media (hover: hover) { :root[data-design="petal"] .nav-pill:hover { transform: translateY(-3px); } }
   :root[data-design="petal"] .nav-pill:not([data-fit-out]) .ic { display: none; }
   :root[data-design="petal"] .nav-pill[aria-current="page"] { z-index: 1; height: 48px; transform: none; background-color: var(--panel); color: var(--fg-sky); }
   :root[data-design="petal"] .nav-pill[aria-current="page"]::before {
@@ -666,7 +667,7 @@
 :root[data-design="petal"] .tray__pill { height: 28px; border-radius: 0; padding: 0 9px 0 8px; gap: 6px; font: 750 .8125rem/1 var(--f-ui); letter-spacing: .01em; font-variant-numeric: tabular-nums; }
 :root[data-design="petal"] .tray__pill .sg { border-radius: 0; }
 :root[data-design="petal"] .tray--full .tray__pill:last-child::after { content: "B"; margin-left: -6px; }
-:root[data-design="petal"] .tray:hover .tray__pill { background: var(--pink-light); }
+@media (hover: hover) { :root[data-design="petal"] .tray:hover .tray__pill { background: var(--pink-light); } }
 :root[data-design="petal"] .tray--compact .sg--ok { display: none; }
 :root[data-design="petal"] .tray--compact .tray__gb::after { content: "B"; margin-left: 1px; }
 :root[data-design="petal"] .tray--compact .tray__pill:not(:has(.sg--warn, .sg--down))::before {
@@ -732,7 +733,7 @@
 :root[data-design="petal"] .pbar__state { flex-wrap: wrap; row-gap: 4px; white-space: normal; background-color: var(--panel); color: var(--fg); }
 :root[data-design="petal"] .pbar__state.is-error { background-color: var(--pt-tab-1); }
 :root[data-design="petal"] .pbar__state .btn--quiet { min-height: 26px; padding: 0 8px; background-color: var(--panel); }
-:root[data-design="petal"] .pbar__state .btn--quiet:hover { background-color: var(--peri); text-decoration: none; }
+@media (hover: hover) { :root[data-design="petal"] .pbar__state .btn--quiet:hover { background-color: var(--peri); text-decoration: none; } }
 :root[data-design="petal"] .pbar__save-step { right: -6px; bottom: -6px; }
 @media (max-width: 1099px) { :root[data-design="petal"] .pbar__badges { display: none; } }
 
@@ -775,7 +776,7 @@
   :root[data-design="petal"] .pbar__tools > .btn-icon { width: 42px; }
   :root[data-design="petal"] .pbar__tools > :nth-child(3n) { background-color: var(--pt-tab-3); }
   :root[data-design="petal"] .pbar__tools > :nth-child(3n+1) { background-color: var(--pt-tab-4); }
-  :root[data-design="petal"] .pbar__tools > .btn-icon:hover { background-color: var(--pt-tab-1); }
+  @media (hover: hover) { :root[data-design="petal"] .pbar__tools > .btn-icon:hover { background-color: var(--pt-tab-1); } }
   :root[data-design="petal"] .pbar__tools > .btn-icon:is([aria-pressed="true"], .is-on) { height: 36px; margin-bottom: -2px; background-color: var(--panel); color: var(--link); }
   :root[data-design="petal"] .pbar__tools > .vol { display: inline-flex; align-items: center; gap: 2px; padding: 0 10px 0 2px; background-color: var(--pt-tab-1); }
   :root[data-design="petal"] .pbar__tools > .vol > .btn-icon { width: 34px; height: 30px; }
@@ -976,7 +977,7 @@
 :root[data-design="petal"] .pt-win__pages { position: relative; display: flex; gap: 3px; }
 :root[data-design="petal"] .pt-win__pages::before { content: ""; position: absolute; inset: -6px -2px 0; }
 :root[data-design="petal"] .pt-win__page { display: inline-flex; align-items: center; min-height: 30px; }
-:root[data-design="petal"] .pt-win__pages:hover .pt-win__page { color: var(--fg); }
+@media (hover: hover) { :root[data-design="petal"] .pt-win__pages:hover .pt-win__page { color: var(--fg); } }
 :root[data-design="petal"] .pt-win__pages:focus-visible { outline-offset: 2px; }
 :root[data-design="petal"] .pt-win__head { min-width: 0; padding-bottom: 8px; font: 750 .8125rem/1 var(--f-ui); color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 :root[data-design="petal"] .pt-win .pt-win__screen {
@@ -1035,7 +1036,7 @@
 /* the screen's own buttons (failed: retry, pick another source) are pink keys */
 :root[data-design="petal"] .pt-win .now-sbtn { min-height: 30px; padding: 0 12px; background-color: var(--peri); color: var(--pt-key-ink); font: 700 .875rem/1 var(--f-ui); box-shadow: var(--stack-sm); border-radius: 0; border: 2px solid var(--line); }
 :root[data-design="petal"] .pt-win .now-sbtn::first-letter { text-transform: uppercase; }
-:root[data-design="petal"] .pt-win .now-sbtn:hover { background-color: var(--pt-key-hi); }
+@media (hover: hover) { :root[data-design="petal"] .pt-win .now-sbtn:hover { background-color: var(--pt-key-hi); } }
 
 /* the compact window (phone Lyrics / Queue / Details): [cover] [title / artist] [keys] */
 :root[data-design="petal"] .pt-win--compact .pt-win__bar { min-height: 30px; }
@@ -1201,7 +1202,7 @@
 :root[data-design="petal"] .dk-strip__keys .dk-sep { background: var(--pt-rule); width: 2px; }
 /* the welcome, connect and unreachable pages: a card of zine paper on the desk (a .card), its choices pink keys */
 :root[data-design="petal"] .dk-choice { background-color: var(--panel); }
-:root[data-design="petal"] .dk-choice:hover:not(:disabled) { background-color: var(--peri); }
+@media (hover: hover) { :root[data-design="petal"] .dk-choice:hover:not(:disabled) { background-color: var(--peri); } }
 :root[data-design="petal"] .dk-card__title { font: 400 1.75rem/1 var(--f-zine); letter-spacing: .02em; text-shadow: 2px 2px 0 var(--stack-2); }
 :root[data-design="petal"] .dk-status { border-radius: 0; }
 
@@ -1492,7 +1493,7 @@
   :root[data-design="petal"] ::-webkit-scrollbar { width: 14px; height: 14px; }
   :root[data-design="petal"] ::-webkit-scrollbar-track { background: conic-gradient(var(--panel) 25%, var(--panel-2) 0 50%, var(--panel) 0 75%, var(--panel-2) 0) 0 0 / 4px 4px; border-left: 2px solid var(--pt-rule); }
   :root[data-design="petal"] ::-webkit-scrollbar-thumb { background: var(--peri); border: 2px solid var(--line); box-shadow: inset 0 0 0 2px var(--pt-key-hi); }
-  :root[data-design="petal"] ::-webkit-scrollbar-thumb:hover { background: var(--pt-key-hi); }
+  @media (hover: hover) { :root[data-design="petal"] ::-webkit-scrollbar-thumb:hover { background: var(--pt-key-hi); } }
   :root[data-design="petal"] ::-webkit-scrollbar-corner { background: var(--panel-2); }
 }
 @supports not selector(::-webkit-scrollbar) {
@@ -1502,12 +1503,15 @@
 /* menus: a list of paper strips; the one under the hand is marked as the playing row is, with a pixel heart */
 :root[data-design="petal"] .menu__sep { height: 0; border-top: 2px dashed var(--pt-rule); background: none; margin: 6px 6px; }
 :root[data-design="petal"] .menu__item { position: relative; }
-:root[data-design="petal"] .menu__item:is(:hover, :focus-visible) { background-color: var(--pt-row); box-shadow: inset 4px 0 0 var(--heart); }
-:root[data-design="petal"] .menu__item:is(:hover, :focus-visible) .ic { color: var(--heart); }
+:root[data-design="petal"] .menu__item:is(:focus-visible) { background-color: var(--pt-row); box-shadow: inset 4px 0 0 var(--heart); }
+@media (hover: hover) { :root[data-design="petal"] .menu__item:is(:hover) { background-color: var(--pt-row); box-shadow: inset 4px 0 0 var(--heart); } }
+:root[data-design="petal"] .menu__item:is(:focus-visible) .ic { color: var(--heart); }
+@media (hover: hover) { :root[data-design="petal"] .menu__item:is(:hover) .ic { color: var(--heart); } }
 
 /* a snapshot is picked up when the hand reaches it: it straightens and lifts */
 :root[data-design="petal"] .tile .tile__art { transition: translate var(--dur-1) var(--ease-out), rotate var(--dur-1) var(--ease-out); }
-:root[data-design="petal"] .tile:is(:hover, :focus-within) .tile__art { translate: 0 -4px; rotate: 1.2deg; }
+:root[data-design="petal"] .tile:is(:focus-within) .tile__art { translate: 0 -4px; rotate: 1.2deg; }
+@media (hover: hover) { :root[data-design="petal"] .tile:is(:hover) .tile__art { translate: 0 -4px; rotate: 1.2deg; } }
 
 /* the cassette: a 72 x 45 sticker (3 px to a pixel of its art); two reels sit in its window and turn while sound plays,
    the tape moving from the left one to the right as the song goes */
@@ -1596,7 +1600,7 @@
   :root[data-design="petal"] .sys-nav li:nth-child(4n+2) .sys-nav__item { background-color: var(--pt-tab-3); }
   :root[data-design="petal"] .sys-nav li:nth-child(4n+3) .sys-nav__item { background-color: var(--pt-tab-4); }
   :root[data-design="petal"] .sys-nav li:nth-child(4n) .sys-nav__item { background-color: var(--pt-tab-1); }
-  :root[data-design="petal"] .sys-nav__item:hover { translate: 0 -2px; }
+  @media (hover: hover) { :root[data-design="petal"] .sys-nav__item:hover { translate: 0 -2px; } }
   :root[data-design="petal"] .sys-nav__label { font: inherit; }
   :root[data-design="petal"] .sys-nav__item :is(.sys-nav__desc, .sys-nav__chev) { display: none; }
   :root[data-design="petal"] .sys-nav .sys-nav__item:is([aria-current="page"], .sys-nav__item--default) { background-color: var(--panel); box-shadow: none; color: var(--fg-sky); padding-bottom: 2px; }

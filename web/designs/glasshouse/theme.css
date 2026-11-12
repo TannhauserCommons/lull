@@ -451,7 +451,7 @@
   background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, .55) 50%, transparent 100%);
   transform: translateX(-120%); opacity: 0;
 }
-:root[data-design="glasshouse"] .card > .card-head:hover::before { animation: gh-sheen 900ms var(--ease-out) 1; }
+@media (hover: hover) { :root[data-design="glasshouse"] .card > .card-head:hover::before { animation: gh-sheen 900ms var(--ease-out) 1; } }
 @keyframes gh-sheen { 0% { transform: translateX(-120%); opacity: .9; } 100% { transform: translateX(300%); opacity: 0; } }
 :root[data-design="glasshouse"] :is(.card-head__title, .card > .card-head > h2, .card > .card-head > h3) {
   flex: 1 1 auto; max-width: calc(100% - 64px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -505,10 +505,10 @@
 }
 /* a button's glass key lights on hover and sinks on press at the base rule's weight, so every variant's own states
    (rose, quiet, saved, disabled) win whatever their selector: a light label never lands on the white key */
-:root[data-design="glasshouse"] .btn:hover { background: linear-gradient(180deg, var(--gh-key-1) 0%, var(--gh-key-1) 50%, var(--gh-key-2) 51%, var(--gh-key-1) 100%); }
+@media (hover: hover) { :root[data-design="glasshouse"] .btn:hover { background: linear-gradient(180deg, var(--gh-key-1) 0%, var(--gh-key-1) 50%, var(--gh-key-2) 51%, var(--gh-key-1) 100%); } }
 :root[data-design="glasshouse"] .btn:active { background: var(--gh-key-3); box-shadow: inset 0 2px 3px var(--gh-cast); }
-:root[data-design="glasshouse"] .btn--quiet,
-:root[data-design="glasshouse"] .btn--quiet:is(:hover, :active) { background: transparent; border-color: transparent; box-shadow: none; color: var(--link); }
+:root[data-design="glasshouse"] .btn--quiet, :root[data-design="glasshouse"] .btn--quiet:is(:active) { background: transparent; border-color: transparent; box-shadow: none; color: var(--link); }
+@media (hover: hover) { :root[data-design="glasshouse"] .btn--quiet:is(:hover) { background: transparent; border-color: transparent; box-shadow: none; color: var(--link); } }
 /* primary + danger: the rose gloss (img 03 transport) */
 :root[data-design="glasshouse"] :is(.btn--primary, .btn--danger) {
   isolation: isolate; margin-bottom: 0; color: #fff; border-color: var(--gh-rose-edge);
@@ -516,7 +516,7 @@
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent), 0 6px 14px -8px var(--gh-rose-lo);
   text-shadow: 0 1px 0 var(--gh-rose-edge);
 }
-:root[data-design="glasshouse"] :is(.btn--primary, .btn--danger):hover { background: linear-gradient(180deg, var(--gh-rose-hi) 0%, var(--gh-rose) 36%, var(--gh-rose) 74%, var(--gh-rose-glow) 100%); }
+@media (hover: hover) { :root[data-design="glasshouse"] :is(.btn--primary, .btn--danger):hover { background: linear-gradient(180deg, var(--gh-rose-hi) 0%, var(--gh-rose) 36%, var(--gh-rose) 74%, var(--gh-rose-glow) 100%); } }
 :root[data-design="glasshouse"] :is(.btn--primary, .btn--danger):active { transform: translateY(1px); background: linear-gradient(180deg, var(--gh-rose) 0%, var(--gh-rose-lo) 100%); box-shadow: inset 0 2px 4px var(--gh-rose-edge); }
 :root[data-design="glasshouse"] :is(.btn--primary, .btn--danger, .btn-gloss) .ic { filter: drop-shadow(0 1px 0 var(--gh-rose-edge)); }
 :root[data-design="glasshouse"] .btn:is(:disabled, [aria-disabled="true"]) { background: transparent; box-shadow: none; color: var(--fg-2); text-shadow: none; border-style: dashed; }
@@ -527,8 +527,8 @@
 :root[data-design="glasshouse"] .btn-icon { border: 1px solid transparent; border-radius: 10px; }
 :root[data-design="glasshouse"] .btn-icon:not(.btn-icon--bare) { border-color: var(--gh-key-edge); background: var(--gh-keyg);
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 50%, transparent); color: var(--gh-key-ink); }
-:root[data-design="glasshouse"] .btn-icon:not(.btn-icon--bare):hover { background: linear-gradient(180deg, var(--gh-key-1) 0%, var(--gh-key-1) 50%, var(--gh-key-2) 51%, var(--gh-key-1) 100%); }
-:root[data-design="glasshouse"] .btn-icon--bare:hover { background: var(--bg-2); }
+@media (hover: hover) { :root[data-design="glasshouse"] .btn-icon:not(.btn-icon--bare):hover { background: linear-gradient(180deg, var(--gh-key-1) 0%, var(--gh-key-1) 50%, var(--gh-key-2) 51%, var(--gh-key-1) 100%); } }
+@media (hover: hover) { :root[data-design="glasshouse"] .btn-icon--bare:hover { background: var(--bg-2); } }
 :root[data-design="glasshouse"] .btn-icon__badge { background: var(--gh-rose); color: #fff; border: 1px solid var(--gh-rose-edge); font-family: var(--f-px); font-weight: 600; }
 
 /* gloss orb: rose (main play, like key, Classic). Highlight band stays in the top 34%. */
@@ -569,7 +569,7 @@
 :root[data-design="glasshouse"] .seg__btn { border-radius: 7px; }
 :root[data-design="glasshouse"] .lib-segs ul { width: max-content; max-width: 100%; gap: 2px; padding: 3px; background: color-mix(in srgb, var(--panel) 88%, transparent); }
 :root[data-design="glasshouse"] .lib-segs a.pill-filter { min-height: 34px; padding: 0 14px; border-radius: 7px; border-color: transparent; background: transparent; color: var(--fg-panel); font-weight: 700; }
-:root[data-design="glasshouse"] .lib-segs a.pill-filter:not([aria-current="page"]):hover { background: color-mix(in srgb, var(--gh-lit-2) 30%, transparent); }
+@media (hover: hover) { :root[data-design="glasshouse"] .lib-segs a.pill-filter:not([aria-current="page"]):hover { background: color-mix(in srgb, var(--gh-lit-2) 30%, transparent); } }
 
 /* switch: a glass groove with a bead in it: the title bar's steel bead while off, a lit pearl on the rose groove while
    on (lull's check still cut through it). Each bead's dark rim keeps it 3:1 on its groove in both themes */
@@ -591,7 +591,7 @@
   height: 28px; border-radius: 7px; font: 500 .75rem/1 var(--f-px); letter-spacing: 0; color: var(--ink);
   background: linear-gradient(180deg, #f6f8fd 0%, #dde5f3 50%, #c9d6ec 51%, #d6e1f2 100%); box-shadow: inset 0 1px 0 #fff;
 }
-:root[data-design="glasshouse"] .tray:hover .tray__pill { background: linear-gradient(180deg, #fff 0%, #e8eef8 50%, #d6e1f2 51%, #e3ebf7 100%); }
+@media (hover: hover) { :root[data-design="glasshouse"] .tray:hover .tray__pill { background: linear-gradient(180deg, #fff 0%, #e8eef8 50%, #d6e1f2 51%, #e3ebf7 100%); } }
 :root[data-design="glasshouse"] .tray .sg { width: 9px; height: 9px; border-radius: 50%; background: var(--gh-ok); box-shadow: 0 0 0 2px var(--gh-ring); }
 :root[data-design="glasshouse"] .tray .sg use { display: none; }
 :root[data-design="glasshouse"] .tray .sg--warn { background: var(--gh-warn); border-radius: 2px; transform: rotate(45deg) scale(.9); }
@@ -611,7 +611,8 @@
    ===================================================================== */
 :root[data-design="glasshouse"] .trow { border-radius: 6px; }
 :root[data-design="glasshouse"] .tlist > .trow:nth-child(even) { background: color-mix(in srgb, var(--bg-2) 40%, transparent); }
-:root[data-design="glasshouse"] .trow:is(:hover, :focus-within) { background: color-mix(in srgb, var(--gh-lit-2) 38%, var(--bg)); }
+:root[data-design="glasshouse"] .trow:is(:focus-within) { background: color-mix(in srgb, var(--gh-lit-2) 38%, var(--bg)); }
+@media (hover: hover) { :root[data-design="glasshouse"] .trow:is(:hover) { background: color-mix(in srgb, var(--gh-lit-2) 38%, var(--bg)); } }
 :root[data-design="glasshouse"] .tlist > .trow.is-playing,
 :root[data-design="glasshouse"] .trow.is-playing { background: linear-gradient(90deg, var(--gh-blush-1), var(--gh-blush-2)); box-shadow: inset 3px 0 0 var(--gh-rose);
   --fg: var(--ink); --fg-2: var(--gh-blush-ink); --link: var(--gh-rose-lo); }
@@ -687,10 +688,11 @@
 :root[data-design="glasshouse"] .tile__play { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--gh-rose-edge); color: #fff; background: var(--gh-orb);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 6px 12px -6px var(--gh-rose-lo); }
 :root[data-design="glasshouse"] .tile__play .ic { width: 16px; height: 16px; }
-:root[data-design="glasshouse"] .tile__play:hover { background: radial-gradient(120% 90% at 50% 100%, var(--gh-rose-hi) 0%, var(--gh-rose) 56%, var(--gh-rose-lo) 84%); }
+@media (hover: hover) { :root[data-design="glasshouse"] .tile__play:hover { background: radial-gradient(120% 90% at 50% 100%, var(--gh-rose-hi) 0%, var(--gh-rose) 56%, var(--gh-rose-lo) 84%); } }
 @media (hover: hover) {
   :root[data-design="glasshouse"] .tile .tile__play { opacity: 0; transform: translateY(4px); transition: opacity var(--dur-1), transform var(--dur-1); }
-  :root[data-design="glasshouse"] .tile:is(:hover, :focus-within) .tile__play { opacity: 1; transform: none; }
+  :root[data-design="glasshouse"] .tile:is(:focus-within) .tile__play { opacity: 1; transform: none; }
+@media (hover: hover) { :root[data-design="glasshouse"] .tile:is(:hover) .tile__play { opacity: 1; transform: none; } }
 }
 
 /* covers: eight glasshouse recipes, all CSS (frame line + inner reflection). The base sparkle stays on two of them. */
@@ -803,13 +805,18 @@
   :root[data-design="glasshouse"] .header .search-field__clear { width: 32px; height: 32px; background: transparent; border-color: transparent; box-shadow: none; }
   :root[data-design="glasshouse"][data-shell="dock"] .header .btn-icon:not(.search-field__clear) { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--gh-frame); color: var(--fg-panel);
     background: var(--gh-capsule); box-shadow: inset 0 1px 0 var(--gh-rim), var(--gh-float); }
-  :root[data-design="glasshouse"][data-shell="dock"] .header .btn-icon:not(.search-field__clear):hover { background: radial-gradient(70% 45% at 50% 8%, var(--gh-sheen), transparent 70%), color-mix(in srgb, var(--panel-2) 80%, transparent); }
+  @media (hover: hover) { :root[data-design="glasshouse"][data-shell="dock"] .header .btn-icon:not(.search-field__clear):hover { background: radial-gradient(70% 45% at 50% 8%, var(--gh-sheen), transparent 70%), color-mix(in srgb, var(--panel-2) 80%, transparent); } }
   /* the status tray in the header (short windows, tablets): glass capsules on the night, like the search */
   :root[data-design="glasshouse"] .header .tray { gap: 6px; padding: 0; border: 0; background: none; box-shadow: none; }
-  :root[data-design="glasshouse"] :is(.header .tray__pill, .header .tray:hover .tray__pill) {
+  /* the repeated class keeps the specificity of the hover rule below (:is() weighs its heaviest argument) */
+  :root[data-design="glasshouse"] .header .tray__pill.tray__pill.tray__pill.tray__pill {
     border-radius: 999px; border: 1px solid var(--gh-frame); color: var(--fg-panel); background: var(--gh-capsule);
     box-shadow: inset 0 1px 0 var(--gh-rim), var(--gh-float);
   }
+@media (hover: hover) { :root[data-design="glasshouse"] :is(.header .tray:hover .tray__pill) {
+    border-radius: 999px; border: 1px solid var(--gh-frame); color: var(--fg-panel); background: var(--gh-capsule);
+    box-shadow: inset 0 1px 0 var(--gh-rim), var(--gh-float);
+  } }
   :root[data-design="glasshouse"] .header .tray__pill .sg { --gh-ring: var(--panel); --gh-ok: inherit; --gh-warn: inherit; --gh-down: inherit; }
 }
 
@@ -840,7 +847,7 @@
     width: var(--gh-key-w, 76px); height: auto; min-height: 0; flex-direction: column; gap: 5px; padding: 2px; border: 0; border-radius: 10px;
     color: var(--fg-panel); background: transparent;
   }
-  :root[data-design="glasshouse"][data-shell="dock"] .nav-item:hover { background: none; }
+  @media (hover: hover) { :root[data-design="glasshouse"][data-shell="dock"] .nav-item:hover { background: none; } }
   /* a key's caption: mono on the shelf's glass, a lit chip for the current page */
   :root[data-design="glasshouse"][data-shell="dock"] .nav-item__label {
     position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal;
@@ -853,7 +860,7 @@
     stroke-width: 1.6; transition: transform var(--dur-2) var(--ease-spring), box-shadow var(--dur-2);
   }
   /* the shelf magnifies the key under the pointer, as glass would */
-  :root[data-design="glasshouse"][data-shell="dock"] .nav-item:hover .ic { transform: scale(1.12); box-shadow: inset 0 1px 0 #fff, 0 0 16px -2px color-mix(in srgb, #a9c3ea 60%, transparent); }
+  @media (hover: hover) { :root[data-design="glasshouse"][data-shell="dock"] .nav-item:hover .ic { transform: scale(1.12); box-shadow: inset 0 1px 0 #fff, 0 0 16px -2px color-mix(in srgb, #a9c3ea 60%, transparent); } }
   :root[data-design="glasshouse"][data-shell="dock"] .nav-item[aria-current="page"] .ic {
     color: var(--ink); border-color: var(--gh-lit-edge); background: radial-gradient(80% 40% at 50% 0%, #fff, transparent 70%), var(--gh-lit);
     box-shadow: inset 0 1px 0 #fff, 0 0 18px -2px color-mix(in srgb, #a9c3ea 70%, transparent);
@@ -887,7 +894,7 @@
       background: linear-gradient(128deg, var(--gh-sheen-panel) 0%, transparent 34%), color-mix(in srgb, var(--panel) 92%, transparent);
       box-shadow: inset 0 1px 0 var(--gh-rim), var(--gh-float);
     }
-    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full:hover { background: color-mix(in srgb, var(--panel-2) 94%, transparent); }
+    @media (hover: hover) { :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full:hover { background: color-mix(in srgb, var(--panel-2) 94%, transparent); } }
     :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full::before {
       content: ":: status"; position: absolute; left: 0; right: 0; top: 0; height: 22px; padding: 0 10px;
       display: flex; align-items: center; font: 600 .6875rem/1 var(--f-px); letter-spacing: .04em; color: var(--gh-bar-ink);
@@ -912,6 +919,7 @@
     }
   }
 }
+
 
 /* queue gadget (img 03's right half): smoky glass with a title bar, AIMP strips for now / next / then, blush current
    row. Its rows scroll behind a foot of its own, as a window's do */
@@ -1180,8 +1188,8 @@
 :root[data-design="glasshouse"] .gh-ticker__run { padding: 0 2.5em 0 12px; }
 :root[data-design="glasshouse"] .gh-ticker :is(b, [data-bind="pos"]) { font-weight: 600; color: #f3c1cf; }
 :root[data-design="glasshouse"] .gh-ticker i { font-style: normal; color: #9aa7c2; }
-:root[data-design="glasshouse"] :is(.gh-ticker:hover, .gh-aimp:focus-within, .gh-np:focus-within) .gh-ticker__track,
-:root.is-hidden[data-design="glasshouse"] .gh-ticker__track { animation-play-state: paused; }
+:root[data-design="glasshouse"] :is(.gh-aimp:focus-within, .gh-np:focus-within) .gh-ticker__track, :root.is-hidden[data-design="glasshouse"] .gh-ticker__track { animation-play-state: paused; }
+@media (hover: hover) { :root[data-design="glasshouse"] :is(.gh-ticker:hover) .gh-ticker__track { animation-play-state: paused; } }
 @keyframes gh-tick { to { transform: translateX(-50%); } }
 :root[data-design="glasshouse"] .gh-aimp__ticker { grid-area: tick; }
 
@@ -1192,12 +1200,15 @@
   position: absolute; left: 8px; top: 50%; width: 48px; height: 48px; margin-top: -24px; border-radius: 50%;
   border: 1px solid transparent; background: transparent; box-shadow: none; color: #fff; opacity: 0; transition: opacity var(--dur-1);
 }
-:root[data-design="glasshouse"] .disc-starter__play:not(.btn-icon--bare):hover { background: color-mix(in srgb, var(--gh-rose) 72%, transparent); }
-:root[data-design="glasshouse"] :is(.disc-starter:hover, .disc-starter:focus-within) .disc-starter__play,
-:root[data-design="glasshouse"] .disc-starter__play:focus-visible {
+@media (hover: hover) { :root[data-design="glasshouse"] .disc-starter__play:not(.btn-icon--bare):hover { background: color-mix(in srgb, var(--gh-rose) 72%, transparent); } }
+:root[data-design="glasshouse"] :is(.disc-starter:focus-within) .disc-starter__play, :root[data-design="glasshouse"] .disc-starter__play:focus-visible {
   opacity: 1; background: color-mix(in srgb, var(--gh-rose) 72%, transparent); border-color: var(--gh-rose-edge);
   box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--gh-rose), 0 6px 14px -6px var(--gh-rose-lo);
 }
+@media (hover: hover) { :root[data-design="glasshouse"] :is(.disc-starter:hover) .disc-starter__play {
+  opacity: 1; background: color-mix(in srgb, var(--gh-rose) 72%, transparent); border-color: var(--gh-rose-edge);
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--gh-rose), 0 6px 14px -6px var(--gh-rose-lo);
+} }
 @media (hover: none) { :root[data-design="glasshouse"] .disc-starter__play { opacity: 1; background: color-mix(in srgb, var(--gh-rose) 60%, transparent); } }
 :root[data-design="glasshouse"] :is(.disc-starter__title, .disc-starter__sub) { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 :root[data-design="glasshouse"] .disc-starter__title { line-height: 1.2; }
@@ -1372,7 +1383,7 @@
 :root[data-design="glasshouse"] :is(.dialog, .sheet) { overflow: hidden; }
 :root[data-design="glasshouse"] .sheet__head { min-height: 40px; padding: 4px 8px 4px 16px; }
 :root[data-design="glasshouse"] .sheet__head .btn-icon { color: var(--gh-bar-ink); border-color: transparent; background: transparent; box-shadow: none; width: 32px; height: 32px; }
-:root[data-design="glasshouse"] .sheet__head .btn-icon:hover { background: color-mix(in srgb, #fff 22%, transparent); }
+@media (hover: hover) { :root[data-design="glasshouse"] .sheet__head .btn-icon:hover { background: color-mix(in srgb, #fff 22%, transparent); } }
 :root[data-design="glasshouse"] .sheet__title { font: 600 .9375rem/1.2 var(--f-px); letter-spacing: .02em; color: var(--gh-bar-ink); }
 :root[data-design="glasshouse"] .sheet__body { padding-top: var(--sp-4); }
 :root[data-design="glasshouse"] .popover__head { font: 600 .875rem/1.2 var(--f-px); letter-spacing: .02em; }
@@ -1382,9 +1393,12 @@
 }
 /* a menu's row under the pointer or the keyboard is lit glass, the lit key's upper half (ink and the danger rose keep
    4.5:1 on its darker stop, #c3d5f1) */
-:root[data-design="glasshouse"] .menu__item:is(:hover, :focus-visible) {
+:root[data-design="glasshouse"] .menu__item:is(:focus-visible) {
   background: linear-gradient(180deg, #eef4ff 0%, #c3d5f1 100%); box-shadow: inset 0 0 0 1px color-mix(in srgb, #4d6696 45%, transparent), inset 0 1px 0 #fff;
 }
+@media (hover: hover) { :root[data-design="glasshouse"] .menu__item:is(:hover) {
+  background: linear-gradient(180deg, #eef4ff 0%, #c3d5f1 100%); box-shadow: inset 0 0 0 1px color-mix(in srgb, #4d6696 45%, transparent), inset 0 1px 0 #fff;
+} }
 /* toast: a small aero notification balloon (title bar, beads, mono label, rose action) */
 :root[data-design="glasshouse"] .toast-region { width: min(480px, calc(100vw - 32px)); gap: 18px; }
 /* a balloon is a whole little window: its bar above, a foot of its own below (--gh-toast-foot), so two stacked read as
@@ -1463,7 +1477,7 @@
   width: 40px; height: 40px; border: 1px solid var(--gh-key-edge); border-radius: 50%; color: var(--gh-key-ink); background: var(--gh-keyg);
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent);
 }
-:root[data-design="glasshouse"] .device__controls .dpad__btn:hover { background: linear-gradient(180deg, var(--gh-key-1) 0%, var(--gh-key-1) 50%, var(--gh-key-2) 51%, var(--gh-key-1) 100%); }
+@media (hover: hover) { :root[data-design="glasshouse"] .device__controls .dpad__btn:hover { background: linear-gradient(180deg, var(--gh-key-1) 0%, var(--gh-key-1) 50%, var(--gh-key-2) 51%, var(--gh-key-1) 100%); } }
 :root[data-design="glasshouse"] .device__pill { grid-auto-flow: column; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--gh-key-edge);
   color: var(--gh-key-ink); font: 500 .75rem/1 var(--f-px); background: var(--gh-keyg); }
 :root[data-design="glasshouse"] .device__pill > i { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--gh-key-edge); background: var(--gh-key-3); }
@@ -1479,7 +1493,7 @@
 }
 :root[data-design="glasshouse"] .gh-skin__btn { position: relative; color: var(--gh-bar-ink); background: var(--gh-bar-3); }
 :root[data-design="glasshouse"] .gh-skin__btn::before { content: ""; position: absolute; inset: -8px -2px -4px; }
-:root[data-design="glasshouse"] .gh-skin__btn:hover { background: var(--gh-bar-2); }
+@media (hover: hover) { :root[data-design="glasshouse"] .gh-skin__btn:hover { background: var(--gh-bar-2); } }
 :root[data-design="glasshouse"] .gh-skin__cur { color: #191b28; background: linear-gradient(180deg, #fbfbff, #dfe3ee); box-shadow: inset 0 1px 0 #fff; }
 :root[data-design="glasshouse"][data-theme="day"] :is(.gh-skin__btn.gh-skin--light, .gh-skin__cur.gh-skin--dark),
 :root[data-design="glasshouse"][data-theme="night"] :is(.gh-skin__btn.gh-skin--dark, .gh-skin__cur.gh-skin--light) { display: none; }
@@ -1601,7 +1615,7 @@
   box-shadow: inset 0 0 0 1px #3a4058, inset 0 1px 0 rgba(255, 255, 255, .12), var(--stack);
 }
 :root[data-design="glasshouse"][data-theme="night"] .now-lycard .now-ly__line.is-current { background: rgba(243, 193, 207, .08); color: #f3c1cf; text-shadow: 0 0 12px rgba(243, 193, 207, .6); }
-:root[data-design="glasshouse"][data-theme="night"] .now-lycard .now-ly__line:not(.is-current):hover { background: #262b3d; color: #eceef6; }
+@media (hover: hover) { :root[data-design="glasshouse"][data-theme="night"] .now-lycard .now-ly__line:not(.is-current):hover { background: #262b3d; color: #eceef6; } }
 :root[data-design="glasshouse"] .source-card { border-radius: 8px; border: 1px solid color-mix(in srgb, var(--line) 45%, transparent); }
 :root[data-design="glasshouse"] .source-card__stat::before { content: ":: "; color: var(--fg-2); }
 :root[data-design="glasshouse"] .now-srccard { --gh-pad: 16px; }
@@ -1682,7 +1696,7 @@
 :root[data-design="glasshouse"] .dk-mini__led { font: 600 .8125rem/1 var(--f-px); }
 :root[data-design="glasshouse"] .dk-mini__led::before { content: ":: mini /"; color: var(--gh-bar-ink-2); }
 :root[data-design="glasshouse"] .dk-mini__win { width: 26px; height: 26px; border-radius: 7px; }
-:root[data-design="glasshouse"] .dk-mini__win:hover { background: color-mix(in srgb, #fff 22%, transparent); }
+@media (hover: hover) { :root[data-design="glasshouse"] .dk-mini__win:hover { background: color-mix(in srgb, #fff 22%, transparent); } }
 :root[data-design="glasshouse"] .dk-mini .device__controls { gap: 6px; }
 :root[data-design="glasshouse"] .dk-mini .device__controls .dpad__btn { width: 36px; height: 36px; }
 /* an opaque mini window (no see-through on this computer) is the device filling the window: the screen at the top, the
@@ -1887,7 +1901,7 @@
 :root[data-design="glasshouse"] :is(.view, .ctx__body, .nowcol__body, .now-ly__scroll)::-webkit-scrollbar-track { background: transparent; }
 :root[data-design="glasshouse"] :is(.view, .ctx__body, .nowcol__body, .now-ly__scroll)::-webkit-scrollbar-thumb {
   border: 4px solid transparent; border-radius: 10px; background: var(--gh-sb) padding-box; }
-:root[data-design="glasshouse"] :is(.view, .ctx__body, .nowcol__body, .now-ly__scroll)::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--gh-sb) 75%, var(--gh-rose-glow)) padding-box; }
+@media (hover: hover) { :root[data-design="glasshouse"] :is(.view, .ctx__body, .nowcol__body, .now-ly__scroll)::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--gh-sb) 75%, var(--gh-rose-glow)) padding-box; } }
 :root[data-design="glasshouse"] ::selection { background: color-mix(in srgb, var(--gh-lit-3) 55%, transparent); }
 :root[data-design="glasshouse"] .skel { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gh-frame) 32%, transparent), inset 0 1px 0 var(--gh-rim); }
 

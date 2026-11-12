@@ -147,9 +147,9 @@ test('a held link shows lull\'s menu, not the browser\'s callout', async ({ page
 });
 
 /* :hover sticks on a phone after a tap (iOS keeps it until the next tap elsewhere): every hover style of lull's own CSS
-   (web/*.css and the screens', which every design and theme builds on) is for a pointer that can hover, inside
-   @media (hover: hover). A :hover only inside :not() styles what isn't hovered, so it doesn't count. A design's and a
-   listener theme's sheets are their own */
+   (web/*.css and the screens', which every design and theme builds on) and of each built-in design's theme.css is for a
+   pointer that can hover, inside @media (hover: hover). A :hover only inside :not() styles what isn't hovered, so it
+   doesn't count. A listener theme's sheet is its own */
 test('hover styles wait for a pointer that hovers', async ({ page }) => {
   await open(page, '/home');
   const bare = new Set();
@@ -173,6 +173,24 @@ test('hover styles wait for a pointer that hovers', async ({ page }) => {
       for (const s of sheets) if (s.href && !/\/(designs|packs|api)\//.test(s.href)) walk(s.cssRules, false, s.href.split('/').slice(-2).join('/'));
       return out;
     })) bare.add(x);
+  }
+  for (const design of designs) {
+    for (const x of await page.evaluate(async (d) => {
+      const css = await (await fetch(`/designs/${d}/theme.css`)).text();
+      const sheet = new CSSStyleSheet(); sheet.replaceSync(css.replace(/@import[^;]*;/g, ''));
+      const out = [];
+      const walk = (rules, guarded) => {
+        for (const r of rules) {
+          if (r instanceof CSSMediaRule) walk(r.cssRules, guarded || /\(\s*(any-)?hover\s*:\s*hover\s*\)/.test(r.conditionText || r.media.mediaText));
+          else if (r instanceof CSSStyleRule) {
+            const sel = r.selectorText.replace(/:not\((?:[^()]|\([^()]*\))*\)/g, '');
+            if (!guarded && /:hover/.test(sel) && !/scrollbar/.test(sel)) out.push(`designs/${d}/theme.css: ${r.selectorText.slice(0, 80)}`);
+          } else if (r.cssRules) walk(r.cssRules, guarded);
+        }
+      };
+      walk(sheet.cssRules, false);
+      return out;
+    }, design)) bare.add(x);
   }
   expect([...bare], `${bare.size} :hover rules outside @media (hover: hover)`).toEqual([]);
 });

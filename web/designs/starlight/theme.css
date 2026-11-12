@@ -252,9 +252,9 @@
   :root[data-design="starlight"]:not([data-motion="reduce"]) :is(.card[data-region], .sl-hero:not(.sl-hero--compact)) {
     transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
   }
-  :root[data-design="starlight"]:not([data-motion="reduce"]) :is(.card[data-region], .sl-hero:not(.sl-hero--compact)):hover {
+  @media (hover: hover) { :root[data-design="starlight"]:not([data-motion="reduce"]) :is(.card[data-region], .sl-hero:not(.sl-hero--compact)):hover {
     --sl-o1: 4px; --sl-o2: 13px; transform: translateY(3px);
-  }
+  } }
 }
 
 /* the boxes and rows inside a print are cut square too */
@@ -313,13 +313,13 @@
   background: var(--sl-accent); color: var(--cream); border-color: var(--ink);
   box-shadow: 0 4px 0 -1.5px var(--stack-1), 0 4px 0 0 var(--line);
 }
-:root[data-design="starlight"] .btn--primary:hover { background: #33447d; }
+@media (hover: hover) { :root[data-design="starlight"] .btn--primary:hover { background: #33447d; } }
 :root[data-design="starlight"] .btn--primary:active { box-shadow: 0 2px 0 -1.5px var(--stack-1), 0 2px 0 0 var(--line); }
 :root[data-design="starlight"] .btn--danger:not(:disabled) {   /* a confirm's main action, when it deletes: the primary's print, in the error ink */
   background: var(--sl-down-on-cream); color: var(--cream); border-color: var(--ink);
   box-shadow: 0 4px 0 -1.5px var(--stack-1), 0 4px 0 0 var(--line); margin-bottom: 4px;
 }
-:root[data-design="starlight"] .btn--danger:not(:disabled):hover { background: #8c2a44; }
+@media (hover: hover) { :root[data-design="starlight"] .btn--danger:not(:disabled):hover { background: #8c2a44; } }
 :root[data-design="starlight"] .btn--danger:not(:disabled):active { transform: translateY(2px); box-shadow: 0 2px 0 -1.5px var(--stack-1), 0 2px 0 0 var(--line); }
 :root[data-design="starlight"][data-motion="reduce"] .btn--danger:not(:disabled):active { transform: none; }
 :root[data-design="starlight"] .btn[aria-pressed="true"]:not(.btn--primary) { background: var(--sl-chip); color: var(--ink); border-color: var(--line); }
@@ -330,7 +330,7 @@
   background: var(--bg); color: var(--accent-ui); border: var(--stroke) solid var(--accent-ui); box-shadow: none;
 }
 :root[data-design="starlight"] .btn-gloss::before, :root[data-design="starlight"] .btn-gloss::after { display: none; }
-:root[data-design="starlight"] .btn-gloss:hover { background: var(--accent-ui); color: var(--bg); }
+@media (hover: hover) { :root[data-design="starlight"] .btn-gloss:hover { background: var(--accent-ui); color: var(--bg); } }
 :root[data-design="starlight"] .btn-gloss:active { transform: translateY(1px); box-shadow: none; }
 :root[data-design="starlight"][data-motion="reduce"] .btn-gloss:active { transform: none; background: var(--bg-3); }
 :root[data-design="starlight"] :is(.btn-gloss, .tile__play):focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; background: var(--sl-chip); }
@@ -349,7 +349,7 @@
    Chips, badges, quality
    ===================================================================== */
 :root[data-design="starlight"] .chip { background: transparent; color: var(--fg); border: var(--stroke-thin) solid var(--edge); font: 400 .875rem/1.2 var(--f-ui); }
-:root[data-design="starlight"] :is(button, a).chip:hover { background: var(--bg-2); }
+@media (hover: hover) { :root[data-design="starlight"] :is(button, a).chip:hover { background: var(--bg-2); } }
 :root[data-design="starlight"] .chip:is([aria-pressed="true"], .is-on) { background: var(--peri); color: var(--ink); border-color: var(--line); }
 :root[data-design="starlight"] .chip-reason { border-color: transparent; font: 400 .8125rem/1.3 var(--f-ui); background: var(--rsn-bg); color: var(--fg-2); }
 :root[data-design="starlight"] .chip-reason .ic { color: var(--heart); }
@@ -447,7 +447,7 @@
 :root[data-design="starlight"] .tile__title { font-size: .9375rem; }
 :root[data-design="starlight"] .tile__by { letter-spacing: .12em; }
 :root[data-design="starlight"] .tile__play { background: var(--cream); color: var(--sl-accent); border: var(--stroke) solid var(--sl-accent); width: 38px; height: 38px; right: 8px; bottom: 8px; }
-:root[data-design="starlight"] .tile__play:hover { background: var(--sl-accent); color: var(--cream); }
+@media (hover: hover) { :root[data-design="starlight"] .tile__play:hover { background: var(--sl-accent); color: var(--cream); } }
 /* a shelf is one row of whole tiles: as many as its card's width holds, shared out to fill it. The ones that do not fit wait
    in rows of no height (the card's "See all" / "History" link and the page behind it have the rest), so no tile is ever cut at
    the card's edge, at any width */
@@ -479,7 +479,7 @@
   -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
 }
 :root[data-design="starlight"] .seg__btn { min-height: 34px; padding: 0 10px 4px; border-radius: 3px; font: 500 .75rem/1 var(--f-ui); letter-spacing: .16em; text-transform: uppercase; color: var(--fg-2); }
-:root[data-design="starlight"] .seg__btn:hover { color: var(--fg); }
+@media (hover: hover) { :root[data-design="starlight"] .seg__btn:hover { color: var(--fg); } }
 :root[data-design="starlight"] .seg__btn:is([aria-selected="true"], [aria-pressed="true"], [aria-checked="true"]) { color: var(--fg); font-weight: 600; }
 
 /* =====================================================================
@@ -493,7 +493,7 @@
 :root[data-design="starlight"] .search-field > .ic { color: var(--sl-icon); }
 :root[data-design="starlight"] .search-field .kbd { background: var(--cream); color: var(--ink-2); border-color: var(--line); box-shadow: 0 2px 0 var(--line); }
 :root[data-design="starlight"] .search-field .btn-icon.search-field__clear { --bg: var(--cream); --bg-2: var(--cream-2); --focus: var(--indigo); color: var(--sl-icon); border-color: transparent; background: transparent; }
-:root[data-design="starlight"] .search-field__clear:hover { background: var(--cream-2); }
+@media (hover: hover) { :root[data-design="starlight"] .search-field__clear:hover { background: var(--cream-2); } }
 
 /* =====================================================================
    The rail: the navigation is a constellation on the sky. One star per place on a dotted line, the place you are on
@@ -518,8 +518,8 @@
     content: ""; position: absolute; left: 22px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; border-radius: 50%;
     background: var(--sky); box-shadow: inset 0 0 0 1.5px var(--fg-sky-2); transition: transform var(--dur-2) var(--ease-out);
   }
-  :root[data-design="starlight"] .nav-item:hover { background: none; color: var(--fg-sky); }
-  :root[data-design="starlight"] .nav-item:hover::before { background: var(--fg-sky-2); transform: scale(1.25); }
+  @media (hover: hover) { :root[data-design="starlight"] .nav-item:hover { background: none; color: var(--fg-sky); } }
+  @media (hover: hover) { :root[data-design="starlight"] .nav-item:hover::before { background: var(--fg-sky-2); transform: scale(1.25); } }
   :root[data-design="starlight"] .nav-item[aria-current="page"] { color: var(--fg-sky); font-weight: 500; letter-spacing: .22em; }
   :root[data-design="starlight"] .nav-item[aria-current="page"]::before {
     left: 15.5px; width: 22px; height: 22px; margin-top: -11px; border-radius: 0; box-shadow: none; background: var(--sparkle);
@@ -551,7 +551,7 @@
 :root[data-design="starlight"] .rail__pl .mosaic { --cover-size: 34px !important; }
 :root[data-design="starlight"] .rail__pl b { font: 400 .9375rem/1.2 var(--f-ui); }
 :root[data-design="starlight"] .rail__pl small { font: 400 .75rem/1.2 var(--f-px); color: var(--fg-2); }
-:root[data-design="starlight"] .rail__pl:hover { background: var(--sky-deep); }
+@media (hover: hover) { :root[data-design="starlight"] .rail__pl:hover { background: var(--sky-deep); } }
 :root[data-design="starlight"] .rail__pl[aria-current="page"] { background: transparent; box-shadow: inset 0 0 0 var(--stroke) var(--edge); }
 :root[data-design="starlight"] .rail__foot { border-top: 0; padding: 4px 12px 10px; }
 /* short windows: the foot shrinks to a lone "?" keycap (its words stay as the button's accessible name) */
@@ -599,12 +599,12 @@
    ===================================================================== */
 :root[data-design="starlight"] .header__search .input { height: 46px; }
 :root[data-design="starlight"] .header .btn-icon { background: transparent; color: var(--fg-sky); border-color: var(--edge); }
-:root[data-design="starlight"] .header .btn-icon:hover { background: var(--sky-deep); }
+@media (hover: hover) { :root[data-design="starlight"] .header .btn-icon:hover { background: var(--sky-deep); } }
 /* the tray: an outlined pill on the sky; each service a shape glyph (filled circle ok, diamond warn, slashed ring down)
    drawn at 9-10 px, so state never rests on colour; "last.fm · 2 queued" reads as one item */
 :root[data-design="starlight"] .tray { background: color-mix(in srgb, var(--sky-deep) 55%, transparent); border: var(--stroke) solid var(--edge); padding: 3px 6px; gap: 2px; }
 :root[data-design="starlight"] .tray__pill { background: transparent; color: var(--fg-sky); font: 400 .8125rem/1 var(--f-px); letter-spacing: 0; height: 32px; padding: 0 10px; gap: 4px; }
-:root[data-design="starlight"] .tray:hover .tray__pill { background: var(--sky-deep); }
+@media (hover: hover) { :root[data-design="starlight"] .tray:hover .tray__pill { background: var(--sky-deep); } }
 :root[data-design="starlight"] .tray .sg { width: 19px; height: 19px; margin: 0 -2px 0 -4px; }
 :root[data-design="starlight"] .tray .sg--ok { color: var(--sl-ok); }
 :root[data-design="starlight"] .tray .sg--warn { color: var(--sl-warn); }
@@ -639,7 +639,8 @@
 :root[data-design="starlight"] .now-q__row + .now-q__row { box-shadow: inset 0 1px 0 var(--divider); }
 :root[data-design="starlight"] .now-q__row.is-playing { background: none; }
 :root[data-design="starlight"] .now-q__row.is-playing .cover { box-shadow: var(--sl-print-sm); }
-:root[data-design="starlight"] .now-q__row:is(:hover, :focus-within) { background: var(--bg-2); }
+:root[data-design="starlight"] .now-q__row:is(:focus-within) { background: var(--bg-2); }
+@media (hover: hover) { :root[data-design="starlight"] .now-q__row:is(:hover) { background: var(--bg-2); } }
 :root[data-design="starlight"] .app:not([data-panel="strip"]) .ctx:has(#ctx-tab-queue[aria-selected="true"])[data-meta]:not([data-meta=""])::after {
   content: "in the queue \2014  " attr(data-meta); flex: none; margin: 0 18px 8px; padding: 10px 2px 10px; border-top: 1px solid var(--sl-rule);
   font: 400 .6875rem/1.3 var(--f-px); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-2); white-space: pre;
@@ -674,8 +675,8 @@
    ===================================================================== */
 :root[data-design="starlight"] .bezel-thumb { padding: 0; background: transparent; border: 0; border-radius: var(--r-thumb); }
 :root[data-design="starlight"] .bezel-thumb .cover { --cover-size: 58px; border-radius: var(--r-thumb); }
-:root[data-design="starlight"] .bezel-thumb:hover { background: transparent; }
-:root[data-design="starlight"] .bezel-thumb:hover .cover { border-color: var(--sl-accent); }
+@media (hover: hover) { :root[data-design="starlight"] .bezel-thumb:hover { background: transparent; } }
+@media (hover: hover) { :root[data-design="starlight"] .bezel-thumb:hover .cover { border-color: var(--sl-accent); } }
 :root[data-design="starlight"] .bezel-thumb--empty > span { background: var(--cream-2); border: var(--stroke) dashed var(--line); }
 :root[data-design="starlight"] .pbar__controls .btn-icon .ic { width: 22px; height: 22px; }
 /* the state line rides the bar's top edge as a slim tab of night sky (cream words), so it never hides a cream card's text;
@@ -1193,7 +1194,8 @@
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile__art .cover { box-shadow: var(--sl-print-sm); }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile .tile__play { width: 30px; height: 30px; right: -8px; bottom: -8px; opacity: 0; }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile .tile__play .ic { width: 13px; height: 13px; }
-:root[data-design="starlight"] .disc-card[data-region="new"] .tile:is(:hover, :focus-within) .tile__play { opacity: 1; }
+:root[data-design="starlight"] .disc-card[data-region="new"] .tile:is(:focus-within) .tile__play { opacity: 1; }
+@media (hover: hover) { :root[data-design="starlight"] .disc-card[data-region="new"] .tile:is(:hover) .tile__play { opacity: 1; } }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile__title { font-size: .875rem; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile__by { font-size: .72rem; letter-spacing: .05em; }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile__meta { margin: 2px 0 0; font-size: .6875rem; }
@@ -1215,7 +1217,7 @@
   position: relative; inset: auto; grid-column: 1; grid-row: 3; align-self: center; margin: 18px 0 0;
   opacity: 1; width: 56px; height: 56px; background: var(--bg); color: var(--sl-accent);
 }
-:root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__play:hover { background: var(--sl-accent); color: var(--bg); }
+@media (hover: hover) { :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__play:hover { background: var(--sl-accent); color: var(--bg); } }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__play .ic { width: 20px; height: 20px; }
 /* picked for you is a gallery wall: each pick a framed print on its sleeves, hung in a staggered row (every other one
    lower), the caps title and artist under it like a wall label, the reason in a quiet line; Like and More are pinned
@@ -1230,7 +1232,8 @@
   grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: none; grid-template-areas: "art art" "main main" "why why";
   align-items: start; column-gap: 4px; padding: 0; border-radius: 0; background: none;
 }
-:root[data-design="starlight"] .disc-pick:is(:hover, :focus-within) { background: none; }
+:root[data-design="starlight"] .disc-pick:is(:focus-within) { background: none; }
+@media (hover: hover) { :root[data-design="starlight"] .disc-pick:is(:hover) { background: none; } }
 :root[data-design="starlight"] .disc-picks > .disc-pick:nth-child(even) { margin-top: 30px; }
 @container section (min-width: 470px) { :root[data-design="starlight"] .disc-picks > .disc-pick:nth-child(even) { margin-top: 0; } :root[data-design="starlight"] .disc-picks > .disc-pick:nth-child(3n+2) { margin-top: 30px; } }
 @container section (min-width: 852px) { :root[data-design="starlight"] .disc-picks > .disc-pick:nth-child(3n+2) { margin-top: 0; } :root[data-design="starlight"] .disc-picks > .disc-pick:nth-child(even) { margin-top: 30px; } }
@@ -1244,13 +1247,13 @@
 :root[data-design="starlight"] .disc-pick__end { grid-area: art; z-index: 1; flex-direction: row; gap: 6px; align-self: start; justify-self: end; margin: 8px 18px 0 0; }
 :root[data-design="starlight"] .disc-pick__end .btn-icon { width: 32px; height: 32px; background: var(--bg); border: 1px solid var(--line); border-radius: 50%; opacity: 1; }
 :root[data-design="starlight"] .disc-pick__end .btn-icon .ic { width: 17px; height: 17px; }
-:root[data-design="starlight"] .disc-pick__end .btn-icon:hover { background: var(--bg-2); }
+@media (hover: hover) { :root[data-design="starlight"] .disc-pick__end .btn-icon:hover { background: var(--bg-2); } }
 :root[data-design="starlight"] .disc-pick__why { align-self: start; flex-wrap: nowrap; min-width: 0; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--divider); }
 :root[data-design="starlight"] .disc-pick__why > .cluster { min-width: 0; flex-wrap: nowrap; align-items: center; gap: 4px; }
 :root[data-design="starlight"] .disc-pick .chip-reason { min-width: 0; max-width: 100%; min-height: 22px; padding: 0 2px; background: transparent; color: var(--fg-2); font-size: .75rem; }
 :root[data-design="starlight"] .disc-pick .chip-reason > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :root[data-design="starlight"] .disc-pick .chip-reason .ic { width: 12px; height: 12px; flex: none; }
-:root[data-design="starlight"] .disc-pick .chip-reason:hover { background: var(--bg-3); }
+@media (hover: hover) { :root[data-design="starlight"] .disc-pick .chip-reason:hover { background: var(--bg-3); } }
 :root[data-design="starlight"] .disc-pick .chip-more { min-height: 22px; padding: 0 6px; background: var(--sl-chip); color: var(--link-on-cream); font: 500 .75rem/1 var(--f-px); }
 /* radio starters: two columns of rows with outlined play rings */
 @container disc (min-width: 560px) { :root[data-design="starlight"] .disc-starters { grid-template-columns: 1fr 1fr; column-gap: var(--sp-5); } }
@@ -1296,8 +1299,8 @@
   content: ""; position: absolute; left: 50%; bottom: 6px; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%;
   background: var(--sky); box-shadow: inset 0 0 0 1.5px var(--fg-sky-2); transition: transform var(--dur-2) var(--ease-out);
 }
-:root[data-design="starlight"] .lib-segs a.pill-filter:hover { background: none; color: var(--fg-sky); }
-:root[data-design="starlight"] .lib-segs a.pill-filter:hover::after { background: var(--fg-sky-2); transform: scale(1.25); }
+@media (hover: hover) { :root[data-design="starlight"] .lib-segs a.pill-filter:hover { background: none; color: var(--fg-sky); } }
+@media (hover: hover) { :root[data-design="starlight"] .lib-segs a.pill-filter:hover::after { background: var(--fg-sky-2); transform: scale(1.25); } }
 :root[data-design="starlight"] .lib-segs a.pill-filter[aria-current="page"] { background: none; border: 0; box-shadow: none; color: var(--fg-sky); font-weight: 500; }
 :root[data-design="starlight"] .lib-segs a.pill-filter[aria-current="page"]::after {
   bottom: -1px; width: 22px; height: 22px; margin-left: -11px; border-radius: 0; box-shadow: none; background: var(--sparkle);
@@ -1399,8 +1402,8 @@
   content: ""; position: absolute; left: 17px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; border-radius: 50%;
   background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--sl-icon); transition: transform var(--dur-2) var(--ease-out);
 }
-:root[data-design="starlight"] .sys-nav__item:hover { background: none; color: var(--fg); }
-:root[data-design="starlight"] .sys-nav__item:hover::before { background: var(--sl-icon); transform: scale(1.25); }
+@media (hover: hover) { :root[data-design="starlight"] .sys-nav__item:hover { background: none; color: var(--fg); } }
+@media (hover: hover) { :root[data-design="starlight"] .sys-nav__item:hover::before { background: var(--sl-icon); transform: scale(1.25); } }
 :root[data-design="starlight"] .sys-nav__label { font: 400 .8125rem/1.25 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; }
 :root[data-design="starlight"] .sys-nav__desc { color: var(--fg-2); }
 :root[data-design="starlight"] .sys-nav__item:is([aria-current="page"], .sys-nav__item--default) { background: none; box-shadow: none; color: var(--fg); }
@@ -1490,7 +1493,7 @@
 :root[data-design="starlight"] .toast--ok > .ic { color: #9ed9b4; }
 :root[data-design="starlight"] .toast--error > .ic { color: #f4a7bb; }
 :root[data-design="starlight"] .toast :is(.btn, .btn-icon) { color: var(--link); background: transparent; border-color: transparent; }
-:root[data-design="starlight"] .toast :is(.btn, .btn-icon):hover { background: var(--bg-2); }
+@media (hover: hover) { :root[data-design="starlight"] .toast :is(.btn, .btn-icon):hover { background: var(--bg-2); } }
 /* toasts are notices in the window's bottom right corner, above the ticket and clear of the page's prints, each whole on
    its own sleeves (the gap is wider than they reach) */
 :root[data-design="starlight"] .toast-region { gap: 26px; }
@@ -1501,10 +1504,14 @@
 :root[data-design="starlight"] .tooltip { font: 400 .6875rem/1.35 var(--f-px); letter-spacing: .1em; text-transform: uppercase; border-radius: 2px; }
 :root[data-design="starlight"] ::selection { background: var(--sl-accent); color: var(--cream); }
 :root[data-design="starlight"] .menu__item { position: relative; }
-:root[data-design="starlight"] .menu__item:is(:hover, :focus-visible)::before {   /* a pointing star at the item under the pointer */
+:root[data-design="starlight"] .menu__item:is(:focus-visible)::before {   /* a pointing star at the item under the pointer */
   content: ""; position: absolute; left: 2px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; background: var(--sl-accent);
   -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
 }
+@media (hover: hover) { :root[data-design="starlight"] .menu__item:is(:hover)::before {   /* a pointing star at the item under the pointer */
+  content: ""; position: absolute; left: 2px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; background: var(--sl-accent);
+  -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
+} }
 /* every scroller is the printed rule: dotted, with a periwinkle thumb on it */
 :root[data-design="starlight"] :is(.view, .nowcol__body, .now-ly__scroll, .sheet__body, .menu-list, .dialog)::-webkit-scrollbar { width: 9px; }
 :root[data-design="starlight"] :is(.view, .nowcol__body, .now-ly__scroll, .sheet__body, .menu-list, .dialog)::-webkit-scrollbar-track { background: repeating-linear-gradient(180deg, var(--sl-rule) 0 3px, transparent 3px 7px) center / 1px 100% no-repeat; }
@@ -1544,7 +1551,7 @@
 :root[data-design="starlight"] .sl-mini__label { font: 400 .6875rem/1 var(--f-px); letter-spacing: .14em; text-transform: uppercase; color: var(--fg-2); }
 :root[data-design="starlight"] .sl-mini__rule { flex: 1; height: 1px; background: var(--sl-rule); align-self: center; }
 :root[data-design="starlight"] .sl-mini .dk-mini__win { color: var(--sl-icon); }
-:root[data-design="starlight"] .sl-mini .dk-mini__win:hover { background: var(--bg-2); }
+@media (hover: hover) { :root[data-design="starlight"] .sl-mini .dk-mini__win:hover { background: var(--bg-2); } }
 :root[data-design="starlight"] .sl-mini .dk-mini__now { grid-template-columns: minmax(0, 1fr); gap: 12px; }
 :root[data-design="starlight"] .sl-mini .dk-mini__now .cover { width: calc(100% - 12px); aspect-ratio: 1.5; margin-bottom: 10px; box-shadow: var(--sl-print); }
 :root[data-design="starlight"] .sl-mini .device__title {
@@ -1585,7 +1592,7 @@
 /* the mini window's head: a band of the night sky, its words in the night's cream */
 :root[data-design="starlight"] .sl-mini__head { margin: -16px -18px 4px; padding: 11px 14px 11px 18px; background: #262a40 url("assets/art/nebula.webp") 70% 30% / cover no-repeat; border-bottom: var(--stroke) solid var(--line); }
 :root[data-design="starlight"] .sl-mini__head :is(.sl-mini__label, .dk-mini__win) { color: #f2e3d1; }
-:root[data-design="starlight"] .sl-mini__head .dk-mini__win:hover { background: rgba(242, 227, 209, .18); }
+@media (hover: hover) { :root[data-design="starlight"] .sl-mini__head .dk-mini__win:hover { background: rgba(242, 227, 209, .18); } }
 :root[data-design="starlight"] .sl-mini__head .sl-mini__rule { background: rgba(242, 227, 209, .45); }
 :root[data-design="starlight"] .sl-mini__card { overflow: clip; }
 :root[data-design="starlight"] .sl-mini .cover { box-shadow: var(--sl-print); }
@@ -1608,7 +1615,7 @@
   :root[data-design="starlight"] .rail__nav { padding: 4px 4px 2px; gap: 4px; }
   :root[data-design="starlight"] .nav-item { width: 48px; min-height: 48px; padding: 0; border-width: var(--stroke); border-radius: 999px; color: var(--fg); }
   :root[data-design="starlight"] .nav-item .ic { width: 22px; height: 22px; color: var(--fg); }
-  :root[data-design="starlight"] .nav-item:hover { background: var(--sky-deep); }
+  @media (hover: hover) { :root[data-design="starlight"] .nav-item:hover { background: var(--sky-deep); } }
   :root[data-design="starlight"] .nav-item[aria-current="page"] { background: var(--cream); color: var(--ink); border-color: var(--line); box-shadow: var(--sl-layer); margin-bottom: 5px; }
   :root[data-design="starlight"] .nav-item[aria-current="page"] .ic { color: var(--sl-icon); }
   :root[data-design="starlight"] .pbar__now { min-width: 0; }   /* it was 250: the title ran out of its column over the transport at 640 to 800 px; the base look clips it */
