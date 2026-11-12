@@ -550,7 +550,7 @@ li[data-fill]:empty { display: block; position: static; }
   opacity: 0; transition: opacity var(--dur-1);
 }
 .seek__tip.is-on { opacity: 1; }
-.seek--line { height: 2px; min-width: 0; pointer-events: none; }      /* mini-player top edge: 2 px line, no knob, not interactive */
+.seek--line { height: 2px; min-width: 0; }      /* mini-player top edge: 2 px line, no knob; the bar's seek (its touch area: the mini player's rules) */
 /* a seek on its way (its part arriving, or a transfer starting there): a still notch where it lands, placed as the knob
    is; still rather than breathing, since it may show while nothing plays */
 .seek__target { position: absolute; left: 0; top: 50%; width: 0; height: 0; transform: translateX(calc(var(--target, 0) * 100cqw)); pointer-events: none; visibility: hidden; }
@@ -1387,13 +1387,18 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
    ===================================================================== */
 .mini, .tabbar { display: none; }
 /* --mini-inset: the room at both ends of the bar, between its edge and the cover on the left and the last key's icon on the
-   right (the key's box, --hit wide round a 20 px icon, takes the rest): equal, so the bar reads as set in one frame */
+   right (the key's box, --hit wide round a 20 px icon, takes the rest): equal, so the bar reads as set in one frame. The bar
+   doesn't clip: the progress line's touch area reaches past its edge (below), so the line keeps clear of the corners instead */
 .mini {
   --mini-inset: 14px;
   position: relative; grid-area: mini; align-items: center; gap: 2px; height: var(--mini-h); margin: 0 8px 8px; padding: 0 calc(var(--mini-inset) - (var(--hit) - 20px) / 2) 0 var(--mini-inset);
-  border: var(--stroke) solid var(--edge); border-radius: 16px; overflow: hidden; touch-action: pan-y;
+  border: var(--stroke) solid var(--edge); border-radius: 16px; touch-action: pan-y;
 }
-.mini > .seek--line { position: absolute; left: 0; right: 0; top: 0; }
+.mini > .seek--line { position: absolute; left: 12px; right: 12px; top: 0; pointer-events: auto; }
+/* the progress line is a seek bar: drag along it. Its touch area is --hit tall, centred on the line, and reaches past the
+   bar's edge, where nothing else is; the bar's own parts (positioned after it, so drawn and hit above it) keep every tap */
+.mini > .seek--line::before { content: ""; position: absolute; left: -12px; right: -12px; top: calc(1px - var(--hit) / 2); height: var(--hit); }
+.mini > :not(.seek--line) { position: relative; }
 .mini .btn-icon { width: var(--hit); height: var(--hit); }
 .mini .btn-gloss { --size: var(--hit); }
 .mini .bezel-thumb { padding: 3px; border-radius: 8px 8px 14px 8px; }

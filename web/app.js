@@ -4088,7 +4088,7 @@
   /* phone mini-player: swipe left/right = next/prev (the keys beside the play key do the same) */
   (function () {
     var x0 = null;
-    document.addEventListener('pointerdown', function (e) { var m = e.target.closest('#mini'); if (m && !e.target.closest('button')) x0 = e.clientX; });
+    document.addEventListener('pointerdown', function (e) { var m = e.target.closest('#mini'); if (m && !e.target.closest('button, [data-seek]')) x0 = e.clientX; });   // the progress line seeks, the keys press: neither swipes
     document.addEventListener('pointerup', function (e) {
       if (x0 === null) return; var dx = e.clientX - x0; x0 = null;
       if (Math.abs(dx) > 60) { if (dx < 0) P.next(); else P.prev(); }

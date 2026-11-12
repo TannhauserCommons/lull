@@ -1757,6 +1757,8 @@
   :root[data-design="glasshouse"] .tray--compact .tray__word::after { content: none; }
   :root[data-design="glasshouse"] .header .btn-icon { width: 40px; height: 40px; }
   :root[data-design="glasshouse"] .mini { border-radius: 14px; }
+  /* the progress line is a thin groove on the bar's top edge (the seek's 6 px track, half of it past the edge, was clipped to 3 px by the bar) */
+  :root[data-design="glasshouse"] .mini > .seek--line .seek__track { height: 3px; margin-top: 0; border-radius: 2px; box-shadow: none; }
   :root[data-design="glasshouse"] .tabbar { margin: 0 8px 8px; border-radius: 16px; height: var(--tab-h); padding: 4px 6px; border-top-width: 1px; }
   :root[data-design="glasshouse"] .tab { font: 600 .6875rem/1 var(--f-px); }
   :root[data-design="glasshouse"] .tab .ic { border-radius: 8px; }

@@ -91,6 +91,42 @@ for (const design of designs) {
         await page.tap('#mini [data-act="next"]');
         await expect.poll(() => current(page)).toBe(queue[1]);
       });
+
+      test('the progress line seeks by touch, and a swipe still skips', async ({ page }) => {
+        const queue = await playOnBar(page, design, width);
+        const line = await page.evaluate(() => {
+          const seek = document.querySelector('#mini .seek[data-seek="player"]'), track = seek.querySelector('.seek__track').getBoundingClientRect();
+          const zone = getComputedStyle(seek, '::before');
+          // where on the bar a touch lands on the line (any key or the song's words in front of it take theirs)
+          const x = track.left + track.width * 0.2, ys = [];
+          for (let y = 0; y < innerHeight; y++) if (document.elementFromPoint(x, y)?.closest('[data-seek="player"]') === seek) ys.push(y);
+          const own = (sel) => { const e = document.querySelector(sel); if (!e) return false; const r = e.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest(sel) === e; };
+          return { role: seek.getAttribute('role'), label: seek.getAttribute('aria-label'), hidden: !!seek.closest('[aria-hidden="true"]'),
+            hit: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hit')), zoneHeight: parseFloat(zone.height),
+            ys, track: { left: track.left, width: track.width }, keysOwnTheirTaps: ['#mini [data-act="prev"]', '#mini [data-act="play"]', '#mini [data-act="next"]', '#mini-thumb', '#mini .mini__text'].map(own) };
+        });
+        expect(line.role, 'the line is a slider').toBe('slider');
+        expect(line.hidden, 'the line is not hidden from a screen reader').toBe(false);
+        expect(line.zoneHeight, `its touch area is at least --hit (${line.hit}) tall`).toBeGreaterThanOrEqual(line.hit - 0.5);
+        expect(line.keysOwnTheirTaps, 'the keys, the cover and the words keep their taps').toEqual([true, true, true, true, true]);
+        expect(line.ys.length, 'room to touch the line in').toBeGreaterThanOrEqual(10);
+        const y = line.ys[Math.floor(line.ys.length / 2)];
+        const at = (f) => ({ x: line.track.left + line.track.width * f, y });
+        await drag(page, at(0.2), at(0.7));
+        await expect.poll(() => frac(page), 'a drag along the line moves the song').toBeGreaterThan(0.6);
+        expect(await frac(page)).toBeLessThan(0.8);
+        expect(await current(page), 'a drag along the line is not a swipe').toBe(queue[1]);
+        await drag(page, at(0.7), at(0.3));
+        await expect.poll(() => frac(page), 'and back').toBeLessThan(0.4);
+        expect(await current(page)).toBe(queue[1]);
+
+        // a swipe on the bar's words skips, as before
+        const words = await page.evaluate(() => { const r = document.querySelector('#mini .mini__text').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+        await drag(page, words, { x: words.x - 110, y: words.y }, 8);
+        await expect.poll(() => current(page), 'a swipe left goes on').toBe(queue[2]);
+        await drag(page, words, { x: words.x + 110, y: words.y }, 8);
+        await expect.poll(() => current(page), 'a swipe right goes back').toBe(queue[1]);
+      });
     });
   }
 }

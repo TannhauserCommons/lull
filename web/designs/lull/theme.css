@@ -1854,6 +1854,8 @@
   :root[data-design="lull"] .now-lycard .now-ly__head { position: static; justify-content: flex-end; margin-bottom: 4px; }
   /* mini player: a thin progress line along its foot and a stream chip beside the artist */
   :root[data-design="lull"] .mini > .seek--line { top: auto; bottom: 3px; left: 12px; right: 12px; }
+  /* the line is at the bar's foot: its touch area reaches down over the gap above the tab bar's tiles, not up */
+  :root[data-design="lull"] .mini > .seek--line::before { top: calc(13px - var(--hit)); }
   :root[data-design="lull"] .mini > .seek--line .seek__track { height: 3px; margin-top: 0; }
   :root[data-design="lull"] .mini__text { grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-items: center; }
   :root[data-design="lull"] .mini__title { grid-column: 1 / -1; }

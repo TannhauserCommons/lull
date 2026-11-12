@@ -821,7 +821,7 @@
   :root[data-design="petal"] .tab .ic { border-radius: 0; }
   :root[data-design="petal"] .tab[aria-current="page"] .ic { background: var(--panel); box-shadow: inset 0 0 0 2px var(--line); color: var(--fg-sky); }
 }
-:root[data-design="petal"] .mini { background-color: var(--panel); overflow: hidden; }
+:root[data-design="petal"] .mini { background-color: var(--panel); }
 :root[data-design="petal"] .mini .bezel-thumb :is(.cover, span) { --snap-w: 3px; --snap-o: 3px; transform: rotate(-3deg); }
 :root[data-design="petal"] .mini__title { font: 400 1.25rem/1.05 var(--f-zine); letter-spacing: .02em; }
 :root[data-design="petal"] .mini .seek--line { height: 4px; }
