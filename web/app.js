@@ -2568,7 +2568,9 @@
   /* steering or switching "keeps adding" re-fills the radio songs that have not played yet */
   P.setRadio = function (patch) {
     var was = ps.radio || {}, steerChanged = patch && ps.radio && patch.steer != null && patch.steer !== was.steer;
-    ps.radio = patch === null ? null : Object.assign({}, was, patch);
+    /* trying a paused radio again: until the hub answers, the queue says the radio is looking, not that it is paused */
+    var retry = !!(patch && 'error' in patch && !patch.error && was.error);
+    ps.radio = patch === null ? null : Object.assign({}, was, patch, retry ? { looking: true } : null);
     if (steerChanged) ps.queue = ps.queue.filter(function (q, i) { return i <= ps.index || q.group !== 'radio'; });
     /* a new steer, "keeps adding" switched on, or a retry after an error (error cleared) tops up now */
     if (patch && (steerChanged || patch.keepsAdding && !was.keepsAdding || 'error' in patch && !patch.error)) topUpRadio();
@@ -2584,18 +2586,27 @@
       var last = ps.queue[ps.index];
       ps.radio = { name: radioName({ kind: 'track', id: last.trackId }), seed: { kind: 'track', id: last.trackId }, keepsAdding: true, steer: LullRules.RADIO_STEER };
     }
-    if (!plan.ask) return Promise.resolve(0);
+    if (!plan.ask) {
+      if (ps.radio && ps.radio.looking) { ps.radio = Object.assign({}, ps.radio, { looking: false }); changed('queue'); }
+      return Promise.resolve(0);
+    }
     var have = ps.queue.map(function (q) { return q.trackId; });
+    /* the answer settles the radio's one state: songs added, or paused with the hub's reason (also when it had nothing
+       new while the radio still needs songs), never a search still said to run */
     topping = fetchRadio(ps.radio.seed, ps.radio.steer, have).then(function (ids) {
       topping = null;
-      if (ps.radio && ps.radio.error) ps.radio = Object.assign({}, ps.radio, { error: null });
       ids = ids.filter(function (id) { return have.indexOf(id) < 0; });
       ids.forEach(function (id) { ps.queue.push(entry(id, 'radio')); });
-      if (ids.length) queueChanged();
+      if (ps.radio) {
+        var looked = ps.radio.looking, short = !ids.length && LullRules.radio({ index: ps.index, length: ps.queue.length, repeat: ps.repeat, radio: ps.radio }, false).ask;
+        ps.radio = Object.assign({}, ps.radio, { looking: false, error: short ? 'No new songs for this radio yet.' : null });
+        if (looked && ids.length) App.announce('Radio added ' + ids.length + (ids.length === 1 ? ' song' : ' songs'));
+      }
+      if (ids.length) queueChanged(); else changed('queue');
       return ids.length;
     }, function (err) {
       topping = null;
-      ps.radio = Object.assign({}, ps.radio, { error: err.message });
+      if (ps.radio) ps.radio = Object.assign({}, ps.radio, { looking: false, error: err.message });
       changed('queue');
       return 0;
     });
@@ -2605,8 +2616,7 @@
   /* radio paused by an unreachable hub (or an error) tries again once the hub answers */
   App.on('server', function (srv) {
     if (!srv.reachable || !ps.radio || !ps.radio.error || topping) return;
-    ps.radio = Object.assign({}, ps.radio, { error: null }); changed('queue');
-    topUpRadio();
+    P.setRadio({ error: null });
   });
 
   /* ---------- server `stream` events: the Soulseek side of the playing song ---------- */
@@ -3295,7 +3305,7 @@
     ps.queue = saved.queue.filter(function (q) { return M.track(q.trackId); }).map(function (q) { var e = entry(q.trackId, q.group, q.source); e.orig = q.orig; return e; });   // orig: shuffle's way back
     if (!ps.queue.length) return;
     ps.index = clamp(saved.index || 0, 0, ps.queue.length - 1);
-    ps.radio = saved.radio ? Object.assign({}, saved.radio, { error: null }) : null;    // an old error was that session's
+    ps.radio = saved.radio ? Object.assign({}, saved.radio, { error: null, looking: false }) : null;    // an old error or search was that session's
     ps.context = validPlace(saved.context);
     ps.pos = saved.pos || 0;
     var t = P.current();

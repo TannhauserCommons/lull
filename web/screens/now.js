@@ -623,7 +623,8 @@
         <input class="range" id="${steerId}" type="range" min="0" max="100" step="5" value="${Math.round(steer * 100)}" style="--fill:${Math.round(steer * 100)}%" data-now-steer aria-valuetext="${steerText(steer)}" data-fk="radio-steer">
         <div class="now-q__steer-ends" aria-hidden="true"><span>Familiar</span><span>Adventurous</span></div>
       </div>` : ''}
-      ${on && r.error ? html`<div class="now-q__err" role="alert">${icon('warning', null, 'ic-16')}<span>Radio paused: ${r.error}</span><button class="btn btn--sm" data-act="now-radio-retry" data-fk="radio-retry">Try again</button></div>` : ''}
+      ${on && r.looking ? html`<div class="now-q__err now-q__looking" role="status">${icon('radio', null, 'ic-16')}<span>Looking for more radio songs…</span></div>`
+        : on && r.error ? html`<div class="now-q__err" role="alert">${icon('warning', null, 'ic-16')}<span>Radio paused: ${r.error}</span><button class="btn btn--sm" data-act="now-radio-retry" data-fk="radio-retry">Try again</button></div>` : ''}
     </div>`;
   }
   function steerText(v) { return v < .25 ? 'Mostly familiar' : v < .45 ? 'A little adventurous' : v < .7 ? 'Balanced' : 'Very adventurous'; }
@@ -1140,9 +1141,9 @@
     withFocus('radio-keep', function () { P.setRadio({ keepsAdding: on }); });
     App.announce(on ? 'Radio keeps adding songs' : 'Radio stopped. The queue stays.');
   });
+  /* the card itself says the radio is looking, then what came of it: songs added, or paused again with the reason */
   App.action('now-radio-retry', function () {
     withFocus('radio-keep', function () { P.setRadio({ error: null }); });
-    App.toast('Looking for more radio songs', { confirms: true, group: 'radio', icon: 'radio' });
   });
   /* the slider only repaints while it moves; the steer goes to the engine on release (which re-fills the radio) */
   document.addEventListener('input', function (e) {

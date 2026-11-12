@@ -275,6 +275,7 @@
 .now-q__err { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--divider); font: var(--t-micro); }
 .now-q__err > .ic { color: var(--heart); margin-top: 1px; }
 .now-q__err > .btn { grid-column: 2; justify-self: start; }
+.now-q__looking > .ic { color: var(--fg-2); }
 
 /* =====================================================================
    Activity

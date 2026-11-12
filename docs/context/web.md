@@ -248,7 +248,10 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   the playing song's place stay, the radio's songs follow; without `append`, as in the song menu, it replaces the
   queue and plays), with one it switches "keeps adding" on or off. A radio switched
   off stays as "stopped" with its seed, so on again resumes it; Steer and Retry show only while it is on. No design
-  hides the switch (`gates/queue-radio.spec.mjs`).
+  hides the switch (`gates/queue-radio.spec.mjs`). The radio has one state the card tells: a top-up that fails, or
+  that brings nothing new while the radio still needs songs, pauses it with the reason ("Radio paused: …", Try again);
+  Try again (or the hub coming back) shows "Looking for more radio songs…" in its place (`ps.radio.looking`) until the
+  answer, then the songs (announced) or the pause again. No toast says it is looking.
 - **Where it plays from** (`ps.context = { kind, id, name }`, persisted with the queue): `playList(ids, start,
   { context })` records the place a play starts from. Left out, it is the page showing, `App.here()`: each list route
   declares its `place(ctx)` (album, artist, playlist, tag, Liked, History, Saved songs, Downloads, search results by

@@ -81,6 +81,36 @@ for (const [size, use] of Object.entries(sizes)) {
         });
       }
 
+      // Try again tells one story: the card says the radio is looking until the hub answers, then what came of it. Live, the
+      // card said "Radio paused" while a toast said "Looking for more radio songs" over it.
+      if (size === 'laptop') test(`a paused radio tried again says it is looking, then paused again, nowhere else / ${design}`, async ({ page }) => {
+        await openScreen(page, `/album/${ids.album}`, { design });
+        const where = await showQueue(page, size, 'panel', true);
+        let answer;
+        const answered = new Promise((resolve) => { answer = resolve; });
+        await page.route('**/api/radio?*', async (route) => {
+          await answered;
+          await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not_found', message: 'No music source has anything for this radio yet.' }) });
+        });
+        // as live: nothing after the playing song, so the radio has to find more
+        await page.evaluate(() => {
+          const s = App.player.state;
+          s.queue.splice(s.index + 1);
+          App.player.setRadio({ error: 'No music source has anything for this radio yet.' });
+        });
+        const err = page.locator(`${where} .now-q__err`).first();
+        await err.getByRole('button', { name: 'Try again' }).click();
+
+        const looking = page.locator(`${where} .now-q__looking`);
+        await expect(looking.first(), 'the card says the radio is looking').toContainText('Looking for more radio songs');
+        await expect(page.locator(`${where} [data-act="now-radio-retry"]`), 'no Try again while it looks').toHaveCount(0);
+        answer();
+        await expect(err.getByRole('button', { name: 'Try again' }), 'paused again, with the reason').toBeVisible();
+        await expect(err).toContainText('No music source has anything for this radio yet.');
+        await expect(looking).toHaveCount(0);
+        await expect(page.locator('#toasts .toast', { hasText: 'Looking for more radio songs' }), 'no note says it is still looking').toHaveCount(0);
+      });
+
       // the music carries on: the queue and the playing song's place stay as they were, the radio follows the queue
       if (size !== 'card') test(`a queue that never had a radio continues into one from its switch / ${design}`, async ({ page }) => {
         await openScreen(page, `/album/${ids.album}`, { design });
