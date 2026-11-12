@@ -1079,7 +1079,7 @@
   :root[data-design="glasshouse"][data-shell="dock"] .nav-item[aria-current="page"] { background: var(--gh-lit); color: var(--ink); border-color: var(--gh-lit-edge); }
 }
 @media (max-width: 1099px) {
-  :root[data-design="glasshouse"] .header__search .input { font-size: .875rem; padding-right: 40px; }
+  :root[data-design="glasshouse"] .header__search .input { font-size: 1rem; padding-right: 40px; }
   :root[data-design="glasshouse"] .header__search .input::placeholder { font-size: .875rem; }
   :root[data-design="glasshouse"] .header__search .kbd { display: none; }      /* decorative hint; the field needs the room */
 }

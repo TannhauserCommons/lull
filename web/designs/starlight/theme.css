@@ -1613,7 +1613,7 @@
   :root[data-design="starlight"] .nav-item[aria-current="page"] .ic { color: var(--sl-icon); }
   :root[data-design="starlight"] .pbar__now { min-width: 0; }   /* it was 250: the title ran out of its column over the transport at 640 to 800 px; the base look clips it */
   :root[data-design="starlight"] .pbar__controls { gap: 4px; }   /* the five transport buttons in 232 px (they were 264 px at 12 px in a 230 px column, and Repeat ran onto Like); the centre itself takes what the sides leave (layout.js, --fit-side) */
-  :root[data-design="starlight"] .header__search .input { font-size: .9375rem; }
+  :root[data-design="starlight"] .header__search .input { font-size: 1rem; }
   :root[data-design="starlight"] .lib .trow__title { white-space: normal; text-align: left; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 }
 
