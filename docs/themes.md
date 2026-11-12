@@ -635,6 +635,10 @@ they are drawn at; leave that `::before` free on them, and keep such a key posit
 the key's own. A key of your own drawn smaller does the same, and keys in a row stand 44 px apart, centre to centre, so
 each touch area is its own.
 
+**Hover is for a pointer that hovers:** a phone keeps `:hover` on what was tapped until the next tap elsewhere, so
+lull's own hover styles sit in `@media (hover: hover)`; put yours there too, and give what a hover reveals another way
+in (`:focus-within`, or drawn without one).
+
 **Every mode** the manifest lists, with each token you set given in both the day and the night block.
 
 **Contrast, information for you:** lull reports where text may be hard to read, so you can weigh it. It is never a rule:

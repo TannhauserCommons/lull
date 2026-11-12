@@ -122,29 +122,35 @@ test('a held link shows lull\'s menu, not the browser\'s callout', async ({ page
   expect(callout.filter((c) => c !== 'none'), 'links that still give iOS\'s callout').toEqual([]);
 });
 
-/* :hover sticks on a phone after a tap (iOS keeps it until the next tap elsewhere): every hover style is for a pointer
-   that can hover, inside @media (hover: hover) */
+/* :hover sticks on a phone after a tap (iOS keeps it until the next tap elsewhere): every hover style of lull's own CSS
+   (web/*.css and the screens', which every design and theme builds on) is for a pointer that can hover, inside
+   @media (hover: hover). A :hover only inside :not() styles what isn't hovered, so it doesn't count. A design's and a
+   listener theme's sheets are their own */
 test('hover styles wait for a pointer that hovers', async ({ page }) => {
-  test.fixme(true, 'M10: about 100 :hover rules in base.css and components.css apply on touch and stick after a tap');
   await open(page, '/home');
-  const bare = await page.evaluate(() => {
-    const out = [];
-    const walk = (rules, guarded, file) => {
-      for (const r of rules) {
-        if (r instanceof CSSMediaRule) walk(r.cssRules, guarded || /\(\s*(any-)?hover\s*:\s*hover\s*\)/.test(r.conditionText || r.media.mediaText), file);
-        else if (r instanceof CSSStyleRule) {
-          if (!guarded && /:hover/.test(r.selectorText) && !/scrollbar/.test(r.selectorText)) out.push(`${file}: ${r.selectorText.slice(0, 80)}`);
-          if (r.cssRules) walk(r.cssRules, guarded, file);
-        } else if (r.cssRules) walk(r.cssRules, guarded, file);
-      }
-    };
-    const sheets = [];
-    const collect = (s) => { sheets.push(s); for (const r of s.cssRules) if (r instanceof CSSImportRule && r.styleSheet) collect(r.styleSheet); };
-    for (const s of document.styleSheets) collect(s);
-    for (const s of sheets) walk(s.cssRules, false, (s.href || 'inline').split('/').pop());
-    return out;
-  });
-  expect(bare, `${bare.length} :hover rules outside @media (hover: hover)`).toEqual([]);
+  const bare = new Set();
+  for (const route of ['/home', '/library', '/now', '/stats', '/settings']) {
+    await go(page, route);
+    for (const x of await page.evaluate(() => {
+      const out = [];
+      const walk = (rules, guarded, file) => {
+        for (const r of rules) {
+          if (r instanceof CSSMediaRule) walk(r.cssRules, guarded || /\(\s*(any-)?hover\s*:\s*hover\s*\)/.test(r.conditionText || r.media.mediaText), file);
+          else if (r instanceof CSSStyleRule) {
+            const sel = r.selectorText.replace(/:not\((?:[^()]|\([^()]*\))*\)/g, '');
+            if (!guarded && /:hover/.test(sel) && !/scrollbar/.test(sel)) out.push(`${file}: ${r.selectorText.slice(0, 80)}`);
+            if (r.cssRules) walk(r.cssRules, guarded, file);
+          } else if (r.cssRules) walk(r.cssRules, guarded, file);
+        }
+      };
+      const sheets = [];
+      const collect = (s) => { sheets.push(s); for (const r of s.cssRules) if (r instanceof CSSImportRule && r.styleSheet) collect(r.styleSheet); };
+      for (const s of document.styleSheets) collect(s);
+      for (const s of sheets) if (s.href && !/\/(designs|packs|api)\//.test(s.href)) walk(s.cssRules, false, s.href.split('/').slice(-2).join('/'));
+      return out;
+    })) bare.add(x);
+  }
+  expect([...bare], `${bare.size} :hover rules outside @media (hover: hover)`).toEqual([]);
 });
 
 test('with reduced motion asked, nothing on Now Playing loops', async ({ page }) => {

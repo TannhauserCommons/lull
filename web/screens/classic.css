@@ -117,7 +117,7 @@ html[data-classic="on"] #app { visibility: hidden; }
   overflow: hidden; background: var(--bg-2); cursor: zoom-in;
 }
 .cls-card__shot .cls-shot { width: 100%; }
-.cls-card__shot:hover { border-color: var(--accent-ui); }
+@media (hover: hover) { .cls-card__shot:hover { border-color: var(--accent-ui); } }
 .cls-card__text { display: grid; gap: 1px; min-width: 0; padding: 0 2px; }
 .cls-card__name { font: var(--t-row); font-size: 1rem; }
 .cls-card__file { font: var(--t-micro); color: var(--fg-2); }

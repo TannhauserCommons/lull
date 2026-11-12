@@ -63,7 +63,7 @@
   display: grid; place-items: center; aspect-ratio: 1; margin-bottom: var(--sp-3); border-radius: var(--r-art);
   border: var(--stroke) dashed var(--edge); color: var(--link); transition: background-color var(--dur-1);
 }
-.lib-newtile:hover .lib-newtile__box { background: var(--bg-2); }
+@media (hover: hover) { .lib-newtile:hover .lib-newtile__box { background: var(--bg-2); } }
 .lib-newtile:focus-visible { outline: none; }
 .lib-newtile:focus-visible .lib-newtile__box { outline: 2px solid var(--focus); outline-offset: 2px; }
 
@@ -73,7 +73,7 @@
 .lib-tagcard__art { grid-area: art; border-radius: var(--r-thumb); }
 .lib-tagcard__main { grid-area: main; min-width: 0; }
 .lib-tagcard h3 { font: var(--t-row); }
-.lib-tagcard h3 a:hover { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
+@media (hover: hover) { .lib-tagcard h3 a:hover { color: var(--link); text-decoration: underline; text-underline-offset: 3px; } }
 .lib-tagcard__meta { font: var(--t-micro); color: var(--fg-2); margin: 2px 0 6px; }
 .lib-tagcard__desc { font: var(--t-meta); color: var(--fg-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .lib-tagcard__tools { grid-area: tools; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
@@ -89,7 +89,7 @@
 .lib-title { overflow-wrap: anywhere; margin: -4px 0 0; }
 .lib-hero__by { margin-top: -6px; font: 800 1.125rem/1.3 var(--f-ui); }
 .lib-hero__by a { color: var(--link); }
-.lib-hero__by a:hover { text-decoration: underline; text-underline-offset: 3px; }
+@media (hover: hover) { .lib-hero__by a:hover { text-decoration: underline; text-underline-offset: 3px; } }
 .lib-hero__facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); color: var(--fg-2); }
 .lib-hero__fmt { display: none; }   /* design hook: album file facts (App.fmt.albumLine), hidden in the base look */
 .lib-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
@@ -136,7 +136,7 @@
 .lib-frow + .lib-frow { border-top: 1px solid var(--divider); }
 .lib-frow__main { flex: 1; min-width: 0; display: grid; }
 .lib-frow__name { font: var(--t-row); justify-self: start; }
-.lib-frow__name:hover { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
+@media (hover: hover) { .lib-frow__name:hover { color: var(--link); text-decoration: underline; text-underline-offset: 3px; } }
 .lib-frow__meta { font: var(--t-meta); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lib-frow .btn { flex: none; }
 .lib-suggest { margin-top: var(--sp-5); }
@@ -161,7 +161,7 @@
   font: 800 .8125rem/1 var(--f-ui); color: var(--fg-2); white-space: nowrap; }
 /* each header is a columnheader holding its sort button, which fills it */
 .lib-th__btn { display: inline-flex; align-items: center; gap: 2px; min-height: 32px; margin: 0 -4px; padding: 0 4px; border-radius: inherit; }
-.lib-th__btn:hover { color: var(--fg); background: var(--bg-2); }
+@media (hover: hover) { .lib-th__btn:hover { color: var(--fg); background: var(--bg-2); } }
 .lib-th:is([aria-sort="ascending"], [aria-sort="descending"]) { color: var(--link); }
 .lib-th--num { grid-column: 1; justify-self: center; margin-left: 0; }
 .lib-th--title { grid-column: 2 / span 2; }
@@ -225,7 +225,7 @@
 .lib-imp__sum { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .lib-imp__list { list-style: none; margin: 0; padding: 0; display: block; max-height: min(42vh, 380px); overflow: auto; border-top: 1px solid var(--divider); border-bottom: 1px solid var(--divider); }
 .lib-imp__row { display: grid; grid-template-columns: 24px 40px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); min-height: 56px; margin-top: 2px; padding: 6px 8px; border-radius: 12px; }
-.lib-imp__row:hover { background: var(--bg-2); }
+@media (hover: hover) { .lib-imp__row:hover { background: var(--bg-2); } }
 .lib-imp__row:empty { display: block; }   /* a long import's row away from view (components.css, li[data-fill]) */
 .lib-imp__row[hidden] { display: none; }
 .lib-imp__n { font: 700 .8125rem/1 var(--f-ui); color: var(--fg-2); text-align: right; font-variant-numeric: tabular-nums; }
@@ -260,7 +260,7 @@
 .lib-linkrev__find { grid-column: 1 / -1; display: grid; gap: var(--sp-2); padding: var(--sp-2) 0 var(--sp-1); }
 .lib-linkrev__hits { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .lib-linkrev__hit { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: var(--sp-3); align-items: center; width: 100%; padding: 6px 8px; border: 0; border-radius: 12px; background: none; color: inherit; text-align: left; cursor: pointer; }
-.lib-linkrev__hit:hover, .lib-linkrev__hit:focus-visible { background: var(--bg-2); }
+.lib-linkrev__hit:focus-visible { background: var(--bg-2); } @media (hover: hover) { .lib-linkrev__hit:hover { background: var(--bg-2); } }
 .lib-linkrev__foot { display: contents; }
 
 /* add-to-playlist picker sheet */
@@ -270,7 +270,7 @@
 .lib-picker__search .input { padding-right: var(--sp-4); }
 .lib-pick-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .lib-pick { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 56px; padding: 6px 8px; border-radius: 14px; text-align: left; color: var(--fg); }
-.lib-pick:hover { background: var(--bg-2); }
+@media (hover: hover) { .lib-pick:hover { background: var(--bg-2); } }
 .lib-pick:focus-visible { outline-offset: -2px; }
 .lib-pick__text { display: grid; min-width: 0; }
 .lib-pick__text b { font: 800 1rem/1.25 var(--f-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

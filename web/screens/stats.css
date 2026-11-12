@@ -24,10 +24,10 @@
 .sys-bars__n { font: var(--t-micro); color: var(--fg-2); text-align: right; }
 .sys-bars__main { display: grid; gap: 5px; min-width: 0; }
 .sys-bars__name { justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-row); color: var(--fg); text-align: left; text-decoration: none; }
-a.sys-bars__name:hover, button.sys-bars__name:hover { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+@media (hover: hover) { a.sys-bars__name:hover, button.sys-bars__name:hover { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; } }
 .sys-bars__by { margin-top: -4px; font: var(--t-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sys-bars__by a { color: var(--fg-2); text-decoration: none; }
-.sys-bars__by a:hover { color: var(--link); text-decoration: underline; }
+@media (hover: hover) { .sys-bars__by a:hover { color: var(--link); text-decoration: underline; } }
 .sys-bars__val { font: 800 .9375rem/1.2 var(--f-ui); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sys-bars__val .fg-2 { font-weight: 600; font-size: .8125rem; }
 
@@ -37,7 +37,7 @@ a.sys-bars__name:hover, button.sys-bars__name:hover { text-decoration: underline
 .sys-heat__day { grid-column: 1; font: var(--t-micro); color: var(--fg-2); }
 .sys-heat__cell { display: block; aspect-ratio: 1; max-height: 30px; min-height: 9px; border-radius: 3px; background: var(--c); }
 .sys-heat__cell[data-l="0"] { box-shadow: inset 0 0 0 1px var(--cream-3); }
-.sys-heat__cell:hover { outline: 2px solid var(--focus); outline-offset: 1px; }
+@media (hover: hover) { .sys-heat__cell:hover { outline: 2px solid var(--focus); outline-offset: 1px; } }
 .sys-legend { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: var(--sp-3); font: var(--t-micro); color: var(--fg-2); }
 .sys-legend .sys-heat__cell { width: 14px; height: 14px; min-height: 0; }
 .sys-legend span { margin: 0 4px; }

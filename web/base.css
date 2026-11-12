@@ -180,8 +180,8 @@
 
   /* ---------- links ---------- */
   .link { color: var(--link); font-weight: 800; }
-  .link:hover { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
-  .link-plain:hover { text-decoration: underline; text-underline-offset: 3px; }
+  @media (hover: hover) { .link:hover { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; } }
+  @media (hover: hover) { .link-plain:hover { text-decoration: underline; text-underline-offset: 3px; } }
 
   /* ---------- utilities ---------- */
   .vh {
