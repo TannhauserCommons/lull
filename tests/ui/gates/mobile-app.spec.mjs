@@ -61,9 +61,16 @@ test('the browser\'s bar takes the theme\'s colour, day and night', async ({ pag
   const color = () => page.locator('meta[name="theme-color"]').getAttribute('content');
   await page.evaluate(() => App.setPref('theme', 'day'));
   const day = await color();
+  // a flip the listener watches (the page loaded a while ago and is in view) fades night in (Designs.applyTheme), so the
+  // page's colour the moment night is asked for is still day's: CI's WebKit got there on its own (run 43213407325)
+  await page.waitForTimeout(1200);
   await page.evaluate(() => App.setPref('theme', 'night'));
-  // the theme's colour is written once night's styles apply, a frame or more after the switch (slower in WebKit on CI)
-  await expect.poll(color, { timeout: 5000 }).not.toBe(day);
+  expect(await page.evaluate(() => document.documentElement.hasAttribute('data-theme-fade')), 'night fades in').toBe(true);
+  await page.waitForFunction(() => !document.documentElement.hasAttribute('data-theme-fade'));
+  const night = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--sky').trim());
+  expect(night).not.toBe(day);
+  // the theme's colour is written once night's styles apply, a frame or more after the fade (slower in WebKit on CI)
+  await expect.poll(color, { timeout: 5000 }).toBe(night);
 });
 
 test.describe('with its service worker', () => {

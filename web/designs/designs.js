@@ -201,6 +201,11 @@
      watch: after the page has loaded and while it is visible. A page loading into its theme, or one the OS flips in the
      background, cuts straight to it, and the attribute's removal ends a fade a hidden page never ran. */
   var themePref = 'system', fadeTimer = 0, settled = false;
+  /* fn() runs when the theme's colours have changed since the attributes did: a fade has ended (until then :root's values
+     are on their way), or a design's stylesheet, or the CSS a stored theme imports, has loaded */
+  var shownFns = [];
+  D.onThemeShown = function (fn) { shownFns.push(fn); };
+  function shown() { shownFns.forEach(function (fn) { fn(); }); }
   var darkOs = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   window.addEventListener('load', function () { setTimeout(function () { settled = true; }, 1000); });
   D.applyTheme = function (pref) {
@@ -211,7 +216,7 @@
     if (settled && document.visibilityState === 'visible' && root.getAttribute('data-theme') !== t) {
       root.setAttribute('data-theme-fade', '');
       clearTimeout(fadeTimer);
-      fadeTimer = setTimeout(function () { root.removeAttribute('data-theme-fade'); }, 1400);
+      fadeTimer = setTimeout(function () { root.removeAttribute('data-theme-fade'); shown(); }, 1400);
     }
     root.setAttribute('data-theme', t);
     root.setAttribute('data-theme-pref', themePref);
@@ -609,6 +614,7 @@
       userCss = document.createElement('style');
       userCss.id = 'user-css';
       userCss.setAttribute('blocking', 'render');
+      userCss.addEventListener('load', shown);       // its @import has arrived
       (link && link.parentNode ? link.parentNode.insertBefore(userCss, link.nextSibling) : document.head.appendChild(userCss));
     }
     if (userCss.textContent !== css) userCss.textContent = css;
@@ -732,7 +738,7 @@
     prepare(id).then(function () {
       var design = designOf(id), cur = link && !link.disabled ? link.getAttribute('href') : null;
       var want = design ? D.base + design + '/theme.css' : null;
-      return swapDesignCss(cur, want).then(function () { setUserCss(id); applyAttrs(id); if (onDone) onDone(); });
+      return swapDesignCss(cur, want).then(function () { setUserCss(id); applyAttrs(id); if (onDone) onDone(); shown(); });
     }).catch(function (e) {
       console.error('Theme ' + id + ' failed to load', e);
       if (onFail) onFail(id);

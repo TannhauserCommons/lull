@@ -323,10 +323,17 @@
     Designs.applyTheme(p.theme);                     // 'system' (null) -> explicit day / night, follows the OS
     if (p.motion === 'reduce' || p.motion === 'full') root.setAttribute('data-motion', p.motion); else root.removeAttribute('data-motion');
     root.style.fontSize = p.textSize && +p.textSize !== 100 ? +p.textSize + '%' : '';
-    var meta = $('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', getComputedStyle(root).getPropertyValue('--sky').trim() || '#f7f4ff');
+    themeColor();
     App.emit('prefs', p);
   }
+  /* the browser's bar (and an installed app's title bar) in the page's colour. A flip the listener watches fades :root's
+     colours (Designs.applyTheme), so --sky read now is where the fade starts: it is read again once the fade has ended,
+     and when a design's stylesheet loads */
+  function themeColor() {
+    var meta = $('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', getComputedStyle(root).getPropertyValue('--sky').trim() || '#f7f4ff');
+  }
+  Designs.onThemeShown(themeColor);
   App.prefs = function () {
     return { theme: prefs.theme || 'system', motion: prefs.motion || 'system', textSize: +prefs.textSize || 100, design: Designs.current, pauseInactive: !!prefs.pauseInactive,
       confirmations: prefs.confirmations === 'quiet' ? 'quiet' : 'show' };
