@@ -131,7 +131,6 @@ test('the lock screen shows the song, its cover and where it is', async ({ page 
 
 // a listener's report (2026-11): the lock screen offered 10-second skips, and no next or previous song
 test('the lock screen skips songs, not 10 seconds', async ({ page }) => {
-  test.fixme(true, 'M02: app.js wireMediaSession sets seekbackward and seekforward, which iOS shows instead of previous and next');
   await playing(page);
   const set = await page.evaluate(() => Object.keys(window.__ms.actions).filter((a) => window.__ms.actions[a]).sort());
   expect(set).toEqual(expect.arrayContaining(['nexttrack', 'pause', 'play', 'previoustrack', 'seekto']));
@@ -143,7 +142,6 @@ test('the lock screen skips songs, not 10 seconds', async ({ page }) => {
 // page's Web Audio in the background unless the page's audio session is for playback (Safari's navigator.audioSession)
 // (Chromium has no audioSession: the gate gives it Safari's, set to the default 'auto')
 test('a song played through Web Audio is a playback session, so it sounds with the screen off', async ({ page }) => {
-  test.fixme(true, 'M01: the Web Audio graph (app.js ensureGraph) is built with the audio session left at auto');
   await page.addInitScript(() => {
     if (!window.AudioContext) return;
     if (!navigator.audioSession) Object.defineProperty(Navigator.prototype, 'audioSession', { configurable: true, value: { type: 'auto' } });

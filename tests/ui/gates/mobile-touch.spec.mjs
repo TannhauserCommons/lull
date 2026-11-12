@@ -48,7 +48,6 @@ for (const design of designs) {
 
   // a listener's report (2026-11): the play key on Now Playing was squeezed to a sliver on an iPhone
   test(`Now Playing's play key is whole, round and on top / ${design}`, async ({ page }) => {
-    test.fixme(design === 'lull', 'M03: lull\'s .lull-dev__screen has no height on a phone, so it clips the play key away');
     await withSong(page, design, '/now?tab=art');
     const key = await page.evaluate(() => {
       const b = [...document.querySelectorAll('#view [data-act="play"]')].find((e) => e.getClientRects().length);
@@ -74,7 +73,6 @@ for (const design of designs) {
 
   // a listener's report (2026-11): the Search tab opened the page without putting the cursor in the field
   test(`the Search tab puts the cursor in the field / ${design}`, async ({ page }) => {
-    test.fixme(true, 'M04: the Search tab only routes to #/search; nothing focuses #disc-q in the tap');
     await open(page, '/home', { design });
     await page.locator('.tabbar [data-nav="search"]').tap();
     await expect(page.locator('#disc-q')).toBeFocused();
@@ -215,9 +213,6 @@ for (const design of designs) {
 for (const design of designs) {
   test(`a note leaves Now Playing's controls free / ${design}`, async ({ page }) => {
     await withSong(page, design, '/now?tab=art');
-    // while lull's disc system has no height on a phone (M03), its keys sit at the sheet's top, where the notes come down
-    test.fixme(await page.evaluate(() => (document.querySelector('#view .lull-dev__screen')?.getBoundingClientRect().height ?? 100) < 100),
-      'M03: lull\'s .lull-dev__screen has no height on a phone, so its transport sits under the notes at the top');
     await page.evaluate(() => { App.toast('Install lull for a full-screen player with lock-screen controls'); App.toast('Added 12 songs to the queue'); });
     await page.waitForTimeout(600);
     const covered = await page.evaluate(() => [...document.querySelectorAll('#view [data-act="prev"], #view [data-act="play"], #view [data-act="next"], #view [data-seek="player"]')]

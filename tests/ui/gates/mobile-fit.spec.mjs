@@ -143,7 +143,6 @@ const smallFields = () => [...document.querySelectorAll('input, textarea, select
 
 for (const design of designs) {
   test(`no field makes iOS zoom the page / ${design}`, async ({ page }) => {
-    test.fixme(design === 'lull', 'M05: lull\'s fields are 15 px, so iOS zooms in on focus and stays zoomed');
     await open(page, '/search', { design });
     for (const route of ['/search', '/playlists', '/settings/appearance', '/settings/sources', '/settings/library']) {
       await go(page, route);
