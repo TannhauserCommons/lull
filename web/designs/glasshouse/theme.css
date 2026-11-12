@@ -1804,6 +1804,10 @@
   :root[data-design="glasshouse"] .now-devc__skip { grid-column: 1; justify-self: end; }
   :root[data-design="glasshouse"] .now-devc__keys > [data-now="ca"] { grid-column: 2; grid-row: 1; }
   :root[data-design="glasshouse"] .now-devc__keys > [data-now="cb"] { grid-column: 3; grid-row: 1; justify-self: start; }
+  /* the floating header and tab dock stand clear of the notch and the home indicator: their own padding above replaces
+     the base's, which carried the safe-area insets, so the insets go in their margins */
+  :root[data-design="glasshouse"] .header { margin-top: calc(8px + env(safe-area-inset-top)); }
+  :root[data-design="glasshouse"] .tabbar { margin-bottom: calc(8px + env(safe-area-inset-bottom)); }
 }
 
 /* a phone's library keys are a groove of three by three, every word whole, in place of a strip that runs off the edge and

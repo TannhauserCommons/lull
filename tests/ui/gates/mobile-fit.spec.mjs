@@ -79,7 +79,6 @@ test.describe('the notch and the home indicator', () => {
   for (const design of designs) {
     test(`nothing to read or tap under them / ${design}`, async ({ page, browser }) => {
       test.skip(isWebkit(browser), 'WebKit takes no safe-area insets from a test');
-      test.fixme(design === 'glasshouse', 'M11: Glasshouse\'s phone header and tab bar set their own padding without the safe-area insets');
       await insets(page, { top: 47, bottom: 34 });
       await withSong(page, design);
       for (const route of ['/home', '/now?tab=art', '/now?tab=queue', '/settings']) {
