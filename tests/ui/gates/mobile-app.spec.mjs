@@ -50,7 +50,6 @@ test('the home-screen icon on iOS is opaque and 180 px', async ({ page }) => {
 });
 
 test('iOS opens the installed app full screen, under a status bar that fits the theme', async ({ page }) => {
-  test.fixme(true, 'M12: no apple-mobile-web-app-status-bar-style or mobile-web-app-capable in index.html');
   await open(page, '/home');
   const meta = (n) => page.evaluate((n) => document.querySelector(`meta[name="${n}"]`)?.content ?? null, n);
   expect(await meta('apple-mobile-web-app-capable')).toBe('yes');
