@@ -736,7 +736,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   that gave way, `data-fit-gave` on the row (the orders that gave way, and `all` once every one did); `data-fit-sides`
   on a row in three columns whose sides lull sizes alike (the player bar, `--fit-side`), from its `data-fit-side` row
   (the tools); `data-fit-keep` on words that keep a readable width (the song's title and artist, at least `--fit-keep`
-  or all of them), which the row's parts give way to protect. Style how a part
+  or all of them), which the row's parts give way to protect. `--search-min` on `.header` is the room the search keeps (320 px) before the status tray, then the other parts, give way: set it, never a `min-width` on `.header__search`. Style how a part
   that gave way looks (a nav pill as its icon); lull's own CSS already takes away what must go, and puts it in the "…"
   menu. To style something else by what gave way, read the row (`.header[data-fit-gave~="2"] …`), not
   `:has([data-fit-out])`, which restyles the whole page at every step of a fit.

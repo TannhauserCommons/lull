@@ -1184,7 +1184,11 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
    never the window's, so a docked panel or the Now Playing column changes what they show */
 .main { grid-area: main; position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; container: main / inline-size; }
 .header { grid-area: head; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0 0 12px 16px; }
-.header__search { flex: 1 1 360px; max-width: 520px; min-width: 220px; }
+/* the search is the header's main tool: it keeps --search-min (about 20 characters of a query, beside its icon and clear key)
+   before any other part gives way, in every design; a design sets --search-min, never its own min-width (which would let
+   the field shrink to a sliver while the status tray still spends its room on three pills) */
+.header { --search-min: 320px; }
+.header__search { flex: 1 1 360px; max-width: 520px; min-width: var(--search-min); }
 /* parts of the header that give way when it runs out of room (layout.js, data-fit), after the search has shrunk to its
    least: the "/" hint, the tray's long words, the full tray for the compact one, the nav pills' labels (their icons and
    tooltips stay), the search's own least width and its placeholder, the compact tray's word, and last the day and night
@@ -1460,7 +1464,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
   :root[data-shell="topnav"] .header__settings { display: inline-grid; }
   :root[data-shell="topnav"] .header .btn-icon, :root[data-shell="dock"] .header .btn-icon { background: var(--panel); }
   :root[data-shell="topnav"] .header .btn-icon[aria-current="page"] { background: var(--peri); color: var(--ink); border-color: var(--line); }
-  :root[data-shell="topnav"] .header__search, :root[data-shell="dock"] .header__search { flex: 1 1 240px; min-width: 180px; max-width: 420px; }
+  :root[data-shell="topnav"] .header__search, :root[data-shell="dock"] .header__search { flex: 1 1 240px; max-width: 420px; }
   :root[data-shell="topnav"] .header__search .input, :root[data-shell="dock"] .header__search .input { height: 44px; background: var(--panel-2); }
   :root[data-shell="topnav"] .header .spacer { flex: 0 1 0; }
   :root[data-shell="topnav"] .banner-slot, :root[data-shell="dock"] .banner-slot { padding-left: 0; }

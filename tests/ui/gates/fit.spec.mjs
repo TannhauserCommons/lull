@@ -381,6 +381,41 @@ for (const design of designs) {
   });
 }
 
+// the search is the main tool of the header: it keeps a comfortable width before the
+// status tray and the other parts give way (components.css: the search's own --search-min floor and the fit order),
+// whatever a design lays out, in a browser and in the desktop app's window (whose
+// buttons take room from the header). The tray shows full while the search has 220 px to type in (the tray compacts first)
+for (const design of designs) {
+  for (const desktop of [false, true]) {
+    test(`the search keeps its room / ${design} / ${desktop ? 'desktop app' : 'browser'}`, async ({ page }) => {
+      if (desktop) {
+        await page.addInitScript({ path: fileURLToPath(new URL('./desktop-bridge.js', import.meta.url)) });
+        await page.addInitScript(() => { window.__LULL_DESKTOP__ = { os: 'win', titlebar: 'win' }; });
+      }
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openScreen(page, `/album/${ids.album}`, { design });
+      await page.evaluate(() => { location.hash = '#/home'; });
+      await settle(page);
+      const found = [];
+      for (const w of [1024, 1280, 1460, 1920]) {
+        await page.setViewportSize({ width: w, height: 900 });
+        await page.fill('#header-search', 'odetari blackhole');
+        await frames(page); await frames(page);
+        const m = await page.evaluate(() => {
+          const shown = (e) => e.getClientRects().length > 0;
+          const input = document.querySelector('#header-search'), cs = getComputedStyle(input);
+          const inner = input.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+          return {
+            inner, full: shown(document.querySelector('.tray--full')),
+          };
+        });
+        if (m.full && m.inner < 220) found.push(`at ${w} px the search has ${Math.round(m.inner)} px to type in beside the full tray, under 220`);
+      }
+      expect(found, 'the search').toEqual([]);
+    });
+  }
+}
+
 // a theme that lays out round the window's buttons itself (--layout-window-controls: own, docs/themes.md section 5):
 // lull reserves no room, so the header runs to the window's edge under them; their box is in --window-controls-w and -h,
 // and they stay on top and clickable. At 1440 (the header's room) and 720 (the strip of their own above the shell)
