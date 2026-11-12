@@ -52,6 +52,7 @@ Everything else is observed through what exists: `Fetcher::stream`/`play`, `upgr
 - **The note** of the playing fetch starts "Stays on this copy: " when the race ends without a winner.
 - **A lane is cancelled before its replacement is requested,** so a peer count never overshoots for a moment.
 - **Lanes freed at one moment go to playing songs' races first;** a preload asks only once none waits.
+- **The race's log line** (R26): INFO, message `better-copy race`, with `winner` (the peer, or `none`) and `secs` (from the race's start to the winner passing the gate, or to the race's end without one). No other INFO line about the better copy while it is raced.
 - **Constants:** 3 lanes a round, 6 peers a round, 6 s to a first byte, gate judged after 3 s over the last 2 s at `OUTRUN` 1.5, `SLOW_AFTER` 10 s, 4 lanes a hub, 3 cancels a peer a day.
 
 Test infrastructure is the verifier's, not the builder's: `crates/soulseek/src/fake_slskd.rs` (many peers, `Behaviour`, the request log) and the `#[cfg(test)] mod race_tests;` line in `fetch.rs`.
@@ -82,7 +83,14 @@ Every file below begins "Acceptance tests for ADR-0018: the builder must not edi
 | R18 | ≤ 3 cancels of a sending upload a peer a day, then it isn't raced | `r18_a_peer_cancelled_three_times_today_is_not_raced` |
 | R19 | A listener's pick keeps today's patience (guard) | `r19_a_pick_that_queues_is_waited_for` |
 | R20 | A song's start gives way after 6 s with no byte | `r20_a_songs_start_moves_past_a_silent_peer_in_six_seconds` |
-| R21 | One log line per race | review only (no subscriber in tests) |
+| R21 | One log line per race | see R26 |
+| R22 | Two presets racing one song at once never ask the same peer for the same file at once, and each ends with its copy whole | `r22_two_presets_racing_one_song_never_share_a_peer_and_file` |
+| R23 | A lane never deletes or rewrites a file another fetch uses, running or finished | `r23_a_lane_never_deletes_a_copy_already_finished` |
+| R24 | A start resuming a partial copy follows the 6 s rule (R20) like a fresh one | `r24_a_start_resuming_a_partial_moves_past_a_silent_peer_in_six_seconds` |
+| R25 | A start resuming a partial holds its lane until its first byte (R15) | `r25_starts_resuming_partials_count_in_the_lane_budget` |
+| R26 | Exactly one INFO line per race, whatever its end (won, kept, lost, skipped, failed), and no other line about the better copy; `secs` is the time to the winner, not counting cancels | `r26_a_won_race_leaves_one_log_line_with_its_time_to_winner`, `r26_an_interrupted_race_leaves_one_log_line` |
+| R27 | Only lull's own cancels of a sending upload count toward the 3 a day; a peer dropping the request itself doesn't | `r27_a_peer_dropping_the_request_itself_is_not_counted_as_a_cancel` |
+| R28 | A kept queue that was slow but then arrives whole while the song plays is offered (a copy all here passes) | `r28_a_kept_copy_that_arrives_whole_is_offered` |
 | S1 | The race never touches the playing fetch (guard) | `s1_the_race_leaves_the_playing_copy_alone` |
 | S2 | After the switch, a seek anywhere reads the winner's own bytes (guard) | `s2_after_the_switch_a_seek_anywhere_reads_the_winners_bytes` |
 | S3 | A seek while the race runs keeps the place; no reload (guard) | `tests/ui/gates/race-seek.spec.mjs` "a seek while the better copy races keeps the listener's place" |
@@ -97,7 +105,7 @@ Every file below begins "Acceptance tests for ADR-0018: the builder must not edi
 
 ```sh
 cargo test -p lull-core --test adr0018_bands   # R1-R4: "test result: ok. 4 passed; 0 failed"
-cargo test -p lull-soulseek race_tests         # R5-R20, S1-S2: "test result: ok. 18 passed; 0 failed" (~30 s)
+cargo test -p lull-soulseek race_tests         # R5-R28, S1-S2: "test result: ok. 26 passed; 0 failed" (~50 s)
 cd tests/ui && FIXTURE_PORT=8901 npx playwright test -c gates/playwright.config.mjs --project race-seek --reporter line   # S3-S9: "7 passed"
 ```
 
