@@ -401,7 +401,8 @@ for (const design of designs) {
       await page.evaluate(() => { location.hash = '#/home'; });
       await settle(page);
       const found = [];
-      for (const w of [1024, 1280, 1460, 1920]) {
+      for (const [w, text, chrome] of [1024, 1280, 1460, 1920].flatMap((w) => [[w, 100, 0], [w, 112, 0], [w, 112, 60]])) {   // the text at its size, 12% larger, and with 60 px more chrome round the field's text: other fonts and designs are no reason for a squeezed field
+        await page.evaluate((css) => { let t = document.getElementById('gate-text'); if (!t) { t = document.createElement('style'); t.id = 'gate-text'; document.head.appendChild(t); } t.textContent = css; }, `html { font-size: ${text}% !important; }` + (chrome ? ` .header__search .input { padding-left: calc(46px + ${chrome}px) !important; padding-right: calc(48px + ${chrome}px) !important; }` : ''));
         await page.setViewportSize({ width: w, height: 900 });
         await page.fill('#header-search', 'odetari blackhole');
         await frames(page); await frames(page);
@@ -419,7 +420,7 @@ for (const design of designs) {
             readout: document.querySelector('#pbar .seek-row__time').textContent.replace(/\s+/g, ' ').trim(),
           };
         });
-        if (m.full && m.inner < 220) found.push(`at ${w} px the search has ${Math.round(m.inner)} px to type in beside the full tray, under 220`);
+        if (m.full && m.inner < 220) found.push(`at ${w} px (text ${text}%, ${chrome} px more chrome) the search has ${Math.round(m.inner)} px to type in beside the full tray, under 220`);
         const least = w <= 1099 ? 300 : 360;
         if ((m.keys > 0 || m.vol) && m.seek < least) found.push(`at ${w} px the seek track is ${Math.round(m.seek)} px while ${m.keys} secondary keys${m.vol ? ' and the volume slider' : ''} show, under ${least}`);
         if (m.times !== 1) found.push(`at ${w} px the bar shows ${m.times} time readouts, not one`);

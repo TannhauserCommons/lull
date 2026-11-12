@@ -381,7 +381,16 @@
     for (var i = 0; i < orders.length; i++) give(i, i < k);
     was = k;
     var keep = $$('[data-fit-keep]', row).filter(function (k) { return fitRowOf(k) === row; });
-    function over() { return overflows(row) || parts.some(cut) || keep.some(crowded); }
+    /* a field that must keep room to type in ([data-fit-room], its --fit-room: the header's search) counts as not fitting
+       while its input's own width is less than that, so the parts before it give way, whatever the font makes of their
+       widths and of the field's own chrome */
+    var room = $$('[data-fit-room]', row).filter(function (r) { return fitRowOf(r) === row; });
+    function cramped(r) {
+      var i = $('input', r); if (r.hasAttribute('data-fit-out') || !i || !i.getClientRects().length) return false;
+      var s = getComputedStyle(i), want = parseFloat(getComputedStyle(r).getPropertyValue('--fit-room')) || 0;
+      return i.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) + 1 < want;
+    }
+    function over() { return overflows(row) || parts.some(cut) || keep.some(crowded) || room.some(cramped); }
     if (over()) { while (k < orders.length && over()) give(k++, true); }
     else while (k > 0) { give(k - 1, false); if (over()) { give(k - 1, true); break; } k--; }
     return k !== was;

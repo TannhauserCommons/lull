@@ -1189,6 +1189,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
    before any other part gives way, in every design; a design sets --search-min, never its own min-width (which would let
    the field shrink to a sliver while the status tray still spends its room on three pills) */
 .header { --search-min: 320px; }
+.header__search { --fit-room: 220px; }   /* the typing area (the input less its icon and clear key), whatever the font: layout.js, [data-fit-room] */
 .header__search { flex: 1 1 360px; max-width: 520px; min-width: var(--search-min); }
 /* parts of the header that give way when it runs out of room (layout.js, data-fit), after the search has shrunk to its
    least: the "/" hint, the tray's long words, the full tray for the compact one, the nav pills' labels (their icons and
