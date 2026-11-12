@@ -64,8 +64,8 @@ test('the browser\'s bar takes the theme\'s colour, day and night', async ({ pag
   await page.evaluate(() => App.setPref('theme', 'day'));
   const day = await color();
   await page.evaluate(() => App.setPref('theme', 'night'));
-  const night = await color();
-  expect(day).not.toBe(night);
+  // the theme's colour is written once night's styles apply, a frame or more after the switch (slower in WebKit on CI)
+  await expect.poll(color, { timeout: 5000 }).not.toBe(day);
 });
 
 test.describe('with its service worker', () => {
