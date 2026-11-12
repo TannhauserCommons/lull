@@ -857,6 +857,8 @@
 :root[data-design="lull"] .switch[aria-checked="true"]::after { transform: translateX(18px); }
 :root[data-design="lull"] .input { height: 40px; border-width: var(--stroke); border-color: var(--l-edge); background: var(--l-card); color: var(--fg-panel); font: 700 .9375rem/1 var(--f-ui); }
 :root[data-design="lull"] .s-card .input, :root[data-design="lull"] .card .input { background: var(--l-card); color: var(--fg); }
+/* touch screens (a phone, a tablet) zoom into a field under 16 px, and iOS Safari stays zoomed */
+@media (max-width: 1099px) { :root[data-design="lull"] :is(.input, .header__search .input) { font-size: 1rem; } }
 :root[data-design="lull"] .search-field .input { padding-left: 42px; }
 :root[data-design="lull"] .search-field > .ic { left: 14px; color: var(--link); }
 :root[data-design="lull"] .range::-webkit-slider-runnable-track { height: 6px; border-radius: 9px; box-shadow: inset 0 0 0 1px var(--l-rule); background: linear-gradient(to right, var(--l-ribbon) var(--fill, 50%), var(--l-received) var(--fill, 50%)); }
