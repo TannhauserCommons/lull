@@ -1248,7 +1248,7 @@
     Object.keys(seen).forEach(function (id) {
       if (wanted[id]) return;
       delete seen[id]; delete dismissed[id];
-      if (BACK[id]) App.toast(BACK[id], { kind: 'ok', icon: 'check' });
+      if (BACK[id]) App.toast(BACK[id], { group: 'connection', kind: 'ok', icon: 'check' });
     });
     shown = next;
     App.storage('bannersClosed', dismissed);

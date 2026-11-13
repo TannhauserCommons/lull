@@ -44,3 +44,35 @@ test('a cache at its size, or held over it by what plays, gets no notice', async
   await page.evaluate(() => App.setService('cache', { state: 'warn', detail: 'held over its size by music that is playing' }));
   await expect(page.locator('#banners [data-banner]')).toHaveCount(0);
 });
+
+// every service notice behaves as the cache's does: closed, it stays closed through reloads until its cause has ended
+const CAUSES = [
+  ['sys-soulseek', 'soulseek', { state: 'down', detail: 'Not connected' }],
+  ['sys-jellyfin', 'library', { state: 'down', detail: 'Jellyfin does not answer' }],
+  ['sys-catalog', 'catalog', { state: 'down', detail: 'both catalogs are out' }],
+  ['sys-lastfm', 'lastfm', { state: 'down', detail: 'Last.fm is out', extra: { queued: 2 } }],
+];
+for (const [id, service, report] of CAUSES) {
+  test(`the ${service} notice, closed, stays closed through reloads, and comes again after its cause ended`, async ({ page }) => {
+    await page.route('**/health', async (route) => {
+      const res = await route.fetch();
+      const h = await res.json();
+      h.services[service] = report;
+      await route.fulfill({ response: res, json: h });
+    });
+    const banner = page.locator(`#banners [data-banner="${id}"]`);
+    await openScreen(page, '/home');
+    await expect(banner).toBeVisible();
+    await banner.locator('[data-banner-close]').click();
+    await expect(banner).toHaveCount(0);
+    for (let i = 0; i < 2; i++) {
+      await page.reload();
+      await page.waitForFunction((s) => window.App && App.server && App.server.checked && App.store.get('services')[s].state === 'down', service);
+      await page.waitForTimeout(300);
+      await expect(banner, `after reload ${i + 1}`).toHaveCount(0);
+    }
+    await page.evaluate((s) => App.setService(s, { state: 'ok', detail: 'back' }), service);
+    await page.evaluate(([s, r]) => App.setService(s, r), [service, report]);
+    await expect(banner).toBeVisible();
+  });
+}

@@ -54,7 +54,7 @@
   /* queue one op ({ op, ...fields }); the id and time are added here */
   OB.add = function (op) {
     var rec = Object.assign({ id: uuid(), at: now() }, op);
-    if (!told) { told = true; App.toast('Kept on this device. It reaches your hub when it can.', { icon: 'offline' }); }
+    if (!told) { told = true; App.toast('Kept on this device. It reaches your hub when it can.', { confirms: true, icon: 'offline' }); }
     return tx('outbox', 'readwrite', function (s) { return s.add(rec); }).then(count).then(function () { return { queued: true, id: rec.id }; });
   };
   /* a change for the hub: sent now when it can be, else queued. Resolves to the server's answer, or

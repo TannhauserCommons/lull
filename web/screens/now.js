@@ -1062,7 +1062,7 @@
   App.action('now-use-source', function (el) {
     var id = el.getAttribute('data-id'), s = sourceList(id)[+el.getAttribute('data-si')]; if (!s) return;
     P.useSource(id, s);
-    App.toast('Now from ' + s.peer + (s.format ? ', ' + s.format : ''), { icon: 'soulseek' });
+    App.toast('Now from ' + s.peer + (s.format ? ', ' + s.format : ''), { confirms: true, group: 'now-from', icon: 'soulseek' });
   });
   App.action('now-open-queue', function () {
     if (App.layout.switch('phone') === 'on' && onRoute()) { setTab('queue', true); return; }
