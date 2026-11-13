@@ -25,6 +25,8 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
+          # The release scopes check below reads every commit since the last v* tag.
+          fetch-depth: 0
       - run: rustup toolchain install
       # Only main saves (ADR-0097): another ref's cache can't be read by anyone else.
       - uses: Swatinem/rust-cache@v2
@@ -38,6 +40,9 @@ jobs:
         with:
           node-version: "24.11"
       - run: node --test "tests/web/*.test.mjs"
+      # The release draft (release-draft.yml) fails on main after landing when a feat or fix uses a scope
+      # scripts/release-areas.tsv doesn't map; drawing it here fails the candidate instead.
+      - run: node scripts/release-notes.mjs draft > /dev/null
       # app/ is its own workspace but depends on the hub by path: a dependency change in crates/*
       # must update app/Cargo.lock in the same commit, or the app's --locked builds break.
       - run: cargo update --manifest-path app/Cargo.toml --workspace --locked
