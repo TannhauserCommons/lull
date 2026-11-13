@@ -96,3 +96,29 @@ test('a page started on a newer hub than its worker takes the worker over withou
   await expect(note(page)).toHaveCount(0);
   await expect.poll(() => running(page)).toBe(V2);
 });
+
+// The note stays away only once the page really runs the new version. A page that started without its hub runs the
+// files its worker kept (the old version); when the hub answers again as a newer build, that is news, and one Reload
+// switches it.
+test('a page started without its hub is offered the newer hub when it answers, and one Reload switches it', async ({ page, context }) => {
+  await opened(page, V1);
+  await context.setOffline(true);
+  await page.reload();
+  await page.waitForFunction(() => window.App && App.server && App.server.reachable === false);
+  await page.waitForTimeout(500);
+  await context.setOffline(false);
+  await hubIs(page, V2);
+  await page.evaluate(() => App.checkHealth());
+  await expect(note(page), 'still running the kept old version: the newer hub is news').toHaveCount(1);
+  await page.evaluate(() => App.checkHealth());
+  await expect(note(page)).toHaveCount(1);
+
+  await note(page).locator('[data-toast-action]').click();
+  await page.waitForEvent('load');
+  await started(page);
+  await expect(note(page)).toHaveCount(0);
+  await expect.poll(() => running(page)).toBe(V2);
+  await page.evaluate(() => App.checkHealth());
+  await page.waitForTimeout(300);
+  await expect(note(page)).toHaveCount(0);
+});
