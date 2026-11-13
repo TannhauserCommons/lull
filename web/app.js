@@ -4826,18 +4826,31 @@
   M.onUnauthorized = function () { if (App.server.authorized) setServer({ authorized: false }); };
   M.onSettled = function () { if (booted) renderRoute(true); };
 
+  /* the version of the files this page runs, and the hub version last offered as an update. A page that reached the hub
+     at start loaded its files from the network (sw.js is network first): the hub's version. A page that started without
+     the hub runs the files its worker kept, named by that worker's version (sw.js?v=); with no worker it is unknown. So a
+     newer hub is offered whenever this page has not switched to it, also after a start without the hub, and only once. */
+  var pageVersion = null, offeredVersion = null;
+  function keptVersion() {
+    var c = navigator.serviceWorker && navigator.serviceWorker.controller;
+    try { return c ? new URL(c.scriptURL).searchParams.get('v') || null : null; } catch (e) { return null; }
+  }
   /* GET /health: services, version, reachability; also brings a closed event stream back once the server answers */
   function loadHealth() {
     return fetch(M.url('/health'), { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (h) {
-      /* the version this page has been running is compared with the hub's now; an answer with no version (a proxy's error
-         page, a hub still starting) says nothing and is not taken for a different one */
+      /* an answer with no version (a proxy's error page, a hub still starting) says nothing and is not taken for a different one */
       var version = typeof h.version === 'string' && h.version ? h.version : null;
-      var changedVersion = !!(App.server.version && version && App.server.version !== version);
+      if (version && !pageVersion) pageVersion = version;
+      var changedVersion = !!(version && version !== pageVersion && version !== offeredVersion);
+      if (changedVersion) offeredVersion = version;
       setServer(version ? { reachable: true, version: version, build: h.build || null, flags: h.flags || [] } : { reachable: true });
       if (events && events.readyState === EventSource.CLOSED && App.server.authorized) connectEvents();
       Object.keys(h.services || {}).forEach(function (k) { applyService(k, h.services[k]); });
       if (changedVersion) App.emit('pwa', { kind: 'update' });
-    }, function () { setServer({ reachable: false }); });
+    }, function () {
+      if (!pageVersion) pageVersion = keptVersion();               // started without the hub: running what the worker kept
+      setServer({ reachable: false });
+    });
   }
   function loadCollections() {
     return Promise.all([
@@ -4959,8 +4972,8 @@
      update() installs and switches to the worker of the hub's new version, then reloads */
   App.pwa = {
     update: function () {
-      if (!worker || !App.server.version) { location.reload(); return; }
-      navigator.serviceWorker.register(swUrl()).then(waitingWorker).then(function (w) {
+      if (!('serviceWorker' in navigator) || location.protocol === 'file:' || !App.server.version) { location.reload(); return; }
+      navigator.serviceWorker.register(swUrl()).then(function (reg) { worker = reg; return waitingWorker(reg); }).then(function (w) {
         if (!w) { location.reload(); return; }
         updating = true; takeOver(w);
         setTimeout(function () { location.reload(); }, 4000);     // the hand-over is normally a few ms; never leave Reload doing nothing
