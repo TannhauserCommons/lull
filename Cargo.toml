@@ -20,7 +20,7 @@ members = [
 exclude = ["app"]
 
 [workspace.package]
-version = "0.2.11"
+version = "0.2.12"
 license = "AGPL-3.0-only"
 repository = "https://github.com/TannhauserCommons/lull"
 edition = "2024"
