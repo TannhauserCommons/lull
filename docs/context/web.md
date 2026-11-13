@@ -166,6 +166,12 @@ this device (`lull:bannersClosed`, by its state) through reloads and relaunches,
 the next time it comes, it shows. The cache has one only for a full disk (`down`); a cache at its size is working
 (cache.md#status). Gate: `tests/ui/gates/notices.spec.mjs`.
 
+**"New version ready"** is offered once per change of the hub's version under an open page (`loadHealth` compares the version
+this page has run with `/health`'s; an answer with no version says nothing). Reload installs the worker for the new version,
+takes it over and reloads, so one press finishes it. A page that has just started already runs the hub's version (sw.js is
+network first), so a worker installing then is not news and takes over quietly. Closing the note needs no memory: the same
+change is not offered again, and a reload runs the new version. Gate: `tests/ui/gates/update-prompt.spec.mjs`.
+
 ### Pairing and first run (ADR-0002)
 
 - **The gate** (setup.js) asks `GET /api/setup`: an unclaimed hub takes its setup code (`POST /api/setup/claim`, then

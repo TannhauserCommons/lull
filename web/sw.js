@@ -3,7 +3,7 @@
    the cache only when the network fails. /api and /health are never cached: they are live data. Covers of
    downloaded songs (offline.js keeps them in the 'lull-downloads' cache) answer from there when the hub can't.
    One cache per server version (sw.js?v=<version>); the page lists what it loaded so the cache holds exactly
-   the files the chosen design needs, and a new version waits until the listener accepts the update toast. */
+   the files the chosen design needs, and the page installs a new version's worker when the listener accepts the update toast (app.js registerWorker). */
 'use strict';
 var CACHE = 'lull-shell-' + (new URL(self.location.href).searchParams.get('v') || '0');
 

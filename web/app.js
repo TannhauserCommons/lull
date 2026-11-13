@@ -2253,7 +2253,7 @@
       if (cur !== e || ps.status !== 'failed') return;
       var i = nextIndex(false); if (i < 0 || i === ps.index) return;
       var t = M.track(e.trackId);
-      App.toast('Skipped ' + (t ? t.title : 'a song') + (ps.error ? ': ' + ps.error : ''), { icon: 'soulseek' });
+      App.toast('Skipped ' + (t ? t.title : 'a song') + (ps.error ? ': ' + ps.error : ''), { group: 'skipped', icon: 'soulseek', together: function (n) { return 'Skipped ' + n + ' songs no peer could send'; } });
       P.next();
     }, LullRules.SKIP_FAILED_MS);
   }
@@ -2669,7 +2669,7 @@
       case 'fallback':
         ps.fallback = { from: prevPeer, to: ev.peer, n: ps.failedPeers.length + 1, of: ps.peersFound || null };
         ps.status = 'buffering';
-        if (ev.peer && ev.peer !== prevPeer) App.toast('Now from ' + ev.peer, { icon: 'soulseek', kind: 'ok' });
+        if (ev.peer && ev.peer !== prevPeer) App.toast('Now from ' + ev.peer, { group: 'now-from', icon: 'soulseek', kind: 'ok' });
         break;
       case 'failed':
         if (ps.playing) skipFailed(cur);
@@ -4829,8 +4829,11 @@
   /* GET /health: services, version, reachability; also brings a closed event stream back once the server answers */
   function loadHealth() {
     return fetch(M.url('/health'), { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (h) {
-      var changedVersion = App.server.version && App.server.version !== h.version;
-      setServer({ reachable: true, version: h.version, build: h.build || null, flags: h.flags || [] });
+      /* the version this page has been running is compared with the hub's now; an answer with no version (a proxy's error
+         page, a hub still starting) says nothing and is not taken for a different one */
+      var version = typeof h.version === 'string' && h.version ? h.version : null;
+      var changedVersion = !!(App.server.version && version && App.server.version !== version);
+      setServer(version ? { reachable: true, version: version, build: h.build || null, flags: h.flags || [] } : { reachable: true });
       if (events && events.readyState === EventSource.CLOSED && App.server.authorized) connectEvents();
       Object.keys(h.services || {}).forEach(function (k) { applyService(k, h.services[k]); });
       if (changedVersion) App.emit('pwa', { kind: 'update' });
@@ -4913,35 +4916,55 @@
     checkPairing();
   }
 
-  /* service worker (sw.js): the app shell for offline start; a new server version prompts a reload */
+  /* service worker (sw.js): the app shell for offline start. A page loads its files from the network (sw.js is network
+     first), so a page that has just started already runs the hub's version, and a worker that installs for that version
+     is not news: it takes over quietly. The one news is the hub's version changing under a page that is open (loadHealth
+     emits it): Reload then installs the worker for the new version, takes it over and reloads, so one Reload finishes it
+     (before 2026-11-13 it only reloaded, the reload found a waiting worker and offered the same update a second time). */
+  var worker = null, updating = false;
+  function swUrl() { return 'sw.js?v=' + encodeURIComponent(App.server.version); }
+  function takeOver(w) { try { w.postMessage({ type: 'skip-waiting' }); } catch (e) { /* gone already */ } }
   function registerWorker() {
-    if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
-    navigator.serviceWorker.register('sw.js?v=' + encodeURIComponent(App.server.version || '0')).then(function (reg) {
+    if (!('serviceWorker' in navigator) || location.protocol === 'file:' || !App.server.version) return;   // no version: a cache named for nothing
+    navigator.serviceWorker.register(swUrl()).then(function (reg) {
       worker = reg;
       navigator.serviceWorker.ready.then(function (r) {          // keep what this page loaded (shell, design, fonts)
         var urls = performance.getEntriesByType('resource').map(function (x) { return x.name; }).concat([location.href.split('#')[0]]);
         if (r.active) r.active.postMessage({ type: 'cache', urls: urls });
       });
+      if (reg.waiting) takeOver(reg.waiting);                     // left waiting by an earlier visit
       reg.addEventListener('updatefound', function () {
-        var w = reg.installing, replaces = !!reg.active;   // asked now, not at 'installed': a first install has no active worker, though WebKit already gives the page a controller
-        w.addEventListener('statechange', function () {
-          if (w.state === 'installed' && replaces) App.emit('pwa', { kind: 'update' });
-        });
+        var w = reg.installing;
+        w.addEventListener('statechange', function () { if (w.state === 'installed' && reg.active && reg.active !== w) takeOver(w); });
       });
     }, function (err) { console.warn('Service worker not registered:', err.message); });
   }
-  var worker = null;
+  /* the worker for the hub's version now, waiting (null when none will: a first install, or an update that failed) */
+  function waitingWorker(reg) {
+    return new Promise(function (ok) {
+      var timer = setTimeout(function () { ok(null); }, 6000), watched = null;
+      function check() {
+        if (reg.waiting) { clearTimeout(timer); ok(reg.waiting); return; }
+        if (!reg.installing) { clearTimeout(timer); ok(null); return; }
+        if (reg.installing !== watched) { watched = reg.installing; watched.addEventListener('statechange', check); }
+      }
+      check();
+    });
+  }
   navigator.serviceWorker && navigator.serviceWorker.addEventListener('controllerchange', function () { if (updating) location.reload(); });
-  var updating = false;
   var installPrompt = null;
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); installPrompt = e; App.emit('pwa', { kind: 'installable' }); });
   window.addEventListener('appinstalled', function () { installPrompt = null; App.emit('pwa', { kind: 'installed' }); });
   /* App.pwa: install() shows the browser's prompt (resolves true when accepted); installable(); installed();
-     update() switches to the waiting version (or just reloads when only the server changed) */
+     update() installs and switches to the worker of the hub's new version, then reloads */
   App.pwa = {
     update: function () {
-      if (worker && worker.waiting) { updating = true; worker.waiting.postMessage({ type: 'skip-waiting' }); }
-      else location.reload();
+      if (!worker || !App.server.version) { location.reload(); return; }
+      navigator.serviceWorker.register(swUrl()).then(waitingWorker).then(function (w) {
+        if (!w) { location.reload(); return; }
+        updating = true; takeOver(w);
+        setTimeout(function () { location.reload(); }, 4000);     // the hand-over is normally a few ms; never leave Reload doing nothing
+      }, function () { location.reload(); });
     },
     installable: function () { return !!installPrompt; },
     installed: function () { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; },

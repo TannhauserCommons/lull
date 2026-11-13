@@ -129,6 +129,7 @@ export default defineConfig({
     // is played by the gate
     { name: 'phone-background', testMatch: 'phone-background.spec.mjs', use: { viewport: { width: 390, height: 844 } } },
     // a closed service notice stays closed through a reload until its cause ends; a cache at its size has none
+    { name: 'update-prompt', testMatch: 'update-prompt.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'notices', testMatch: 'notices.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // the phone's player bar, in every design at 360 and 390 px: the cover inset as the last key is, previous, play and next as keys,
     // the progress line seeked by touch
