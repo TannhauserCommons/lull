@@ -1,0 +1,7 @@
+* Better copies in seconds: lull asks a few peers at once and keeps the fastest, up to your maximum
+* Source presets per device; phones get a Phone preset by default
+* iPhone: sound keeps playing in the background and the lock screen skips songs
+* Many phone fixes: play key, search, zoom, notch, sideways, player bar
+* Songs show their album's cover; radio no longer runs dry
+* FLAC off and your maximum are respected; Clear cache in Settings
+* One Reload clears "New version ready"
