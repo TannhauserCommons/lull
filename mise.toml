@@ -74,6 +74,41 @@ run = "sh tests/ui/gates/approve.sh"
 description = "Recapture the visual goldens on CI's image and download them into tests/ui/goldens"
 run = "sh tests/ui/update-goldens.sh"
 
+# The web UI checks the `check` workflow runs (docs/context/quality.md, Check in shadow). Each is a script a person can
+# run too; the image and the hub need Linux and Docker. `check:ui` above takes GATES=perf|fit|rest and SHARD=2/3.
+[tasks."image:save"]
+description = "Build the hub image as CI does (main's layer cache read, never written) and save it as a tar: image:save [tar]"
+run = "sh scripts/image-save.sh"
+
+[tasks."ui:setup"]
+description = "Install what the functional UI tests need on CI: npm ci, Chromium with its system libraries, ffmpeg"
+env = { PACKAGES = "ffmpeg" }
+run = "sh tests/ui/setup.sh chromium"
+
+[tasks."ui:hub"]
+description = "Start the hub the functional UI tests run against: the image from image:save on a fixture library, beside a stub slskd"
+run = "sh tests/ui/hub.sh up"
+
+[tasks."ui:matrix"]
+description = "The functional UI tests (the visual matrix) on that hub; SHARD=2/4 runs one quarter"
+run = "sh tests/ui/matrix.sh"
+
+[tasks."ui:contract"]
+description = "The hub contract against that hub"
+run = "sh tests/ui/hub.sh contract"
+
+[tasks."ui:stub"]
+description = "Fail when that hub called a slskd route the stub doesn't answer"
+run = "sh tests/ui/hub.sh stub"
+
+[tasks."ui:logs"]
+description = "That hub's log and the stub slskd's, for after a failure"
+run = "sh tests/ui/hub.sh logs"
+
+[tasks."flakes:ui"]
+description = "Write flakes/ from the UI tests' Playwright reports: the tests that failed, then passed on their retry"
+run = "node scripts/playwright-flakes.mjs tests/ui/report/results.json tests/ui/report/gates/results.json"
+
 [tasks.icons]
 description = "Render every packaged app icon (desktop, web, store, Android) from the masters in design/assets"
 run = "sh scripts/icons/build.sh"

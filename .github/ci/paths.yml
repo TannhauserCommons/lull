@@ -2,7 +2,41 @@
 # absent here always runs. PRs and queue branches run a gated job only when its
 # paths changed; a call with `all: true` runs them all.
 #
-# No job is path-gated yet: the UI, app and contract jobs arrive in later
-# changes, each with its key here. `{}` keeps the file a valid, empty map: the
-# path filter fails on a file that holds only comments.
-{}
+# Each key is the queue's rule for that check (scripts/queue.sh, `checks`), as globs, plus what the queue also treats
+# as "everything changed" (`.github/`, queue.sh) and what runs the check here (mise.toml, its own scripts). `ui`
+# is also what `image` builds for: check.yml's `image` job runs for either key.
+image:
+  - 'crates/**'
+  - 'web/**'
+  - 'share/hosts.json'
+  - 'Cargo.toml'
+  - 'Cargo.lock'
+  - 'rust-toolchain.toml'
+  - 'Dockerfile'
+  - '.dockerignore'
+  - 'scripts/vendor-web.sh'
+  - 'scripts/web-dist/**'
+  - 'scripts/image-save.sh'
+  - '.github/**'
+  - 'scripts/queue.sh'
+  - 'mise.toml'
+ui:
+  - 'web/**'
+  - 'crates/server/src/web.rs'
+  - 'crates/soulseek/src/slskd.rs'
+  - 'tests/ui/**'
+  - 'scripts/web-dist/**'
+  - 'Dockerfile'
+  - 'scripts/playwright-flakes.mjs'
+  - '.github/**'
+  - 'scripts/queue.sh'
+  - 'mise.toml'
+gates:
+  - 'web/**'
+  - 'tests/ui/**'
+  - 'scripts/loop-easings.mjs'
+  - 'scripts/vendor-web.sh'
+  - 'scripts/playwright-flakes.mjs'
+  - '.github/**'
+  - 'scripts/queue.sh'
+  - 'mise.toml'
