@@ -1,20 +1,42 @@
 # One entry point for humans, agents and CI. `mise run setup` once per clone.
+# Tools are pinned exactly and hash-checked in mise.lock; Rust is pinned by rust-toolchain.toml.
+# The shared ci:* tasks come from .github/ci/tasks.toml (docs/context/quality.md, Check in shadow).
 [tools]
-node = "24.11"
+node = "24.11.1"
+python = "3.14.10"
+actionlint = "1.7.12"
+
+[task_config]
+includes = [".github/ci/tasks.toml"]
+
+[tasks.toolchain]
+description = "The Rust toolchain rust-toolchain.toml pins"
+run = "rustup toolchain install"
 
 [tasks.setup]
 description = "Toolchain, Webamp bundle and git hooks"
-run = ["rustup toolchain install", "sh scripts/vendor-web.sh"]
+run = [{ task = "toolchain" }, "sh scripts/vendor-web.sh"]
 
+# The new workflows are the only ones written to the skeleton's rules (SHA pins, a timeout on every job, one
+# `mise run` per step); the older ones don't meet them, so `ci:lint` (every workflow) is not run here.
 [tasks.check]
-description = "Exactly what CI runs"
+description = "Exactly what the `check` workflow runs: fmt, clippy, tests, the release scopes, the lint of the new workflows"
 run = [
   "cargo fmt --all --check",
   "cargo clippy --workspace --all-targets --locked -- -D warnings",
   "cargo test --workspace --locked",
   "node --test tests/web/*.test.mjs",
+  # Draws the release draft: it fails on a feat or fix scope scripts/release-areas.tsv doesn't map, so that fails
+  # here and not on main after landing. The draft it prints is not needed (no `> /dev/null`: cmd on Windows has none).
+  "node scripts/release-notes.mjs draft",
   "cargo update --manifest-path app/Cargo.toml --workspace --locked",
+  "actionlint .github/workflows/check.yml .github/workflows/after.yml",
+  "python .github/ci/lint.py .github/workflows/check.yml .github/workflows/after.yml",
 ]
+
+[tasks.privacy]
+description = "Every commit in UTC and nothing private in the files or messages (PRIVATE_PATTERNS in the environment)"
+run = "sh scripts/privacy-check.sh"
 
 [tasks.test]
 description = "Tests only"
@@ -52,6 +74,41 @@ run = "sh tests/ui/gates/approve.sh"
 description = "Recapture the visual goldens on CI's image and download them into tests/ui/goldens"
 run = "sh tests/ui/update-goldens.sh"
 
+# The web UI checks the `check` workflow runs (docs/context/quality.md, Check in shadow). Each is a script a person can
+# run too; the image and the hub need Linux and Docker. `check:ui` above takes GATES=perf|fit|rest and SHARD=2/3.
+[tasks."image:save"]
+description = "Build the hub image as CI does (main's layer cache read, never written) and save it as a tar: image:save [tar]"
+run = "sh scripts/image-save.sh"
+
+[tasks."ui:setup"]
+description = "Install what the functional UI tests need on CI: npm ci, Chromium with its system libraries, ffmpeg"
+env = { PACKAGES = "ffmpeg" }
+run = "sh tests/ui/setup.sh chromium"
+
+[tasks."ui:hub"]
+description = "Start the hub the functional UI tests run against: the image from image:save on a fixture library, beside a stub slskd"
+run = "sh tests/ui/hub.sh up"
+
+[tasks."ui:matrix"]
+description = "The functional UI tests (the visual matrix) on that hub; SHARD=2/4 runs one quarter"
+run = "sh tests/ui/matrix.sh"
+
+[tasks."ui:contract"]
+description = "The hub contract against that hub"
+run = "sh tests/ui/hub.sh contract"
+
+[tasks."ui:stub"]
+description = "Fail when that hub called a slskd route the stub doesn't answer"
+run = "sh tests/ui/hub.sh stub"
+
+[tasks."ui:logs"]
+description = "That hub's log and the stub slskd's, for after a failure"
+run = "sh tests/ui/hub.sh logs"
+
+[tasks."flakes:ui"]
+description = "Write flakes/ from the UI tests' Playwright reports: the tests that failed, then passed on their retry"
+run = "node scripts/playwright-flakes.mjs tests/ui/report/results.json tests/ui/report/gates/results.json"
+
 [tasks.icons]
 description = "Render every packaged app icon (desktop, web, store, Android) from the masters in design/assets"
 run = "sh scripts/icons/build.sh"
@@ -67,3 +124,72 @@ run = "sh scripts/queue-first.sh {{arg(i=0)}}"
 [tasks.release]
 description = "Tag vX.Y.Z on main's newest green commit with the version and what's new; pushing the tag publishes the apps: release X.Y.Z"
 run = "sh scripts/release.sh {{arg(i=0)}}"
+
+# The app and contract checks of .github/workflows/check.yml (docs/context/quality.md, Check in shadow). Each calls a
+# POSIX sh script in scripts/ci/ (Git's sh on Windows), so CI and an agent run the same thing.
+[tasks."app:check"]
+description = "The app's syntax check, fmt, clippy -D warnings and tests (Linux installs Tauri's system packages first)"
+run = "sh scripts/ci/app-check.sh"
+
+[tasks."app:keyring"]
+description = "The keyring tests against GNOME Keyring, unlocked and locked (Linux)"
+run = "sh scripts/ci/keyring.sh"
+
+[tasks."android:sdk"]
+description = "F-Droid's build image: Debian's rustup, the SDK manager, fdroidserver and the NDK (CI, as root)"
+run = "sh scripts/ci/android-sdk.sh"
+
+[tasks."android:toolchains"]
+description = "The pinned Rust toolchain with the Android target, and the Tauri CLI built from source"
+run = "sh scripts/android-toolchains.sh"
+
+[tasks."android:apk"]
+description = "One Android build as F-Droid builds it, into the temp folder's apk/ (CI): android:apk signed (throwaway key) or clean (unsigned, from a clone)"
+usage = 'arg "<build>" help="signed or clean"'
+run = 'sh scripts/ci/android-apk.sh "$usage_build"'
+
+[tasks."android:compare"]
+description = "The signed and the unsigned APK match except for the signature (CI, as root)"
+run = "sh scripts/ci/android-compare.sh"
+
+[tasks."slskd:resume"]
+description = "The pinned slskd image resumes, overwrites and streams as lull relies on (needs Docker)"
+run = "node tests/slskd-contract/run.mjs"
+
+[tasks."slskd:native"]
+description = "The slskd the Windows app bundles, run natively (Windows; downloads it by app/build.rs's pin)"
+run = "node tests/slskd-contract/run.mjs --native"
+
+[tasks."slskd:build"]
+description = "lull's slskd for Windows built twice: same bytes, and the ones app/build.rs pins (network)"
+run = "sh scripts/ci/slskd-build.sh"
+
+[tasks."package:build"]
+description = "The Linux server package (.deb, .rpm, .tar.gz), unsigned, into the temp folder's packages/ (PACKAGES overrides)"
+run = "sh scripts/ci/package-build.sh"
+
+[tasks."package:contract"]
+description = "The package installed as a service in ubuntu, debian or fedora under systemd, held to the hub contract (needs Docker): package:contract <distro>"
+usage = 'arg "<distro>" help="ubuntu, debian or fedora"'
+run = 'sh scripts/ci/package-contract.sh "$usage_distro"'
+
+[tasks."package:jellyfin"]
+description = "The package's hub pointed at a real Jellyfin (needs Docker)"
+run = "sh scripts/ci/package-jellyfin.sh"
+
+[tasks."package:self-update"]
+description = "A hub updating itself, going back from a kit that doesn't start and refusing a changed one (network)"
+run = "sh scripts/ci/package-self-update.sh"
+
+[tasks."package:secrets-update"]
+description = "The listener's logins across an update from the last release before the vault (network)"
+run = "sh scripts/ci/package-secrets-update.sh"
+
+[tasks."share:test"]
+description = "The share Worker's tests, in Cloudflare's local runtime"
+dir = "share"
+run = ["npm ci --no-audit --no-fund", "npm test"]
+
+[tasks."aur:package"]
+description = "lull-bin's PKGBUILD built, installed and started on Arch (CI, as root in an Arch container; network; nothing pushed)"
+run = "sh scripts/ci/aur.sh"

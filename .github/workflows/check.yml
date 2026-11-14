@@ -1,0 +1,663 @@
+name: check
+
+# Runs in shadow beside the merge queue (docs/context/quality.md, Check in
+# shadow): it blocks nothing and changes nothing about how the queue, `ship` or
+# a release works. The one status of this workflow is `gate` ("check / gate").
+#
+# Agents land through `queue/<topic>` branches, not pull requests, so every
+# topic an agent ships is checked by the `queue/**` push as well as by any pull
+# request. That push trigger goes when the queue does.
+on:
+  pull_request:
+  push:
+    branches: ['queue/**']
+  workflow_call:
+    inputs:
+      all:
+        description: Run every job, whatever paths changed
+        type: boolean
+        default: false
+    secrets:
+      PRIVATE_PATTERNS:
+        description: Patterns the privacy check rejects, one extended regex a line
+        required: false
+
+permissions:
+  contents: read
+
+# A newer push to a ref cancels the older run of that ref. Cancelled is neither
+# red nor green.
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Always runs, so the status never hangs in Pending. Decides which path-gated
+  # jobs run and which of them the gate may see skipped. On a push to a
+  # `queue/**` branch the path filter compares with main.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.select.outputs.run }}
+      skippable: ${{ steps.select.outputs.skippable }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - id: filter
+        if: ${{ !inputs.all }}
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: .github/ci/paths.yml
+      - id: select
+        name: mise run ci:select
+        run: mise run ci:select ${{ inputs.all && '--all' || '' }}
+        env:
+          CHANGES: ${{ steps.filter.outputs.changes }}
+
+  # Each job is checkout, mise, one `mise run <task>`. A path-gated job has a
+  # key in .github/ci/paths.yml and an `if:` on the `changes` output; any other
+  # job always runs. Every job id goes in the gate's `needs:`.
+
+  # fmt, clippy, the Rust and web tests, the release scopes and the lint of
+  # this workflow: the same list as `mise run check`. The job id and runner
+  # match ci.yml's `check`, so rust-cache restores the cache that job saves on
+  # main (rust-cache keys on the job id, the OS and the installed toolchains).
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # The release scopes check reads every commit since the last release tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      # rust-cache keys on the installed toolchains, so the pinned one goes in
+      # first, as ci.yml does.
+      - name: mise run toolchain
+        run: mise run toolchain
+      # Only main saves (ADR-0097); this workflow reads the cache ci.yml saves.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: false
+      - name: mise run check
+        run: mise run check
+
+  # Every commit in UTC, and nothing private in the files or the history.
+  privacy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run privacy
+        run: mise run privacy
+        env:
+          PRIVATE_PATTERNS: ${{ secrets.PRIVATE_PATTERNS }}
+
+  # The web UI, as the queue checks it (scripts/queue.sh `checks` says when). `image` builds the hub's image once;
+  # `ui` runs the functional tests on it, four shards; `gates` runs the behaviour gates on the fixture hub, seven
+  # shards. Their paths are the queue's (.github/ci/paths.yml). A UI test that fails runs once more (`retries` in the
+  # Playwright configs); one that passes on it is written to `flakes/` and uploaded for `after.yml`. These jobs file
+  # no issue themselves and have no token to.
+  # The browsers' install is a task; what it downloads comes from the cache main saves (the `ui-browsers-...` keys
+  # are the ones .github/actions/ui-browsers saves there, so they hit) and is never saved from here.
+
+  # The queue builds this image with its repository secrets, Last.fm's app key and secret; `check` has none, so
+  # this image has no built-in Last.fm key (the Dockerfile builds without; a listener then brings their own). It
+  # reads main's build cache and never writes it. The queue also builds the image when only `image`'s paths change;
+  # here that is the check that the image still builds.
+  image:
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'image') || contains(fromJSON(needs.changes.outputs.run), 'ui') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # The image says which release it holds and how many changes are on top of it, from git's tags.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # Hands the runner's cache variables to the next steps, which the build reads main's layer cache with.
+      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
+      - name: mise run image:save
+        run: mise run image:save
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image
+          path: ${{ runner.temp }}/lull-image.tar
+          retention-days: 1
+
+  # Four machines at once, each with its own hub from the image: the visual matrix split four ways by Playwright's
+  # --shard, and on the first the hub contract (the image holds the same contract as the Linux package, ADR-0090).
+  # The queue runs Lighthouse's two shards beside these (ui.yml); they stay there until `main` takes over timing
+  # budgets, since a time measured on a shared runner belongs to `main`, not to a check on a change.
+  ui:
+    name: ui (${{ matrix.part }})
+    needs: [changes, image]
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'ui') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { part: "1 of 4", shard: "1/4", slot: 1 }
+          - { part: "2 of 4", shard: "2/4", slot: 2 }
+          - { part: "3 of 4", shard: "3/4", slot: 3 }
+          - { part: "4 of 4", shard: "4/4", slot: 4 }
+    env:
+      # The hub in the image listens here (tests/ui/run-hub.sh); the stub slskd next to it on :5030.
+      LULL_URL: http://127.0.0.1:8080
+      LULL_SETUP_CODE: ui-test-setup
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+          path: ${{ runner.temp }}
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/apt-cache/*.deb
+            ~/.cache/ms-playwright
+          key: ui-browsers-${{ runner.os }}-${{ runner.arch }}-chromium-ffmpeg-${{ hashFiles('tests/ui/package-lock.json') }}
+          restore-keys: ui-browsers-${{ runner.os }}-${{ runner.arch }}-chromium-ffmpeg-
+      - name: mise run ui:setup
+        run: mise run ui:setup
+      - name: mise run ui:hub
+        run: mise run ui:hub
+      - name: mise run ui:matrix
+        run: mise run ui:matrix
+        env:
+          SHARD: ${{ matrix.shard }}
+      # After the pictures: it changes a setting, and the parts restart.
+      - name: mise run ui:contract
+        if: ${{ !cancelled() && matrix.slot == 1 }}
+        run: mise run ui:contract
+      - name: mise run ui:stub
+        if: ${{ !cancelled() }}
+        run: mise run ui:stub
+      - name: mise run ui:logs
+        if: ${{ failure() }}
+        run: mise run ui:logs
+      - name: mise run flakes:ui
+        if: ${{ !cancelled() }}
+        run: mise run flakes:ui
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: flakes-ui-${{ matrix.slot }}-ubuntu-24.04
+          path: flakes/
+          if-no-files-found: ignore
+          retention-days: 3
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ failure() }}
+        with:
+          name: diffs-${{ matrix.slot }}
+          # Expected, actual and diff images of every failing picture, and the HTML report.
+          path: |
+            tests/ui/test-results
+            tests/ui/report
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Seven machines at once: performance split two ways, each machine running one test at a time (its task lengths
+  # must not share the CPU); `fit`, about half the rest's time, two ways; and every other gate three ways, by
+  # Playwright's --shard. `mise run check:ui` takes the group and the shard from GATES and SHARD, so a person runs
+  # one machine's share the same way. The key screens compare with their goldens; taking new ones stays with
+  # ui-gates.yml (`mise run ui:approve`). `browsers` is the cache key's: it must name what run.sh installs for the group.
+  gates:
+    name: gates (${{ matrix.part }})
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'gates') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { part: "perf 1 of 2", gates: perf, shard: "1/2", browsers: chromium, slot: p1 }
+          - { part: "perf 2 of 2", gates: perf, shard: "2/2", browsers: chromium, slot: p2 }
+          - { part: "fit 1 of 2", gates: fit, shard: "1/2", browsers: chromium, slot: f1 }
+          - { part: "fit 2 of 2", gates: fit, shard: "2/2", browsers: chromium, slot: f2 }
+          - { part: "1 of 3", gates: rest, shard: "1/3", browsers: chromium webkit, slot: 1 }
+          - { part: "2 of 3", gates: rest, shard: "2/3", browsers: chromium webkit, slot: 2 }
+          - { part: "3 of 3", gates: rest, shard: "3/3", browsers: chromium webkit, slot: 3 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/apt-cache/*.deb
+            ~/.cache/ms-playwright
+          key: ui-browsers-${{ runner.os }}-${{ runner.arch }}-${{ matrix.browsers }}--${{ hashFiles('tests/ui/package-lock.json') }}
+          restore-keys: ui-browsers-${{ runner.os }}-${{ runner.arch }}-${{ matrix.browsers }}--
+      - name: mise run check:ui
+        run: mise run check:ui
+        env:
+          GATES: ${{ matrix.gates }}
+          SHARD: ${{ matrix.shard }}
+      - name: mise run flakes:ui
+        if: ${{ !cancelled() }}
+        run: mise run flakes:ui
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: flakes-gates-${{ matrix.slot }}-ubuntu-24.04
+          path: flakes/
+          if-no-files-found: ignore
+          retention-days: 3
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ failure() }}
+        with:
+          name: gates-diffs-${{ matrix.slot }}
+          # Expected, actual and diff images of every failing picture, the traces' numbers, and the HTML report.
+          path: |
+            tests/ui/test-results/gates
+            tests/ui/report/gates
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # --- The app and contract checks the merge queue runs today (app.yml,
+  # server-package.yml, slskd-contract.yml, slskd-windows.yml, share.yml,
+  # aur.yml), each a path-gated job: `if:` reads the `changes` output and the
+  # job id is a key in .github/ci/paths.yml. Rust caches are restored, never
+  # saved (the old workflows save them on main): rust-cache keys on the OS, the
+  # installed toolchains and the job id, and these jobs' ids differ from the old
+  # ones', so `shared-key` spells out the old job's key (v0-rust-<shared-key>-
+  # <OS>-<arch>-...) and the old caches hit. Nothing here uses a secret, and
+  # nothing publishes or signs.
+
+  # The app's checks (app/) on Linux x64 and Windows x64 (app.yml `check`).
+  # ubuntu-22.04 is the oldest glibc the app supports. windows-2025 is what
+  # windows-latest points to today; nothing in the build needs another image.
+  app:
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'app') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run toolchain
+        run: mise run toolchain
+      # app.yml's `check` job had no key of its own: job id `check`.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: app
+          shared-key: check
+          save-if: false
+      - name: mise run app:check
+        run: mise run app:check
+
+  # ADR-0091 on Linux with a Secret Service (app.yml `keyring`). That job's own
+  # cache was never saved by anyone; this one restores the app's.
+  keyring:
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'keyring') }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run toolchain
+        run: mise run toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: app
+          shared-key: check
+          save-if: false
+      - name: mise run app:keyring
+        run: mise run app:keyring
+
+  # Android, the APK built the way F-Droid builds it, in F-Droid's build image
+  # (app.yml `android`): `signed` with a throwaway key made in the job, and
+  # `clean`, unsigned from a clone in another folder. The cache action inside a
+  # container resolves `~` to another home than the steps' HOME, so mise's own
+  # cache is off here (the tools are fetched each run) and Gradle's home is a
+  # fixed path (GRADLE_USER_HOME).
+  android:
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'android') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        build: [signed, clean]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container:
+      image: registry.gitlab.com/fdroid/fdroidserver:buildserver@sha256:1ea8bef1820bff06c2974e31b4fc4c79c364cd24231b86e71fa4b926797e0dac
+    env:
+      ANDROID_HOME: /opt/android-sdk
+      CARGO_HOME: /opt/cargo
+      GRADLE_USER_HOME: /opt/gradle
+      RUSTUP_HOME: /opt/rustup
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache: false
+          cache_save: false
+      - name: mise run android:sdk
+        run: mise run android:sdk
+      # The keys app.yml saves on main, restored here and never saved.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            /opt/cargo/registry
+            /opt/cargo/bin
+            /opt/cargo/.crates.toml
+            /opt/cargo/.crates2.json
+          key: android-cargo-${{ hashFiles('app/Cargo.lock', 'app/package.json', 'rust-toolchain.toml') }}
+          restore-keys: android-cargo-
+      - name: mise run android:toolchains
+        run: mise run android:toolchains
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            /opt/gradle/caches/modules-2
+            /opt/gradle/wrapper/dists
+            /github/home/.cache/gradlew-fdroid
+          key: android-gradle-${{ matrix.build }}-${{ hashFiles('app/gen/android/**/*.gradle.kts', 'app/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: android-gradle-${{ matrix.build }}-
+      - name: mise run android:apk
+        run: mise run android:apk ${{ matrix.build }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-build-${{ matrix.build }}
+          if-no-files-found: error
+          retention-days: 1
+          path: ${{ runner.temp }}/apk/*.apk
+
+  # F-Droid publishes the release APK only when its own unsigned build matches
+  # it except for the signature; so does this (app.yml `android-compare`).
+  android-compare:
+    needs: [changes, android]
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'android-compare') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    container:
+      image: registry.gitlab.com/fdroid/fdroidserver:buildserver@sha256:1ea8bef1820bff06c2974e31b4fc4c79c364cd24231b86e71fa4b926797e0dac
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache: false
+          cache_save: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: android-build-*
+          path: apk
+          merge-multiple: true
+      - name: mise run android:compare
+        run: mise run android:compare
+
+  # The pinned slskd resumes a download from a pre-sized incomplete file, and
+  # overwrites when told to (slskd-contract.yml `resume`): the real image in
+  # Docker, against stand-in Soulseek server and peer. Pulls the image.
+  slskd:
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'slskd') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run slskd:resume
+        run: mise run slskd:resume
+
+  # The binary the Windows app bundles, run as the app runs it: Windows
+  # enforces how slskd opens the file it downloads (slskd-contract.yml
+  # `windows`). Downloads that binary by app/build.rs's pin.
+  slskd-windows:
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'slskd-windows') }}
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run slskd:native
+        run: mise run slskd:native
+
+  # lull's slskd for Windows built twice, to the same bytes and the pinned ones
+  # (slskd-windows.yml). Builds from upstream's pinned release: network.
+  slskd-build:
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'slskd-build') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run slskd:build
+        run: mise run slskd:build
+
+  # The Linux server package (server-package.yml `build`), x64 on the oldest
+  # glibc, unsigned, then held to the hub contract by the jobs below. The full
+  # history, for the version the hub says it is.
+  package:
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'package') }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run toolchain
+        run: mise run toolchain
+      # server-package.yml's `build`: key server-package-x64, job id build.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: server-package-x64-build
+          save-if: false
+      - name: mise run package:build
+        run: mise run package:build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: lull-server-linux-x64
+          if-no-files-found: error
+          retention-days: 1
+          path: ${{ runner.temp }}/packages/
+
+  # Installed as a service in a fresh Ubuntu, Debian or Fedora running systemd
+  # (server-package.yml `contract`).
+  package-contract:
+    needs: [changes, package]
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'package-contract') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [ubuntu, debian, fedora]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: lull-server-linux-x64
+          path: ${{ runner.temp }}/packages
+      - name: mise run package:contract
+        run: mise run package:contract ${{ matrix.distro }}
+
+  # The listener's existing Jellyfin, a real one (server-package.yml `jellyfin`).
+  package-jellyfin:
+    needs: [changes, package]
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'package-jellyfin') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: lull-server-linux-x64
+          path: ${{ runner.temp }}/packages
+      - name: mise run package:jellyfin
+        run: mise run package:jellyfin
+
+  # A hub updating itself (server-package.yml `self-update`). Two debug builds.
+  package-self-update:
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'package-self-update') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run toolchain
+        run: mise run toolchain
+      # server-package.yml's `self-update`: key self-update, job id self-update.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: self-update-self-update
+          save-if: false
+      - name: mise run package:self-update
+        run: mise run package:self-update
+
+  # The listener's logins across an update (server-package.yml `secrets-update`),
+  # from the last release before the vault, built from its tag. That job meant
+  # to read self-update's cache, but its job id made another key; this one reads it.
+  package-secrets-update:
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'package-secrets-update') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run toolchain
+        run: mise run toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: self-update-self-update
+          save-if: false
+      - name: mise run package:secrets-update
+        run: mise run package:secrets-update
+
+  # The share Worker's tests, in Cloudflare's local runtime (share.yml `test`;
+  # `deploy` is not a check).
+  share:
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'share') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run share:test
+        run: mise run share:test
+
+  # lull-bin's PKGBUILD built, installed and started on Arch, against the newest
+  # release (aur.yml `package`; `publish` is not a check). Arch's own image,
+  # dated, which has no git: checkout then downloads the tree, and the script's
+  # pacman brings the system current.
+  aur:
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'aur') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: archlinux:base-devel-20261018.0.612668
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache: false
+          cache_save: false
+      - name: mise run aur:package
+        run: mise run aur:package
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # The one status. `!cancelled()` makes it run when a job it needs failed (a
+  # plain `needs:` job would be skipped, and skipped counts as passing). It
+  # fails on any failed or cancelled job, and lets a job be skipped only when
+  # the path map left it out.
+  gate:
+    if: ${{ !cancelled() }}
+    needs:
+      [
+        changes, check, privacy,
+        image, ui, gates,
+        app, keyring, android, android-compare, slskd, slskd-windows, slskd-build,
+        package, package-contract, package-jellyfin, package-self-update, package-secrets-update,
+        share, aur,
+      ]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
+        with:
+          jobs: ${{ toJSON(needs) }}
+          allowed-skips: ${{ needs.changes.outputs.skippable }}

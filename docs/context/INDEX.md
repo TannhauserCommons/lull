@@ -25,6 +25,7 @@ Curated pages for what is expensive to rediscover: boundaries, contracts, invari
 | Themes: format, hooks, Theme Studio | [../themes.md](../themes.md) *(owner writes)*, ADR-0004, ADR-0083 (what the gates check) | `web/designs/`, `crates/themes/` |
 | Offline downloads, outbox, lull Connect (UI) | [web.md](web.md) *(owner writes)*, ADR-0005 | `web/` |
 | Visual tests, performance budgets, asset pipeline | [quality.md](quality.md) *(owner writes)*, ADR-0083 | `tests/ui/` |
+| The `check` workflow in shadow beside the queue: its jobs, tasks, tool pins, the shared CI scripts | [quality.md](quality.md#check-in-shadow) | `.github/workflows/check.yml`, `.github/workflows/after.yml`, `.github/ci/`, `scripts/ci/`, `mise.toml`, `mise.lock` |
 | UI sounds, sound packs, easter eggs | [../themes.md](../themes.md) section 13, ADR-0081, [web.md](web.md) | `web/sounds.js`, `web/eggs.js`, `web/packs/`, `scripts/sounds/`, `crates/themes/src/pack.rs` |
 | Classic mode skins | [skins.md](skins.md) *(owner writes)* | `crates/skins/`, `web/screens/skins.js`, `web/screens/classic.js` |
 | Web UI: structure, data layer, player engine | [web.md](web.md) *(owner writes)*, `design/DESIGN.md` | `web/index.html`, `web/app.js` |
