@@ -89,3 +89,72 @@ run = "sh scripts/queue-first.sh {{arg(i=0)}}"
 [tasks.release]
 description = "Tag vX.Y.Z on main's newest green commit with the version and what's new; pushing the tag publishes the apps: release X.Y.Z"
 run = "sh scripts/release.sh {{arg(i=0)}}"
+
+# The app and contract checks of .github/workflows/check.yml (docs/context/quality.md, Check in shadow). Each calls a
+# POSIX sh script in scripts/ci/ (Git's sh on Windows), so CI and an agent run the same thing.
+[tasks."app:check"]
+description = "The app's syntax check, fmt, clippy -D warnings and tests (Linux installs Tauri's system packages first)"
+run = "sh scripts/ci/app-check.sh"
+
+[tasks."app:keyring"]
+description = "The keyring tests against GNOME Keyring, unlocked and locked (Linux)"
+run = "sh scripts/ci/keyring.sh"
+
+[tasks."android:sdk"]
+description = "F-Droid's build image: Debian's rustup, the SDK manager, fdroidserver and the NDK (CI, as root)"
+run = "sh scripts/ci/android-sdk.sh"
+
+[tasks."android:toolchains"]
+description = "The pinned Rust toolchain with the Android target, and the Tauri CLI built from source"
+run = "sh scripts/android-toolchains.sh"
+
+[tasks."android:apk"]
+description = "One Android build as F-Droid builds it, into the temp folder's apk/ (CI): android:apk signed (throwaway key) or clean (unsigned, from a clone)"
+usage = 'arg "<build>" help="signed or clean"'
+run = 'sh scripts/ci/android-apk.sh "$usage_build"'
+
+[tasks."android:compare"]
+description = "The signed and the unsigned APK match except for the signature (CI, as root)"
+run = "sh scripts/ci/android-compare.sh"
+
+[tasks."slskd:resume"]
+description = "The pinned slskd image resumes, overwrites and streams as lull relies on (needs Docker)"
+run = "node tests/slskd-contract/run.mjs"
+
+[tasks."slskd:native"]
+description = "The slskd the Windows app bundles, run natively (Windows; downloads it by app/build.rs's pin)"
+run = "node tests/slskd-contract/run.mjs --native"
+
+[tasks."slskd:build"]
+description = "lull's slskd for Windows built twice: same bytes, and the ones app/build.rs pins (network)"
+run = "sh scripts/ci/slskd-build.sh"
+
+[tasks."package:build"]
+description = "The Linux server package (.deb, .rpm, .tar.gz), unsigned, into the temp folder's packages/ (PACKAGES overrides)"
+run = "sh scripts/ci/package-build.sh"
+
+[tasks."package:contract"]
+description = "The package installed as a service in ubuntu, debian or fedora under systemd, held to the hub contract (needs Docker): package:contract <distro>"
+usage = 'arg "<distro>" help="ubuntu, debian or fedora"'
+run = 'sh scripts/ci/package-contract.sh "$usage_distro"'
+
+[tasks."package:jellyfin"]
+description = "The package's hub pointed at a real Jellyfin (needs Docker)"
+run = "sh scripts/ci/package-jellyfin.sh"
+
+[tasks."package:self-update"]
+description = "A hub updating itself, going back from a kit that doesn't start and refusing a changed one (network)"
+run = "sh scripts/ci/package-self-update.sh"
+
+[tasks."package:secrets-update"]
+description = "The listener's logins across an update from the last release before the vault (network)"
+run = "sh scripts/ci/package-secrets-update.sh"
+
+[tasks."share:test"]
+description = "The share Worker's tests, in Cloudflare's local runtime"
+dir = "share"
+run = ["npm ci --no-audit --no-fund", "npm test"]
+
+[tasks."aur:package"]
+description = "lull-bin's PKGBUILD built, installed and started on Arch (CI, as root in an Arch container; network; nothing pushed)"
+run = "sh scripts/ci/aur.sh"

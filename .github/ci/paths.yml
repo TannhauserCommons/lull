@@ -1,8 +1,95 @@
 # The path map: one key per path-gated job id in check.yml. A job whose key is
 # absent here always runs. PRs and queue branches run a gated job only when its
-# paths changed; a call with `all: true` runs them all.
-#
-# No job is path-gated yet: the UI, app and contract jobs arrive in later
-# changes, each with its key here. `{}` keeps the file a valid, empty map: the
-# path filter fails on a file that holds only comments.
-{}
+# paths changed; a call with `all: true` runs them all. The path filter fails on
+# a file with no key, so keep at least one.
+
+# App and contract jobs. Each list mirrors a `want` line of `checks()` in
+# scripts/queue.sh (the queue's regexes), and adds `.github/**` (the queue runs
+# everything for a change there) and the job's own scripts. A job that runs
+# only after another (android-compare after android) or beside it (keyring)
+# still has its own key, the same list as the job it follows: the gate lets a
+# job skip only when it has one.
+app: &app
+  - ".github/**"
+  - "app/**"
+  - "crates/**"
+  - "web/desktop/**"
+  - "web/assets/icons/**"
+  - "rust-toolchain.toml"
+  - "scripts/ci/lib.sh"
+  - "scripts/ci/app-check.sh"
+  - "scripts/ci/keyring.sh"
+keyring: *app
+
+android: &android
+  - ".github/**"
+  - "app/gen/android/**"
+  - "app/src/mobile/**"
+  - "app/build.rs"
+  - "app/Cargo.toml"
+  - "app/Cargo.lock"
+  - "app/tauri.android.conf.json"
+  - "scripts/android-*"
+  - "scripts/android-*/**"
+  - "rust-toolchain.toml"
+  - "scripts/ci/lib.sh"
+  - "scripts/ci/android-*.sh"
+android-compare: *android
+
+slskd: &slskd
+  - ".github/**"
+  - "deploy/compose.yaml"
+  - "app/build.rs"
+  - "app/slskd/**"
+  - "crates/soulseek/**"
+  - "tests/slskd-contract/**"
+slskd-windows: *slskd
+
+# lull's slskd for Windows, built twice: only its recipe and its pin change its bytes.
+slskd-build:
+  - ".github/**"
+  - "app/build.rs"
+  - "app/slskd/**"
+  - "scripts/ci/slskd-build.sh"
+
+# The Linux server package: how it is built, the programs app/build.rs pins for
+# it, the contract, and the hub code only the package runs.
+package: &package
+  - ".github/**"
+  - "packaging/linux/**"
+  - "tests/hub-contract/**"
+  - "app/build.rs"
+  - "app/licenses/**"
+  - "crates/server/src/managed/**"
+  - "crates/server/src/cli/**"
+  - "crates/server/src/admin.rs"
+  - "crates/server/src/kit.rs"
+  - "crates/server/src/launch.rs"
+  - "crates/server/src/updates.rs"
+  - "crates/library/src/jellyfin.rs"
+  - "crates/library/src/switch.rs"
+  - "crates/library/src/connect.rs"
+  - "scripts/ci/lib.sh"
+  - "scripts/ci/package-*.sh"
+package-contract: *package
+package-jellyfin: *package
+package-self-update: *package
+package-secrets-update: *package
+
+# The share Worker: tested whenever it or a file it serves changes.
+share:
+  - ".github/**"
+  - "share/**"
+  - "site/**"
+  - "web/assets/app-icon.svg"
+  - "web/assets/fallback-art-512.png"
+  - "web/fonts/nunito-latin.woff2"
+  - "packaging/android/assetlinks.json"
+  - "app/gen/android/app/src/main/AndroidManifest.xml"
+
+# lull-bin, lull in the AUR: how its PKGBUILD is written.
+aur:
+  - ".github/**"
+  - "packaging/aur/**"
+  - "scripts/aur-pkgbuild.sh"
+  - "scripts/ci/aur.sh"
