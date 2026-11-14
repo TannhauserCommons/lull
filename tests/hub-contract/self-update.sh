@@ -24,7 +24,7 @@ echo "== 1. update from $v1 to $v2"
 release "$v2" "$lull2"
 "$lull1" update || fail "lull update to $v2"
 until_health "$v2"
-[ -f "$w/data/hub/$v2/good" ] || fail "$v2 wasn't marked good"
+until_marked "$v2" good
 [ -f "$w/data/backups/before-$v2.db" ] || fail "no copy of the database from before $v2"
 
 echo "== 2. $v3 doesn't start"
@@ -32,7 +32,7 @@ printf '#!/bin/sh\nexit 3\n' >"$w/broken" && chmod 755 "$w/broken"
 release "$v3" "$w/broken"
 if "$lull1" update; then fail "lull update said $v3 runs"; fi
 until_health "$v2"
-[ -f "$w/data/hub/$v3/bad" ] || fail "$v3 wasn't marked bad"
+until_marked "$v3" bad
 grep -q "\"version\":\"$v3\"" "$w/data/hub/failed.json" || fail "failed.json doesn't name $v3"
 [ -f "$w/data/backups/before-$v3.db" ] || fail "no copy of the database from before $v3"
 

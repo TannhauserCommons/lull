@@ -39,6 +39,12 @@ until_health() { # <version> [seconds, 150 by default]
   for _ in $(seq 1 "${2:-150}"); do [ "$(health)" = "$1" ] && return 0; sleep 1; done
   fail "the hub didn't answer as $1 (it says '$(health)')"
 }
+# The launcher marks a kit good once its own check of /health passes (launch.rs: every 2 s, each given 3 s), so up to
+# a few seconds after until_health already saw the kit answer. Bad is marked before the release starts again.
+until_marked() { # <version> <good|bad>
+  for _ in $(seq 1 10); do [ -f "$w/data/hub/$1/$2" ] && return 0; sleep 1; done
+  fail "$1 wasn't marked $2"
+}
 
 # systemd's Restart= for the service, as a loop: lull exits to start again on an update. Stopped by stop().
 start() { (while [ ! -f "$w/stop" ]; do "$lull1" serve >>"$w/hub.log" 2>&1 || true; sleep 1; done) & }

@@ -53,7 +53,7 @@ flags hub-self-update
 release "$v2" "$lull2"
 until_health "$v1" 300
 kill "$updating" 2>/dev/null || true # its answer is not what this checks
-[ -f "$w/data/hub/$v3/bad" ] || fail "$v3 wasn't marked bad"
+until_marked "$v3" bad
 set_logins
 db_holds "$TOKEN" || fail "$v1 came back without its token"
 
@@ -61,7 +61,7 @@ echo "== 2. the update to $v2 starts, and nothing is asked again"
 flags hub-self-update,secrets
 "$lull1" update || fail "lull update to $v2"
 until_health "$v2"
-[ -f "$w/data/hub/$v2/good" ] || fail "$v2 wasn't marked good"
+until_marked "$v2" good
 set_logins
 for canary in "$TOKEN" "$ACOUSTID"; do
   db_holds "$canary" && fail "$canary is still in lull.db or its log"
