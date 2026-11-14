@@ -1,0 +1,125 @@
+name: check
+
+# Runs in shadow beside the merge queue (docs/context/quality.md, Check in
+# shadow): it blocks nothing and changes nothing about how the queue, `ship` or
+# a release works. The one status of this workflow is `gate` ("check / gate").
+#
+# Agents land through `queue/<topic>` branches, not pull requests, so every
+# topic an agent ships is checked by the `queue/**` push as well as by any pull
+# request. That push trigger goes when the queue does.
+on:
+  pull_request:
+  push:
+    branches: ['queue/**']
+  workflow_call:
+    inputs:
+      all:
+        description: Run every job, whatever paths changed
+        type: boolean
+        default: false
+    secrets:
+      PRIVATE_PATTERNS:
+        description: Patterns the privacy check rejects, one extended regex a line
+        required: false
+
+permissions:
+  contents: read
+
+# A newer push to a ref cancels the older run of that ref. Cancelled is neither
+# red nor green.
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Always runs, so the status never hangs in Pending. Decides which path-gated
+  # jobs run and which of them the gate may see skipped. On a push to a
+  # `queue/**` branch the path filter compares with main.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.select.outputs.run }}
+      skippable: ${{ steps.select.outputs.skippable }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - id: filter
+        if: ${{ !inputs.all }}
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: .github/ci/paths.yml
+      - id: select
+        name: mise run ci:select
+        run: mise run ci:select ${{ inputs.all && '--all' || '' }}
+        env:
+          CHANGES: ${{ steps.filter.outputs.changes }}
+
+  # Each job is checkout, mise, one `mise run <task>`. A path-gated job has a
+  # key in .github/ci/paths.yml and an `if:` on the `changes` output; any other
+  # job always runs. Every job id goes in the gate's `needs:`.
+
+  # fmt, clippy, the Rust and web tests, the release scopes and the lint of
+  # this workflow: the same list as `mise run check`. The job id and runner
+  # match ci.yml's `check`, so rust-cache restores the cache that job saves on
+  # main (rust-cache keys on the job id, the OS and the installed toolchains).
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # The release scopes check reads every commit since the last release tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      # rust-cache keys on the installed toolchains, so the pinned one goes in
+      # first, as ci.yml does.
+      - name: mise run toolchain
+        run: mise run toolchain
+      # Only main saves (ADR-0097); this workflow reads the cache ci.yml saves.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: false
+      - name: mise run check
+        run: mise run check
+
+  # Every commit in UTC, and nothing private in the files or the history.
+  privacy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run privacy
+        run: mise run privacy
+        env:
+          PRIVATE_PATTERNS: ${{ secrets.PRIVATE_PATTERNS }}
+
+  # The one status. `!cancelled()` makes it run when a job it needs failed (a
+  # plain `needs:` job would be skipped, and skipped counts as passing). It
+  # fails on any failed or cancelled job, and lets a job be skipped only when
+  # the path map left it out.
+  gate:
+    if: ${{ !cancelled() }}
+    needs: [changes, check, privacy]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
+        with:
+          jobs: ${{ toJSON(needs) }}
+          allowed-skips: ${{ needs.changes.outputs.skippable }}

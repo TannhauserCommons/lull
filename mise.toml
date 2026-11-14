@@ -1,20 +1,42 @@
 # One entry point for humans, agents and CI. `mise run setup` once per clone.
+# Tools are pinned exactly and hash-checked in mise.lock; Rust is pinned by rust-toolchain.toml.
+# The shared ci:* tasks come from .github/ci/tasks.toml (docs/context/quality.md, Check in shadow).
 [tools]
-node = "24.11"
+node = "24.11.1"
+python = "3.14.10"
+actionlint = "1.7.12"
+
+[task_config]
+includes = [".github/ci/tasks.toml"]
+
+[tasks.toolchain]
+description = "The Rust toolchain rust-toolchain.toml pins"
+run = "rustup toolchain install"
 
 [tasks.setup]
 description = "Toolchain, Webamp bundle and git hooks"
-run = ["rustup toolchain install", "sh scripts/vendor-web.sh"]
+run = [{ task = "toolchain" }, "sh scripts/vendor-web.sh"]
 
+# The new workflows are the only ones written to the skeleton's rules (SHA pins, a timeout on every job, one
+# `mise run` per step); the older ones don't meet them, so `ci:lint` (every workflow) is not run here.
 [tasks.check]
-description = "Exactly what CI runs"
+description = "Exactly what the `check` workflow runs: fmt, clippy, tests, the release scopes, the lint of the new workflows"
 run = [
   "cargo fmt --all --check",
   "cargo clippy --workspace --all-targets --locked -- -D warnings",
   "cargo test --workspace --locked",
   "node --test tests/web/*.test.mjs",
+  # Draws the release draft: it fails on a feat or fix scope scripts/release-areas.tsv doesn't map, so that fails
+  # here and not on main after landing. The draft it prints is not needed (no `> /dev/null`: cmd on Windows has none).
+  "node scripts/release-notes.mjs draft",
   "cargo update --manifest-path app/Cargo.toml --workspace --locked",
+  "actionlint .github/workflows/check.yml .github/workflows/after.yml",
+  "python .github/ci/lint.py .github/workflows/check.yml .github/workflows/after.yml",
 ]
+
+[tasks.privacy]
+description = "Every commit in UTC and nothing private in the files or messages (PRIVATE_PATTERNS in the environment)"
+run = "sh scripts/privacy-check.sh"
 
 [tasks.test]
 description = "Tests only"
