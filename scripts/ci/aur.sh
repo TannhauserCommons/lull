@@ -10,6 +10,14 @@ set -eu
 cd "$(dirname "$0")/../.."
 root=$PWD
 
+# mise put its Python, Node and the rest first on PATH to run this task. The system's tools below (namcap is a Python
+# script for the system's Python, check-installed.sh runs the system's Node) must run on the system's own.
+path=
+for dir in $(printf %s "$PATH" | tr ':' ' '); do
+  case "$dir" in */mise/*) ;; *) path=${path:+$path:}$dir ;; esac
+done
+export PATH=$path
+
 pacman -Syu --noconfirm --needed git nodejs minisign namcap xorg-server-xvfb xorg-xauth imagemagick dbus procps-ng
 
 : "${GITHUB_REPOSITORY:?set GITHUB_REPOSITORY (owner/name) to find the release}"

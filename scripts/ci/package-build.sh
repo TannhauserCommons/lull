@@ -47,7 +47,6 @@ trap 'rm -rf web; mv "$work/web-source" web; rm -rf "$work"' EXIT
 
 # As the image builds it, but installed as the package: Settings > App and the updates say so (a kit's lull run by an
 # image's hub runs as the image's, launch.rs).
-export LULL_BUILD_RELEASE=$release LULL_BUILD_CHANGES=$changes LULL_BUILD_INSTALL=package
-export LULL_BUILD_COMMIT=${release:+$commit}
-cargo build --release --locked --bin lull
+env LULL_BUILD_RELEASE="$release" LULL_BUILD_CHANGES="$changes" LULL_BUILD_INSTALL=package LULL_BUILD_COMMIT="${release:+$commit}" \
+  cargo build --release --locked --bin lull
 sh packaging/linux/build.sh "${CARGO_TARGET_DIR:-target}/release/lull" "$version" "$packages"
