@@ -1,5 +1,5 @@
 {
-  "note": "Budgets for perf.spec.mjs, with the CPU slowed `rate` times. Counts (elements, layouts, frames, bytes) sit just above what main measures and don't move between runs; task lengths have about three times the measured time, for a slower and noisier CI runner, and still fail a page that blocks for a noticeable moment. Move a budget only with a measured reason a listener would accept, in the commit: docs/context/quality.md#ui-gates.",
+  "note": "Budgets for perf.spec.mjs, with the CPU slowed `rate` times on a runner at ../budgets.json's benchmarkIndex, and by as much less as a slower runner is slower (perf.spec.mjs measures each runner first). Counts (elements, layouts, frames, bytes) sit just above what main measures and don't move between runs; task lengths have about three times the measured time, for a slower and noisier CI runner, and still fail a page that blocks for a noticeable moment. Move a budget only with a measured reason a listener would accept, in the commit: docs/context/quality.md#ui-gates.",
   "rate": 4,
   "budgets": {
     "fanOutElements": 100,

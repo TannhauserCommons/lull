@@ -1,18 +1,37 @@
-// Performance budgets, on the fixture hub with the CPU slowed 4x (a low-end phone or an old laptop). Most gates are
+// Performance budgets, on the fixture hub with the CPU slowed to one device (a low-end phone or an old laptop): 4x on a
+// runner of the speed the budgets were met on, and less on a slower one, as for the Lighthouse budgets. Most gates are
 // counts from a Chrome trace (elements restyled, layouts, frames), which do not move between runs; the few on task
-// length have room for a slow CI runner and still catch a page that blocks for a noticeable moment. The numbers and
+// length have room for a noisy CI runner and still catch a page that blocks for a noticeable moment. The numbers and
 // why they sit where they do: perf-budgets.json, docs/context/quality.md#ui-gates.
 
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
+import { pageFunctions } from 'lighthouse/core/lib/page-functions.js';
 import { designs, ids, openScreen, quiet, restyleFanOut, traced } from './lib.mjs';
 import * as S from './scenarios.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const { rate, budgets: B } = JSON.parse(readFileSync(join(here, 'perf-budgets.json'), 'utf8'));
-const opts = (design) => ({ design, theme: 'day', rate });
+// The runner speed the budgets are met on: the Lighthouse budgets' one (../budgets.json), the same runners.
+const { benchmarkIndex } = JSON.parse(readFileSync(join(here, '..', 'budgets.json'), 'utf8'));
+const device = { rate };
+const opts = (design) => ({ design, theme: 'day', get rate() { return device.rate; } });
+
+// GitHub's runners differ by 2x in speed, and a fixed slowdown on top of a slow one failed task-length budgets that a
+// fast one passed with room (startup's longest task 611-651 ms against 600 on queue run 43530220411, a change to CI
+// alone). Each runner is measured first, with Lighthouse's own benchmark (the median of three), and slowed by `rate`
+// times its speed over the budgets' runner, so every runner plays the same device.
+test.beforeAll(async ({ browser }) => {
+  const page = await browser.newPage();
+  const runs = [];
+  for (let i = 0; i < 3; i++) runs.push(await page.evaluate(pageFunctions.computeBenchmarkIndex));
+  await page.close();
+  const index = runs.sort((a, b) => a - b)[1];
+  device.rate = (rate * index) / benchmarkIndex;
+  console.log(`this runner's benchmark: ${Math.round(index)}; the CPU slowed ${device.rate.toFixed(2)}x`);
+});
 
 for (const design of designs) {
   test.describe(design, () => {
