@@ -102,6 +102,16 @@ Raise a budget only with a measured reason a listener would accept, in the commi
 
 **A feature's code loads where it is used** (web.md, Code loads where it is used): a screen or panel's script and styles load on its first use, so a feature doesn't spend the start's transfer budget, and a budget isn't raised to fit code that could load on use. The on-use gate (below) fails on a new file at start that `gates/start-files.json` doesn't list with its reason. A file already at start can still grow: when Lighthouse's transfer goes over, find what in it only one screen uses and move that out (Stats left system.js this way) before reaching for the budget.
 
+## Where the version lives
+
+One version, held by these files (`scripts/ci/version.mjs`, tested by `tests/web/version.test.mjs`): `[workspace.package]` in `Cargo.toml` (the source; the hub's crates inherit it), `app/Cargo.toml`, `versionCode` in `app/tauri.android.conf.json` (X*1000000 + Y*1000 + Z; minor and patch stay below 1000), the `lull-*` packages of `Cargo.lock` and `lull-app` plus the `lull-*` packages of `app/Cargo.lock`. A lock entry is edited by package name, never by version string: `app/Cargo.lock` has a dependency, `document-features`, that happens to share lull's number.
+
+- **`mise run version`** prints the version `Cargo.toml` carries as its last line.
+- **`mise run bump X.Y.Z`** writes it into every holder, with no cargo and no network, and adds `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` (the stub `scripts/release.sh` falls back to) when there is none, staged with `git add` so that `git commit -am` carries it. It refuses a version that is not `X.Y.Z`, one that is not newer (so bumping to the current version fails), a minor or patch of 1000 or more, and a versionCode that does not rise; a refusal writes nothing. It never leaves the files disagreeing: the result is checked before anything is written.
+- **`mise run check`** runs `node scripts/ci/version.mjs check`: it fails, naming the file, when a holder disagrees with `Cargo.toml`.
+
+`scripts/release.sh` and `release.yml` still cut releases and read the same files; they don't use these tasks yet.
+
 ## Checks on a branch
 
 The queue runs the checks on every candidate, and they run on every pull request. On any other branch, run them by hand: `gh workflow run ci --ref <branch>` (fmt, clippy, tests, the web's tests), `app` (the app's checks on Linux and Windows, then the four desktop bundles and the APK as artifacts) `ui-gates` and `share` (the share Worker's tests; on main it also deploys, share.md). Only the queue publishes the image and starts Pages; a Release comes only from a `v*` tag. A change to a workflow in `.github/workflows/` is tested by the queue with main's copy of each workflow (Actions reads a called workflow at the calling commit), so run a changed workflow on its branch by hand before it queues.

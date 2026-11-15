@@ -26,6 +26,8 @@ run = [
   "cargo clippy --workspace --all-targets --locked -- -D warnings",
   "cargo test --workspace --locked",
   "node --test tests/web/*.test.mjs",
+  # Every file that holds the version agrees with Cargo.toml (docs/context/quality.md, Where the version lives).
+  "node scripts/ci/version.mjs check",
   # Draws the release draft: it fails on a feat or fix scope scripts/release-areas.tsv doesn't map, so that fails
   # here and not on main after landing. The draft it prints is not needed (no `> /dev/null`: cmd on Windows has none).
   "node scripts/release-notes.mjs draft",
@@ -124,6 +126,16 @@ run = "sh scripts/queue-first.sh {{arg(i=0)}}"
 [tasks.release]
 description = "Tag vX.Y.Z on main's newest green commit with the version and what's new; pushing the tag publishes the apps: release X.Y.Z"
 run = "sh scripts/release.sh {{arg(i=0)}}"
+
+# The shared skeleton's `version` and `bump` (docs/context/quality.md, Where the version lives). `version` prints the version as
+# its last line of stdout; `bump` writes X.Y.Z into every holder, and leaves the new changelog stub staged.
+[tasks.version]
+description = "Print the version Cargo.toml carries (the last line of stdout)"
+run = "node scripts/ci/version.mjs"
+
+[tasks.bump]
+description = "Write X.Y.Z into every file that holds the version, no cargo: bump X.Y.Z"
+run = "node scripts/ci/version.mjs bump {{arg(i=0)}}"
 
 # The app and contract checks of .github/workflows/check.yml (docs/context/quality.md, Check in shadow). Each calls a
 # POSIX sh script in scripts/ci/ (Git's sh on Windows), so CI and an agent run the same thing.
