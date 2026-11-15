@@ -1,0 +1,183 @@
+name: spike
+
+# Throwaway (branch spike-sign-after-build, never merged): can lull's release files be built unsigned and signed afterwards?
+# Three experiments of the design study of step 2 (E1, E2, E3). It runs only on a pull request that changes this file or
+# scripts/spike/, so on that branch alone. No secret is read: every key is made inside its job and thrown away. Each job
+# ends with a RESULT block (RESULT E<n>: PASS or FAIL, then the evidence) and uploads the small artifact spike-<n>.
+on:
+  pull_request:
+    paths: [".github/workflows/spike.yml", "scripts/spike/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # E1: the unsigned clean APK, built as check.yml's `android (clean)` job builds it, signed afterwards by apksigner with a
+  # throwaway key and held to F-Droid's check (`apksigcopier compare`); which apksigner the image has; then, with the same
+  # key, the Gradle-signed APK (check.yml's `signed` build) compared with the apksigner-signed one.
+  e1-android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    container:
+      image: registry.gitlab.com/fdroid/fdroidserver:buildserver@sha256:1ea8bef1820bff06c2974e31b4fc4c79c364cd24231b86e71fa4b926797e0dac
+    env:
+      ANDROID_HOME: /opt/android-sdk
+      CARGO_HOME: /opt/cargo
+      GRADLE_USER_HOME: /opt/gradle
+      RUSTUP_HOME: /opt/rustup
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache: false
+          cache_save: false
+      - name: mise run android:sdk
+        run: mise run android:sdk
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            /opt/cargo/registry
+            /opt/cargo/bin
+            /opt/cargo/.crates.toml
+            /opt/cargo/.crates2.json
+          key: android-cargo-${{ hashFiles('app/Cargo.lock', 'app/package.json', 'rust-toolchain.toml') }}
+          restore-keys: android-cargo-
+      - name: mise run android:toolchains
+        run: mise run android:toolchains
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            /opt/gradle/caches/modules-2
+            /opt/gradle/wrapper/dists
+            /github/home/.cache/gradlew-fdroid
+          key: android-gradle-clean-${{ hashFiles('app/gen/android/**/*.gradle.kts', 'app/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: android-gradle-clean-
+      - name: mise run android:apk clean
+        run: mise run android:apk clean
+      - name: Sign afterwards (a, b)
+        run: sh scripts/spike/e1-android.sh sign
+      # Evidence only (c): its failure does not decide the verdict.
+      - name: Gradle-signed with the same key (c)
+        continue-on-error: true
+        run: sh scripts/spike/e1-android.sh gradle
+      - name: Result
+        if: ${{ !cancelled() }}
+        run: sh scripts/spike/result.sh e1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ !cancelled() }}
+        with:
+          name: spike-1
+          if-no-files-found: error
+          retention-days: 3
+          path: |
+            ${{ runner.temp }}/spike/e1
+            !${{ runner.temp }}/spike/e1/*.apk
+            !${{ runner.temp }}/spike/e1/*.idsig
+            !${{ runner.temp }}/spike/e1/*.jks
+
+  # E2 and the build half of E3: the Linux x64 bundles built from this commit as a branch build (A: no key, no config) and
+  # as the tag build (B: a throwaway key, createUpdaterArtifacts), compared; if they differ, A built again (A2) to measure
+  # what two builds of the same thing differ by. 22.04, the runner of app.yml's `bundle`; the rust cache is restored from
+  # the key that job saves on main, never saved.
+  e2-desktop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: false
+      - name: mise run toolchain
+        run: mise run toolchain
+      # app.yml's `bundle` job: workspace app, key x64, job id bundle.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: app
+          shared-key: x64-bundle
+          save-if: false
+      - name: Setup
+        run: sh scripts/spike/e2-setup.sh
+      - name: A, plain build
+        run: sh scripts/spike/e2-build.sh A plain
+      - name: B, keyed build
+        run: sh scripts/spike/e2-build.sh B keyed
+      - name: Compare A and B
+        id: ab
+        run: sh scripts/spike/e2-compare.sh A B
+      - name: A2, plain build again (only if A and B differ)
+        if: ${{ steps.ab.outputs.differs == 'true' }}
+        run: |
+          sh scripts/spike/e2-build.sh A2 plain
+          sh scripts/spike/e2-compare.sh A A2
+      - name: Result
+        if: ${{ !cancelled() }}
+        run: |
+          sh scripts/spike/e2-verdict.sh
+          sh scripts/spike/result.sh e2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: spike-2
+          if-no-files-found: error
+          retention-days: 3
+          path: |
+            ${{ runner.temp }}/spike/e2/*.*
+            ${{ runner.temp }}/spike/e2/*/listing.txt
+      # What E3 signs: both plain files, the keyed AppImage with the bundler's .sig, and the throwaway key.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: spike-2-files
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          path: |
+            ${{ runner.temp }}/spike/e2/key
+            ${{ runner.temp }}/spike/e2/key.pub
+            ${{ runner.temp }}/spike/e2/A/files/*.AppImage
+            ${{ runner.temp }}/spike/e2/A/files/*.deb
+            ${{ runner.temp }}/spike/e2/B/files/*.AppImage
+            ${{ runner.temp }}/spike/e2/B/files/*.AppImage.sig
+
+  # E3: the plain build's AppImage and .deb, and the keyed build's AppImage, signed after the build by the pinned Tauri CLI
+  # with the throwaway key; every .sig (and the bundler's own) verified by minisign -V and by minisign-verify.
+  e3-sign-after:
+    needs: e2-desktop
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: false
+      - name: mise run toolchain
+        run: mise run toolchain
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: spike-2-files
+          path: ${{ runner.temp }}/spike/e2
+      - name: Tauri CLI
+        working-directory: app
+        run: npm ci --no-audit --no-fund --ignore-scripts
+      - name: Sign afterwards and verify
+        run: sh scripts/spike/e3-sign.sh
+      - name: Result
+        if: ${{ !cancelled() }}
+        run: sh scripts/spike/result.sh e3
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: spike-3
+          if-no-files-found: error
+          retention-days: 3
+          path: |
+            ${{ runner.temp }}/spike/e3/*.*
+            ${{ runner.temp }}/spike/e2/*/files/*.sig
