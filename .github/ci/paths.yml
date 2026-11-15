@@ -44,6 +44,15 @@ gates:
   - 'scripts/queue.sh'
   - 'mise.toml'
   - 'mise.lock'
+budgets:
+  - 'web/**'
+  - 'scripts/web-dist/**'
+  - 'scripts/budgets/**'
+  - 'tests/web/budgets.test.mjs'
+  - '.github/**'
+  - 'scripts/queue.sh'
+  - 'mise.toml'
+  - 'mise.lock'
 
 # App and contract jobs. Each list mirrors a `want` line of `checks()` in
 # scripts/queue.sh (the queue's regexes), and adds `.github/**` and

@@ -285,6 +285,25 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # What each route's start ships, as bytes summed from the built web files (no browser), against the change's allowance
+  # over its merge-base and the routes' ceilings (scripts/budgets, docs/context/quality.md). It builds web/ twice, here and
+  # on the merge-base, so the history is needed. Lighthouse still measures bytes in the queue's `ui` shards; this runs beside it.
+  budgets:
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'budgets') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run budgets
+        run: mise run budgets
+
   # --- The app and contract checks the merge queue runs today (app.yml,
   # server-package.yml, slskd-contract.yml, slskd-windows.yml, share.yml,
   # aur.yml), each a path-gated job: `if:` reads the `changes` output and the
@@ -649,7 +668,7 @@ jobs:
     needs:
       [
         changes, check, privacy,
-        image, ui, gates,
+        image, ui, gates, budgets,
         app, keyring, android, android-compare, slskd, slskd-windows, slskd-build,
         package, package-contract, package-jellyfin, package-self-update, package-secrets-update,
         share, aur,
