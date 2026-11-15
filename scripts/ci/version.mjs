@@ -2,10 +2,13 @@
 //   node scripts/ci/version.mjs [print]   the version of Cargo.toml's [workspace.package], as the last line of stdout
 //   node scripts/ci/version.mjs check     fail, naming the file, when a file that holds the version disagrees with it
 //   node scripts/ci/version.mjs bump X.Y.Z  write X.Y.Z into every file that holds it (no cargo, no network)
-// The holders are listed once, in HOLDERS and the helpers around it: the two manifests, Android's versionCode, the `lull-*`
-// packages of both lock files, and the F-Droid changelog the code names. Lock entries are edited by package name, never by
-// version string: app/Cargo.lock has a dependency (`document-features`) that happens to share lull's version number.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+// The holders: the two manifests and every workspace member's manifest (which takes the workspace version or equals it),
+// Android's versionCode, and the packages of both lock files that are lull's own (every workspace member, the app, and the
+// members the app reaches). Lock entries are edited by package name, never by version string: app/Cargo.lock has a
+// dependency (`document-features`) that happens to share lull's version number. The F-Droid changelog is written, not checked.
+// A bump prepares everything that can fail (temp files, the changelog stub, staging it) before the first holder changes, and
+// rolls back if a holder cannot be replaced; a rerun at a version the tree already partly carries completes what is missing.
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -14,15 +17,17 @@ const MANIFEST = 'Cargo.toml';
 const APP_MANIFEST = 'app/Cargo.toml';
 const ANDROID_CONF = 'app/tauri.android.conf.json';
 const LOCKS = ['Cargo.lock', 'app/Cargo.lock'];
+/** Each Cargo workspace: its manifest, the folder it sits in, its lock file. The app is a workspace of its own. */
+const WORKSPACES = [
+  [MANIFEST, '', 'Cargo.lock'],
+  [APP_MANIFEST, 'app/', 'app/Cargo.lock'],
+];
 const CHANGELOGS = 'fastlane/metadata/android/en-US/changelogs';
 /** What scripts/release.sh writes when the commits since the last release have no feat or fix to list. */
 const CHANGELOG_STUB = 'Smaller fixes.\n';
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 /** Android's versionCode is a signed 32-bit integer, and Google Play caps it at this. */
 const MAX_CODE = 2_100_000_000;
-
-/** The files that hold the version (not the changelog, which is named by the code). */
-export const HOLDER_FILES = [MANIFEST, APP_MANIFEST, ANDROID_CONF, ...LOCKS];
 
 /** Android's versionCode, X*1000000 + Y*1000 + Z (Tauri's own formula; scripts/release.sh), or throws why a version has none. */
 export function versionCode(version) {
@@ -35,11 +40,11 @@ export function versionCode(version) {
   return code;
 }
 
-/** Whether `a` is a newer X.Y.Z than `b`. */
-function newer(a, b) {
+/** -1, 0 or 1 as the X.Y.Z `a` is older than, the same as or newer than `b` (both already valid). */
+function compare(a, b) {
   const [pa, pb] = [a, b].map((v) => v.split('.').map(Number));
-  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] > pb[i];
-  return false;
+  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] > pb[i] ? 1 : -1;
+  return 0;
 }
 
 /** The text as lines that keep their own ending, so a CRLF checkout stays CRLF and an LF one LF. */
@@ -82,8 +87,77 @@ function setManifestVersion(file, text, section, version) {
   return lines.join('');
 }
 
-/** The lull-owned packages of a lock file: the ones named `lull-*` that have no `source` (they are paths, not crates.io). */
-function lockEntries(text) {
+/** The `members = [...]` paths of a manifest's [workspace] (none when it has no such list). */
+function workspaceMembers(text) {
+  const lines = linesOf(text);
+  let current = null;
+  for (let i = 0; i < lines.length; i++) {
+    const name = header(lines[i]);
+    if (name !== null) current = name;
+    else if (current === 'workspace' && /^\s*members\s*=/.test(lines[i])) {
+      let list = '';
+      for (let j = i; j < lines.length; j++) {
+        list += lines[j].replace(/#.*$/, '');
+        if (list.includes(']')) break;
+      }
+      return [...list.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+    }
+  }
+  return [];
+}
+
+const INHERITS = /^\s*version\s*\.\s*workspace\s*=\s*true\b|^\s*version\s*=\s*\{[^}]*\bworkspace\s*=\s*true/;
+
+/** A manifest's [package]: its name (null when it has none), its own version and whether it takes the workspace's. */
+function packageOf(text) {
+  const found = { name: null, version: null, inherits: false };
+  let current = null;
+  for (const line of linesOf(text)) {
+    const name = header(line);
+    if (name !== null) current = name;
+    else if (current === 'package') {
+      const own = /^\s*name\s*=\s*"([^"]*)"/.exec(line);
+      if (own) found.name ??= own[1];
+      else if (VERSION_LINE.test(line)) found.version ??= versionOfLine(line);
+      else if (INHERITS.test(line)) found.inherits = true;
+    }
+  }
+  return found;
+}
+
+/** The packages of one workspace that lull versions: its listed members, then its own root package if the manifest has one. */
+function workspacePackages(files, [manifest, dir]) {
+  const members = workspaceMembers(files[manifest]).filter((m) => !m.includes('*')).map((m) => `${dir}${m}/Cargo.toml`);
+  const own = packageOf(files[manifest]).name === null ? [] : [manifest];
+  return [...members, ...own];
+}
+
+const escaped = (name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The package names each lock file must hold: the workspace's own packages, and for the app the root members it reaches
+ * (a member is reached when a manifest of the closure names it as a dependency; the lock lists them whatever the target).
+ */
+function expectedLocks(files) {
+  const names = ([manifest, dir]) => workspacePackages(files, [manifest, dir]).filter((f) => files[f] !== undefined).map((f) => [packageOf(files[f]).name, f]);
+  const [root, app] = WORKSPACES.map((w) => names(w));
+  const reached = new Map(app);
+  const queue = [...app.map(([, file]) => file)];
+  const known = new Map(root);
+  while (queue.length) {
+    const text = files[queue.pop()];
+    for (const [name, file] of known) {
+      if (name && !reached.has(name) && new RegExp(`^\\s*${escaped(name)}\\s*[.=]`, 'm').test(text)) {
+        reached.set(name, file);
+        queue.push(file);
+      }
+    }
+  }
+  return { 'Cargo.lock': new Set(root.map(([n]) => n).filter(Boolean)), 'app/Cargo.lock': new Set([...reached.keys()].filter(Boolean)) };
+}
+
+/** A lock file's packages that lull owns: the wanted ones and any other `lull-*`, none of which has a `source` (they are paths). */
+function lockEntries(text, wanted) {
   const lines = linesOf(text);
   const entries = [];
   let entry = null;
@@ -101,27 +175,30 @@ function lockEntries(text) {
     }
   }
   // `source` can come after `version`, so a package is only known to be a path one once its whole block was read.
-  return { lines, entries: entries.filter((e) => e.name !== null && e.versionAt >= 0 && /^lull-/.test(e.name) && !e.source) };
+  const own = entries.filter((e) => e.name !== null && e.versionAt >= 0 && !e.source && (wanted.has(e.name) || /^lull-/.test(e.name)));
+  return { lines, own: own.map((e) => [e.name, versionOfLine(lines[e.versionAt]), e.versionAt]) };
 }
 
-/** The `lull-*` path packages of a lock file as [name, version, line index]. */
-function ownLocks(text) {
-  const { lines, entries } = lockEntries(text);
-  return { lines, own: entries.map((e) => [e.name, versionOfLine(lines[e.versionAt]), e.versionAt]) };
-}
-
-function setLockVersions(text, version) {
-  const { lines, own } = ownLocks(text);
+function setLockVersions(text, wanted, version) {
+  const { lines, own } = lockEntries(text, wanted);
   for (const [, , at] of own) lines[at] = setVersionLine(lines[at], version);
   return lines.join('');
 }
 
 const readFile = (root, file) => readFileSync(join(root, file), 'utf8');
 
-/** The text of every holder file under `root`. */
-function readHolders(root) {
-  return Object.fromEntries(HOLDER_FILES.map((file) => [file, readFile(root, file)]));
+/** The text of every file that holds the version under `root`, by its path from `root`. */
+function readTree(root) {
+  const files = {};
+  for (const file of [MANIFEST, APP_MANIFEST, ANDROID_CONF, ...LOCKS]) files[file] = readFile(root, file);
+  for (const workspace of WORKSPACES) {
+    for (const file of workspacePackages(files, workspace)) if (files[file] === undefined && existsSync(join(root, file))) files[file] = readFile(root, file);
+  }
+  return files;
 }
+
+/** The files that hold the version under `root` (what a bump may change and `check` reads). */
+export const trackedFiles = (root) => Object.keys(readTree(root));
 
 /** The version `Cargo.toml` carries, from the files' text. */
 function carried(files) {
@@ -152,85 +229,150 @@ export function problemsIn(files) {
     problems.push(`${MANIFEST}: ${error.message}`);
   }
 
-  const app = manifestVersion(files[APP_MANIFEST], 'package');
-  if (app !== version) problems.push(`${APP_MANIFEST}: version is ${app ?? 'missing'}, ${MANIFEST} has ${version}`);
+  for (const workspace of WORKSPACES) {
+    const [manifest] = workspace;
+    const shared = manifestVersion(files[manifest], 'workspace.package');
+    for (const file of workspacePackages(files, workspace)) {
+      if (files[file] === undefined) {
+        problems.push(`${file}: missing, but ${manifest} lists it as a member`);
+        continue;
+      }
+      const pkg = packageOf(files[file]);
+      if (pkg.name === null) problems.push(`${file}: no [package] name`);
+      else if (pkg.inherits && shared !== version) problems.push(`${file}: takes the workspace version, which ${manifest} has as ${shared ?? 'nothing'}, not ${version}`);
+      else if (!pkg.inherits && pkg.version !== version) problems.push(`${file}: version is ${pkg.version ?? 'missing'}, ${MANIFEST} has ${version}`);
+    }
+  }
+  if (packageOf(files[APP_MANIFEST]).name === null) problems.push(`${APP_MANIFEST}: no [package]`);
 
   const have = androidCode(files[ANDROID_CONF]);
   if (have === null) problems.push(`${ANDROID_CONF}: no bundle.android.versionCode`);
   else if (code !== null && have !== code) problems.push(`${ANDROID_CONF}: versionCode is ${have}, ${version} gives ${code}`);
 
+  const expected = expectedLocks(files);
   for (const lock of LOCKS) {
-    const { own } = ownLocks(files[lock]);
-    if (!own.length) problems.push(`${lock}: no lull-* packages`);
+    const { own } = lockEntries(files[lock], expected[lock]);
     for (const [name, locked] of own) {
       if (locked !== version) problems.push(`${lock}: ${name} is ${locked}, ${MANIFEST} has ${version}`);
     }
-  }
-  // The app's own package is the one entry the app's lock must have besides the hub's crates.
-  if (!ownLocks(files['app/Cargo.lock']).own.some(([name]) => name === 'lull-app')) {
-    problems.push('app/Cargo.lock: no lull-app package');
+    const present = new Set(own.map(([name]) => name));
+    for (const name of [...expected[lock]].sort()) if (!present.has(name)) problems.push(`${lock}: no entry for ${name}`);
   }
   return problems;
 }
 
 /** `problemsIn` for the tree at `root`. */
-export const problems = (root) => problemsIn(readHolders(root));
+export const problems = (root) => problemsIn(readTree(root));
 
 /** The version the tree at `root` carries. */
-export const readVersion = (root) => carried(readHolders(root));
+export const readVersion = (root) => carried(readTree(root));
 
-function changelogPath(code) {
-  return `${CHANGELOGS}/${code}.txt`;
+const changelogPath = (code) => `${CHANGELOGS}/${code}.txt`;
+
+/** The new text of every holder for `version`. */
+function retarget(files, version, code) {
+  const next = { ...files };
+  const expected = expectedLocks(files);
+  for (const workspace of WORKSPACES) {
+    for (const file of workspacePackages(files, workspace)) {
+      if (files[file] !== undefined && !packageOf(files[file]).inherits) next[file] = setManifestVersion(file, files[file], 'package', version);
+    }
+  }
+  next[MANIFEST] = setManifestVersion(MANIFEST, next[MANIFEST], 'workspace.package', version);
+  if (manifestVersion(files[APP_MANIFEST], 'workspace.package') !== null) {
+    next[APP_MANIFEST] = setManifestVersion(APP_MANIFEST, next[APP_MANIFEST], 'workspace.package', version);
+  }
+  const codeField = /("versionCode"\s*:\s*)\d+/g;
+  if ((files[ANDROID_CONF].match(codeField) ?? []).length !== 1) throw new Error(`${ANDROID_CONF}: expected one versionCode`);
+  next[ANDROID_CONF] = files[ANDROID_CONF].replace(codeField, `$1${code}`);
+  for (const lock of LOCKS) next[lock] = setLockVersions(files[lock], expected[lock], version);
+  return next;
 }
 
-/** Stage `file` when `root` is a git work tree: the skeleton commits a bump with `git commit -am`, which skips new files. */
+const canonical = (path) => realpathSync.native(path);
+
+/** `git add` of `file`, only when `root` is the top of a git work tree: the skeleton commits a bump with `git commit -am`, which skips new files. */
 function stage(root, file) {
-  let inside;
+  let top;
   try {
-    inside = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch {
     return false; // not a repository (or no git): there is nothing to commit into
   }
-  if (inside !== 'true') return false;
+  // Inside some other repository (lull unpacked into one): staging there would stage into the wrong tree.
+  if (canonical(top) !== canonical(root)) return false;
   execFileSync('git', ['add', '--', file], { cwd: root, stdio: 'inherit' });
   return true;
 }
 
+const unstage = (root, file) => execFileSync('git', ['rm', '--cached', '-q', '--ignore-unmatch', '--', file], { cwd: root, stdio: 'ignore' });
+
 /**
- * Write `version` into every holder under `root`. Refuses anything that is not X.Y.Z, a version that is not newer than the
- * one Cargo.toml carries, and a versionCode that does not rise; writes nothing unless every file is computed and agrees.
- * `stage: true` also `git add`s the changelog stub. Returns the files it wrote.
+ * Write `version` into every holder under `root`. Refuses anything that is not X.Y.Z, a version older than the one Cargo.toml
+ * carries (the same version completes what an earlier run left undone, and is a no-op on a finished tree), a versionCode below
+ * the file's, and a holder that is read-only. Everything that can fail runs before a holder changes: the new texts go to temp
+ * files, the changelog stub is created and staged (`stage: true`), and only then are the temp files renamed over the holders,
+ * each restored if a later one cannot be. Returns `{ written, staged }`.
  */
 export function bump(root, version, { stage: staging = false } = {}) {
   const code = versionCode(version);
-  const files = readHolders(root);
+  const files = readTree(root);
   const current = carried(files);
-  if (!newer(version, current)) throw new Error(`${version} is not newer than ${current}`);
+  if (!VERSION.test(current)) throw new Error(`${MANIFEST}: [workspace.package] has version ${JSON.stringify(current)}, which is not X.Y.Z; fix it by hand before bumping`);
+  if (compare(version, current) < 0) throw new Error(`${version} is older than ${current}`);
   const oldCode = androidCode(files[ANDROID_CONF]);
   if (oldCode === null) throw new Error(`${ANDROID_CONF}: no bundle.android.versionCode`);
-  if (code <= oldCode) throw new Error(`versionCode ${code} does not rise above ${oldCode} (${ANDROID_CONF})`);
+  if (code < oldCode) throw new Error(`versionCode ${code} does not rise above ${oldCode} (${ANDROID_CONF})`);
 
-  const next = { ...files };
-  next[MANIFEST] = setManifestVersion(MANIFEST, files[MANIFEST], 'workspace.package', version);
-  next[APP_MANIFEST] = setManifestVersion(APP_MANIFEST, files[APP_MANIFEST], 'package', version);
-  const codeField = /("versionCode"\s*:\s*)\d+/g;
-  if ((files[ANDROID_CONF].match(codeField) ?? []).length !== 1) throw new Error(`${ANDROID_CONF}: expected one versionCode`);
-  next[ANDROID_CONF] = files[ANDROID_CONF].replace(codeField, `$1${code}`);
-  for (const lock of LOCKS) next[lock] = setLockVersions(files[lock], version);
-
+  const next = retarget(files, version, code);
   const left = problemsIn(next);
   if (left.length) throw new Error(`the bump would leave the files disagreeing:\n  ${left.join('\n  ')}`);
-
-  const written = HOLDER_FILES.filter((file) => next[file] !== files[file]);
-  for (const file of written) writeFileSync(join(root, file), next[file]);
-  const stub = changelogPath(code);
-  if (!existsSync(join(root, stub))) {
-    mkdirSync(join(root, dirname(stub)), { recursive: true });
-    writeFileSync(join(root, stub), CHANGELOG_STUB);
-    written.push(stub);
+  const changed = Object.keys(next).filter((file) => next[file] !== files[file]);
+  for (const file of changed) {
+    if ((statSync(join(root, file)).mode & 0o200) === 0) throw new Error(`${file} is read-only`);
   }
-  if (staging) stage(root, stub);
-  return written;
+
+  const stub = changelogPath(code);
+  const stubPath = join(root, stub);
+  const undo = [];
+  const written = [];
+  let staged = false;
+  try {
+    const temps = changed.map((file) => {
+      const temp = join(root, `${file}.${process.pid}.tmp`);
+      writeFileSync(temp, next[file], { flag: 'wx' });
+      undo.push(() => rmSync(temp, { force: true }));
+      return [file, temp];
+    });
+    if (!existsSync(stubPath)) {
+      const made = mkdirSync(dirname(stubPath), { recursive: true });
+      if (made) undo.push(() => rmSync(made, { recursive: true, force: true }));
+      writeFileSync(stubPath, CHANGELOG_STUB, { flag: 'wx' });
+      undo.push(() => rmSync(stubPath, { force: true }));
+      written.push(stub);
+    }
+    if (staging) {
+      staged = stage(root, stub);
+      if (staged && written.includes(stub)) undo.push(() => unstage(root, stub));
+    }
+    for (const [file, temp] of temps) {
+      renameSync(temp, join(root, file));
+      undo.push(() => writeFileSync(join(root, file), files[file]));
+      written.push(file);
+    }
+  } catch (error) {
+    const stuck = [];
+    for (const step of undo.reverse()) {
+      try {
+        step();
+      } catch (again) {
+        stuck.push(again.message);
+      }
+    }
+    if (stuck.length) error.message += `\n  and could not undo: ${stuck.join('; ')}\n  run the bump again: it completes what is missing`;
+    throw error;
+  }
+  return { written, staged };
 }
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -246,11 +388,12 @@ function main(args) {
         console.error(`version: the files disagree about the version:\n  ${found.join('\n  ')}`);
         return 1;
       }
-      console.log(`version ${readVersion(ROOT)} agrees in ${HOLDER_FILES.length} files`);
+      console.log(`version ${readVersion(ROOT)} agrees in ${trackedFiles(ROOT).length} files`);
     } else if (command === 'bump' && rest.length === 1) {
       const version = rest[0];
-      const written = bump(ROOT, version, { stage: true });
-      console.log(`bumped to ${version} (versionCode ${versionCode(version)}): ${written.join(', ')}`);
+      const { written, staged } = bump(ROOT, version, { stage: true });
+      console.log(`bumped to ${version} (versionCode ${versionCode(version)}): ${written.length ? written.join(', ') : 'nothing to change'}`);
+      if (!staged) console.log('the changelog stub was not staged: this is not the top of a git work tree');
       console.log(version);
     } else {
       console.error('usage: node scripts/ci/version.mjs [print | check | bump X.Y.Z]');

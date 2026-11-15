@@ -4,29 +4,32 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { bump, HOLDER_FILES, problems, readVersion, versionCode } from '../../scripts/ci/version.mjs';
+import { bump, problems, readVersion, trackedFiles, versionCode } from '../../scripts/ci/version.mjs';
 
 const repo = resolve(import.meta.dirname, '..', '..');
 const CHANGELOGS = 'fastlane/metadata/android/en-US/changelogs';
+/** The files a bump changes today: the workspace members inherit the version, so their manifests stay as they are. */
+const HOLDERS = ['Cargo.toml', 'app/Cargo.toml', 'app/tauri.android.conf.json', 'Cargo.lock', 'app/Cargo.lock'];
 
-/** A temp tree holding copies of the real holder files; `cleanup` removes it. */
+/** A temp tree holding copies of every real file that holds the version (the manifests, versionCode and lock files). */
 function copyOfRepo(t) {
   const root = mkdtempSync(join(tmpdir(), 'lull-version-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  for (const file of HOLDER_FILES) {
+  for (const file of trackedFiles(repo)) {
     mkdirSync(dirname(join(root, file)), { recursive: true });
     cpSync(join(repo, file), join(root, file));
   }
   return root;
 }
 
-/** Every file under `root` with its bytes, for before and after. */
+/** Every file under `root` (not git's own) with its bytes, for before and after. */
 function snapshot(root, dir = root, into = new Map()) {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
+    if (name === '.git') continue;
     if (statSync(path).isDirectory()) snapshot(root, path, into);
     else into.set(path.slice(root.length + 1).replaceAll('\\', '/'), readFileSync(path));
   }
@@ -68,19 +71,19 @@ test('a bump changes exactly the holders and adds the changelog stub', (t) => {
   const target = nextPatch(version);
   const before = snapshot(root);
 
-  const written = bump(root, target);
+  const { written } = bump(root, target);
 
   const stub = `${CHANGELOGS}/${versionCode(target)}.txt`;
   const after = snapshot(root);
-  assert.deepEqual(changedFiles(before, after), [...HOLDER_FILES, stub].sort());
-  assert.deepEqual(written.sort(), [...HOLDER_FILES, stub].sort());
+  assert.deepEqual(changedFiles(before, after), [...HOLDERS, stub].sort());
+  assert.deepEqual(written.sort(), [...HOLDERS, stub].sort());
   assert.equal(readFileSync(join(root, stub), 'utf8'), 'Smaller fixes.\n');
   assert.equal(readVersion(root), target);
   assert.deepEqual(problems(root), []);
 
   // Only version lines moved: swapping the new version back for the old one restores every holder byte for byte.
   const code = versionCode(target);
-  for (const file of HOLDER_FILES) {
+  for (const file of HOLDERS) {
     const restored = after.get(file).toString().replaceAll(`"${target}"`, `"${version}"`).replaceAll(`"versionCode": ${code}`, `"versionCode": ${versionCode(version)}`);
     assert.equal(restored, before.get(file).toString(), file);
   }
@@ -137,7 +140,6 @@ test('a bump that is refused writes nothing', (t) => {
     ['a leading zero', `${x}.${y}.0${z + 1}`],
     ['a minor of 1000', `${x}.1000.0`],
     ['a patch of 1000', `${x}.${y}.1000`],
-    ['the same version', version],
     ['an older patch', `${x}.${y}.${z - 1}`],
     ['an older minor', `${x}.${y - 1}.${z + 5}`],
   ];
@@ -156,12 +158,13 @@ test('a versionCode that would not rise is refused', (t) => {
   assert.deepEqual(changedFiles(before, snapshot(root)), []);
 });
 
-test('bumping to the version it already carries is refused, and the tree stays as the first bump left it', (t) => {
+test('bumping to the version the tree already carries changes nothing', (t) => {
   const root = copyOfRepo(t);
   const target = nextPatch(readVersion(root));
   bump(root, target);
   const before = snapshot(root);
-  assert.throws(() => bump(root, target), /is not newer than/);
+  const { written } = bump(root, target);
+  assert.deepEqual(written, []);
   assert.deepEqual(changedFiles(before, snapshot(root)), []);
 });
 
@@ -171,7 +174,7 @@ test('an existing changelog for the code is kept', (t) => {
   const stub = join(root, CHANGELOGS, `${versionCode(target)}.txt`);
   mkdirSync(dirname(stub), { recursive: true });
   writeFileSync(stub, '* Written by hand\n');
-  const written = bump(root, target);
+  const { written } = bump(root, target);
   assert.equal(readFileSync(stub, 'utf8'), '* Written by hand\n');
   assert.ok(!written.includes(`${CHANGELOGS}/${versionCode(target)}.txt`));
 });
@@ -187,7 +190,7 @@ test('line endings stay as they are: CRLF files stay CRLF and LF files LF', (t) 
   bump(root, target);
 
   const after = snapshot(root);
-  for (const file of HOLDER_FILES) {
+  for (const file of HOLDERS) {
     const text = after.get(file).toString();
     const bare = text.replaceAll('\r\n', '').includes('\n');
     assert.equal(text.includes('\r\n'), crlf.includes(file), `${file} changed its line endings`);
@@ -207,7 +210,7 @@ test('the check names the file of every holder that disagrees', (t) => {
     ['Cargo.lock', (text) => text.replace(/(name = "lull-core"\nversion = ")[^"]*/, `$1${other}`), /^Cargo\.lock: lull-core is /],
     ['app/Cargo.lock', (text) => text.replace(/(name = "lull-server"\nversion = ")[^"]*/, `$1${other}`), /^app\/Cargo\.lock: lull-server is /],
     ['app/Cargo.lock (lull-app)', (text) => text.replace(/(name = "lull-app"\nversion = ")[^"]*/, `$1${other}`), /^app\/Cargo\.lock: lull-app is /],
-    ['app/Cargo.lock (no lull-app)', (text) => text.replace('name = "lull-app"', 'name = "lull-gone"'), /^app\/Cargo\.lock: no lull-app/],
+    ['app/Cargo.lock (no lull-app)', (text) => text.replace('name = "lull-app"', 'name = "lull-gone"'), /^app\/Cargo\.lock: no entry for lull-app/],
     ['Cargo.toml', (text) => text.replace(`version = "${version}"`, `version = "${other}"`), /^app\/Cargo\.toml: /],
   ];
   for (const [label, change, expected] of cases) {
@@ -241,4 +244,135 @@ test('a bump with staging leaves the new changelog staged for `git commit -am`, 
   bump(repoRoot, next, { stage: true });
   const staged = execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: repoRoot, encoding: 'utf8' }).trim();
   assert.equal(staged, `${CHANGELOGS}/${versionCode(next)}.txt`);
+});
+
+/** The lock text without the [[package]] block named `name`. */
+const withoutPackage = (text, name) => text.replace(new RegExp(`\\[\\[package\\]\\]\\nname = "${name}"\\n(?:(?!\\[\\[package\\]\\])[^\\n]*\\n)*`), '');
+
+test('the check holds every workspace member to the version, in its manifest and in the locks', (t) => {
+  const cases = [
+    ['a member with a version of its own', 'crates/core/Cargo.toml', (text) => text.replace('version.workspace = true', 'version = "0.1.0"'), /^crates\/core\/Cargo\.toml: version is 0\.1\.0/],
+    ['a member with no [package] name', 'crates/core/Cargo.toml', (text) => text.replace(/^name = .*\n/m, ''), /^crates\/core\/Cargo\.toml: no \[package\] name/],
+    ['a member of the workspace with no manifest', 'Cargo.toml', (text) => text.replace('"crates/core",', '"crates/core",\n  "crates/gone",'), /^crates\/gone\/Cargo\.toml: missing/],
+    ['a member missing from Cargo.lock', 'Cargo.lock', (text) => withoutPackage(text, 'lull-youtube'), /^Cargo\.lock: no entry for lull-youtube/],
+    ['a lock with one lull entry', 'Cargo.lock', (text) => ['lull-collection', 'lull-discovery', 'lull-lastfm', 'lull-library', 'lull-lyrics', 'lull-server', 'lull-skins', 'lull-soulseek', 'lull-subsonic', 'lull-themes', 'lull-youtube'].reduce(withoutPackage, text), /^Cargo\.lock: no entry for lull-collection/],
+    ['a member the app reaches missing from app/Cargo.lock', 'app/Cargo.lock', (text) => withoutPackage(text, 'lull-core'), /^app\/Cargo\.lock: no entry for lull-core/],
+    ['a member the app reaches through another one', 'app/Cargo.lock', (text) => withoutPackage(text, 'lull-soulseek'), /^app\/Cargo\.lock: no entry for lull-soulseek/],
+  ];
+  for (const [label, file, change, expected] of cases) {
+    const root = copyOfRepo(t);
+    edit(root, file, change);
+    const found = problems(root);
+    assert.ok(found.some((line) => expected.test(line)), `${label}: ${found.join(' | ')}`);
+  }
+});
+
+test('a member that carries its own version is bumped with the rest', (t) => {
+  const root = copyOfRepo(t);
+  const version = readVersion(root);
+  edit(root, 'crates/core/Cargo.toml', (text) => text.replace('version.workspace = true', `version = "${version}"`));
+  assert.deepEqual(problems(root), []);
+  const target = nextPatch(version);
+  const { written } = bump(root, target);
+  assert.ok(written.includes('crates/core/Cargo.toml'));
+  assert.match(readFileSync(join(root, 'crates/core/Cargo.toml'), 'utf8'), new RegExp(`^version = "${target.replaceAll('.', '\\.')}"$`, 'm'));
+  assert.deepEqual(problems(root), []);
+});
+
+test('a Cargo.toml version that is not X.Y.Z is named as the problem, not as "not newer"', (t) => {
+  const root = copyOfRepo(t);
+  const version = readVersion(root);
+  edit(root, 'Cargo.toml', (text) => text.replace(`version = "${version}"`, 'version = "0.3.0-rc1"'));
+  assert.throws(() => bump(root, nextPatch(version)), (error) => /Cargo\.toml/.test(error.message) && /0\.3\.0-rc1/.test(error.message) && /not X\.Y\.Z/.test(error.message));
+});
+
+test('a bump that cannot finish leaves every holder as it was: no folder for the changelog', (t) => {
+  const root = copyOfRepo(t);
+  writeFileSync(join(root, 'fastlane'), 'a file where the changelog folder goes\n');
+  const target = nextPatch(readVersion(root));
+  const before = snapshot(root);
+  assert.throws(() => bump(root, target), /ENOTDIR|EEXIST|not a directory/i);
+  assert.deepEqual(changedFiles(before, snapshot(root)), [], 'a holder or a temp file was left behind');
+
+  rmSync(join(root, 'fastlane'));
+  bump(root, target);
+  assert.deepEqual(problems(root), []);
+});
+
+test('a bump that cannot write a temp file leaves every holder as it was', (t) => {
+  const root = copyOfRepo(t);
+  const target = nextPatch(readVersion(root));
+  // The last holder's temp name is taken, so the ones before it were already written when this one fails.
+  mkdirSync(join(root, `app/Cargo.lock.${process.pid}.tmp`));
+  const before = snapshot(root);
+  assert.throws(() => bump(root, target), /EISDIR|EEXIST/);
+  rmSync(join(root, `app/Cargo.lock.${process.pid}.tmp`), { recursive: true });
+  assert.deepEqual(changedFiles(before, snapshot(root)), [], 'a holder or a temp file was left behind');
+  bump(root, target);
+  assert.deepEqual(problems(root), []);
+});
+
+test('a read-only holder is refused before anything is written', (t) => {
+  const root = copyOfRepo(t);
+  const target = nextPatch(readVersion(root));
+  const file = join(root, 'app/Cargo.lock');
+  chmodSync(file, 0o444);
+  const before = snapshot(root);
+  assert.throws(() => bump(root, target), /app\/Cargo\.lock is read-only/);
+  assert.deepEqual(changedFiles(before, snapshot(root)), []);
+  chmodSync(file, 0o644);
+  bump(root, target);
+  assert.deepEqual(problems(root), []);
+});
+
+test('a bump whose staging fails writes nothing, and the rerun finishes it', (t) => {
+  const root = copyOfRepo(t);
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  const target = nextPatch(readVersion(root));
+  const before = snapshot(root);
+  writeFileSync(join(root, '.git/index.lock'), ''); // git add cannot take the index
+  assert.throws(() => bump(root, target, { stage: true }), /git/);
+  assert.deepEqual(changedFiles(before, snapshot(root)), [], 'holders or the stub changed although git add failed');
+
+  rmSync(join(root, '.git/index.lock'));
+  bump(root, target, { stage: true });
+  assert.deepEqual(problems(root), []);
+  assert.equal(execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: root, encoding: 'utf8' }).trim(), `${CHANGELOGS}/${versionCode(target)}.txt`);
+});
+
+test('a rerun at a version the tree already partly carries completes it', (t) => {
+  const root = copyOfRepo(t);
+  const version = readVersion(root);
+  const target = nextPatch(version);
+  // What a bump that died halfway used to leave: Cargo.toml and one lock moved, the rest not, and no stub.
+  edit(root, 'Cargo.toml', (text) => text.replace(`version = "${version}"`, `version = "${target}"`));
+  edit(root, 'Cargo.lock', (text) => text.replace(/(name = "lull-[a-z]+"\nversion = ")[^"]*/g, `$1${target}`));
+  assert.ok(problems(root).length > 0);
+
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  const { written, staged } = bump(root, target, { stage: true });
+  assert.deepEqual(problems(root), []);
+  assert.ok(staged);
+  assert.ok(written.includes(`${CHANGELOGS}/${versionCode(target)}.txt`) && written.includes('app/Cargo.toml') && !written.includes('Cargo.toml'));
+  assert.equal(execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: root, encoding: 'utf8' }).trim(), `${CHANGELOGS}/${versionCode(target)}.txt`);
+
+  // Rerunning once more has nothing to do, and stages nothing new.
+  assert.deepEqual(bump(root, target, { stage: true }).written, []);
+});
+
+test('the stub is staged only in the repository whose top is lull\'s tree', (t) => {
+  const outer = mkdtempSync(join(tmpdir(), 'lull-version-outer-'));
+  t.after(() => rmSync(outer, { recursive: true, force: true }));
+  execFileSync('git', ['init', '-q'], { cwd: outer });
+  const root = join(outer, 'unpacked');
+  mkdirSync(root);
+  for (const file of trackedFiles(repo)) {
+    mkdirSync(dirname(join(root, file)), { recursive: true });
+    cpSync(join(repo, file), join(root, file));
+  }
+  const target = nextPatch(readVersion(root));
+  const { staged } = bump(root, target, { stage: true });
+  assert.equal(staged, false);
+  assert.ok(existsSync(join(root, CHANGELOGS, `${versionCode(target)}.txt`)));
+  assert.equal(execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: outer, encoding: 'utf8' }).trim(), '');
 });
