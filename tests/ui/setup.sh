@@ -7,7 +7,7 @@ set -eu
 [ $# -gt 0 ] || { echo "usage: setup.sh <browser>... (chromium, webkit)" >&2; exit 2; }
 cd "$(dirname "$0")"
 
-if [ -n "${CI:-}" ]; then
+if [ "${CI:-}" = true ]; then
   # apt keeps what it downloads in a folder the cache can read and restore (its own is root's).
   mkdir -p "$HOME/apt-cache/partial"
   sudo chown _apt "$HOME/apt-cache/partial"
@@ -16,7 +16,7 @@ if [ -n "${CI:-}" ]; then
 fi
 
 npm ci --no-audit --no-fund --silent
-if [ -n "${CI:-}" ]; then
+if [ "${CI:-}" = true ]; then
   npx playwright install --with-deps "$@"
 else
   npx playwright install "$@" >/dev/null

@@ -20,7 +20,7 @@ run = [{ task = "toolchain" }, "sh scripts/vendor-web.sh"]
 # The new workflows are the only ones written to the skeleton's rules (SHA pins, a timeout on every job, one
 # `mise run` per step); the older ones don't meet them, so `ci:lint` (every workflow) is not run here.
 [tasks.check]
-description = "Exactly what the `check` workflow runs: fmt, clippy, tests, the release scopes, the lint of the new workflows"
+description = "Exactly what the `check` workflow runs: fmt, clippy, tests, the release scopes, the lint of check.yml"
 run = [
   "cargo fmt --all --check",
   "cargo clippy --workspace --all-targets --locked -- -D warnings",
@@ -30,8 +30,8 @@ run = [
   # here and not on main after landing. The draft it prints is not needed (no `> /dev/null`: cmd on Windows has none).
   "node scripts/release-notes.mjs draft",
   "cargo update --manifest-path app/Cargo.toml --workspace --locked",
-  "actionlint .github/workflows/check.yml .github/workflows/after.yml",
-  "python .github/ci/lint.py .github/workflows/check.yml .github/workflows/after.yml",
+  "actionlint .github/workflows/check.yml",
+  "python .github/ci/lint.py .github/workflows/check.yml",
 ]
 
 [tasks.privacy]

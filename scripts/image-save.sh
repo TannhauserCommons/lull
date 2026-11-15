@@ -34,7 +34,7 @@ if [ -n "${LULL_LASTFM_API_KEY:-}" ] && [ -n "${LULL_LASTFM_API_SECRET:-}" ]; th
 fi
 if [ -n "${ACTIONS_RUNTIME_TOKEN:-}" ]; then
   set -- "$@" --cache-from type=gha
-elif [ -n "${CI:-}" ]; then
+elif [ "${CI:-}" = true ]; then
   echo "image-save: no ACTIONS_RUNTIME_TOKEN, so main's build cache can't be read: expose the runner's variables first" >&2
   exit 1
 fi

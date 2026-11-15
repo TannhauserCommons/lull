@@ -1,4 +1,4 @@
-// The flaky Playwright tests CI hands to the shared `after` workflow (scripts/playwright-flakes.mjs): a test that failed and
+// The flaky Playwright tests CI uploads for the shared after.py (scripts/playwright-flakes.mjs): a test that failed and
 // then passed on its retry is named once, in the form after.py reads, and nothing else is: not a test that failed twice, one
 // that passed first time, or one that was skipped. Run: node --test tests/web
 import { test } from 'node:test';

@@ -3,7 +3,8 @@
 # paths changed; a call with `all: true` runs them all.
 #
 # Each key is the queue's rule for that check (scripts/queue.sh, `checks`), as globs, plus what the queue also treats
-# as "everything changed" (`.github/`, queue.sh) and what runs the check here (mise.toml, its own scripts). `ui`
+# as "everything changed" (`.github/`, queue.sh) and what runs the check here (mise.toml and mise.lock: the tasks and the
+# tool versions every job uses; its own scripts). `ui`
 # is also what `image` builds for: check.yml's `image` job runs for either key.
 image:
   - 'crates/**'
@@ -20,6 +21,7 @@ image:
   - '.github/**'
   - 'scripts/queue.sh'
   - 'mise.toml'
+  - 'mise.lock'
 ui:
   - 'web/**'
   - 'crates/server/src/web.rs'
@@ -31,6 +33,7 @@ ui:
   - '.github/**'
   - 'scripts/queue.sh'
   - 'mise.toml'
+  - 'mise.lock'
 gates:
   - 'web/**'
   - 'tests/ui/**'
@@ -40,15 +43,21 @@ gates:
   - '.github/**'
   - 'scripts/queue.sh'
   - 'mise.toml'
+  - 'mise.lock'
 
 # App and contract jobs. Each list mirrors a `want` line of `checks()` in
-# scripts/queue.sh (the queue's regexes), and adds `.github/**` (the queue runs
-# everything for a change there) and the job's own scripts. A job that runs
+# scripts/queue.sh (the queue's regexes), and adds `.github/**` and
+# `scripts/queue.sh` (the queue runs everything for a change there), `mise.toml`
+# and `mise.lock` (the tasks and tool versions each job runs) and the job's own
+# scripts. A job that runs
 # only after another (android-compare after android) or beside it (keyring)
 # still has its own key, the same list as the job it follows: the gate lets a
 # job skip only when it has one.
 app: &app
   - ".github/**"
+  - "scripts/queue.sh"
+  - "mise.toml"
+  - "mise.lock"
   - "app/**"
   - "crates/**"
   - "web/desktop/**"
@@ -61,6 +70,9 @@ keyring: *app
 
 android: &android
   - ".github/**"
+  - "scripts/queue.sh"
+  - "mise.toml"
+  - "mise.lock"
   - "app/gen/android/**"
   - "app/src/mobile/**"
   - "app/build.rs"
@@ -76,6 +88,9 @@ android-compare: *android
 
 slskd: &slskd
   - ".github/**"
+  - "scripts/queue.sh"
+  - "mise.toml"
+  - "mise.lock"
   - "deploy/compose.yaml"
   - "app/build.rs"
   - "app/slskd/**"
@@ -86,6 +101,9 @@ slskd-windows: *slskd
 # lull's slskd for Windows, built twice: only its recipe and its pin change its bytes.
 slskd-build:
   - ".github/**"
+  - "scripts/queue.sh"
+  - "mise.toml"
+  - "mise.lock"
   - "app/build.rs"
   - "app/slskd/**"
   - "scripts/ci/slskd-build.sh"
@@ -94,6 +112,9 @@ slskd-build:
 # it, the contract, and the hub code only the package runs.
 package: &package
   - ".github/**"
+  - "scripts/queue.sh"
+  - "mise.toml"
+  - "mise.lock"
   - "packaging/linux/**"
   - "tests/hub-contract/**"
   - "app/build.rs"
@@ -117,6 +138,9 @@ package-secrets-update: *package
 # The share Worker: tested whenever it or a file it serves changes.
 share:
   - ".github/**"
+  - "scripts/queue.sh"
+  - "mise.toml"
+  - "mise.lock"
   - "share/**"
   - "site/**"
   - "web/assets/app-icon.svg"
@@ -128,6 +152,9 @@ share:
 # lull-bin, lull in the AUR: how its PKGBUILD is written.
 aur:
   - ".github/**"
+  - "scripts/queue.sh"
+  - "mise.toml"
+  - "mise.lock"
   - "packaging/aur/**"
   - "scripts/aur-pkgbuild.sh"
   - "scripts/ci/aur.sh"

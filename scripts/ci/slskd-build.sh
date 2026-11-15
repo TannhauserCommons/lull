@@ -11,9 +11,13 @@ trap 'rm -rf "$work"' EXIT
 sh app/slskd/build.sh "$work/first"
 sh app/slskd/build.sh "$work/second"
 cd "$work/first"
-for zip in slskd-*.zip; do
+# A build that made nothing must not pass: with no zip the pattern stays literal and both hashes would be empty.
+set -- slskd-*.zip
+[ -e "$1" ] || { echo "::error::app/slskd/build.sh made no slskd-*.zip"; exit 1; }
+for zip in "$@"; do
   a=$(sha256sum "$zip" | cut -d' ' -f1)
   b=$(sha256sum "../second/$zip" | cut -d' ' -f1)
+  [ -n "$a" ] && [ -n "$b" ] || { echo "::error::$zip has no hash in one of the two builds ('$a', '$b')"; exit 1; }
   [ "$a" = "$b" ] || { echo "::error::$zip differs between two builds ($a, $b): the recipe isn't reproducible"; exit 1; }
   # A pin names its zip in the URL and its sha256 beside it (app/build.rs, SLSKD).
   pinned=$(grep -A3 "$zip\"" "$root/app/build.rs" | grep -o '[0-9a-f]\{64\}' | head -n 1 || true)

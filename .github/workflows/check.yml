@@ -112,8 +112,8 @@ jobs:
   # The web UI, as the queue checks it (scripts/queue.sh `checks` says when). `image` builds the hub's image once;
   # `ui` runs the functional tests on it, four shards; `gates` runs the behaviour gates on the fixture hub, seven
   # shards. Their paths are the queue's (.github/ci/paths.yml). A UI test that fails runs once more (`retries` in the
-  # Playwright configs); one that passes on it is written to `flakes/` and uploaded for `after.yml`. These jobs file
-  # no issue themselves and have no token to.
+  # Playwright configs); one that passes on it is written to `flakes/` and uploaded as a `flakes-*` artifact (nothing files
+  # an issue from it yet). These jobs file no issue themselves and have no token to.
   # The browsers' install is a task; what it downloads comes from the cache main saves (the `ui-browsers-...` keys
   # are the ones .github/actions/ui-browsers saves there, so they hit) and is never saved from here.
 

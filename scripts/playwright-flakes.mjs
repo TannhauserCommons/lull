@@ -1,7 +1,7 @@
 // Flaky Playwright tests, for the `flakes/` folder of the shared CI (docs/context/quality.md, Check in shadow). In CI a
 // failing UI test runs once more on the same code (`retries` in both Playwright configs); one that failed and then passed
 // is flaky. It doesn't fail the job, and its owner hears of it: this writes it to flakes/playwright.txt, the job uploads
-// the folder, and the `after` workflow files an issue per test (.github/ci/after.py). No token is needed here.
+// the folder and uploads it; .github/ci/after.py, once a workflow runs it, files an issue per test. No token is needed here.
 //
 //   node scripts/playwright-flakes.mjs <results.json>...
 //

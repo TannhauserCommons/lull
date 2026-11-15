@@ -5,9 +5,11 @@
 # distributions too. Unsigned: a release's signing is not part of the check. The `package` job of
 # .github/workflows/check.yml runs it; the contracts then install what it made.
 #
-# While it runs, web/ is the minified build, as the Dockerfile's web stage makes it (the binary embeds it); the
-# checkout's own web/ is put back at the end, so a local run leaves nothing changed. Needs the full history with
-# its tags, for the version the hub says it is (lull_core::build).
+# While it runs, web/ is the minified build, as the Dockerfile's web stage makes it (the binary embeds it). The
+# checkout's own web/ waits beside it as web.ci-source and is put back at the end, also when the build fails or the
+# script is interrupted or terminated (SIGKILL can't be caught: the leftover web.ci-source then stops the next run
+# instead of being overwritten). It is only ever removed after the minified build's folder, never before it is back.
+# Needs the full history with its tags, for the version the hub says it is (lull_core::build).
 set -eu
 cd "$(dirname "$0")/../.."
 . scripts/ci/lib.sh
@@ -37,13 +39,28 @@ fi
 echo "package version $version"
 
 # The web UI as the binary embeds it: Webamp vendored, every file minified and pre-compressed, in place of web/.
+[ ! -e web.ci-source ] || { echo "package-build: web.ci-source is the checkout's web/ from a run that was killed: put it back first (rm -rf web; mv web.ci-source web)" >&2; exit 1; }
 sh scripts/vendor-web.sh
 npm ci --prefix scripts/web-dist --ignore-scripts --no-audit --no-fund
 node scripts/web-dist/build.mjs web "$work/web-dist"
-mv web "$work/web-source"
+
+# One trap for every way out. The source is renamed in its own folder (atomic), so web.ci-source exists exactly when
+# web/ is not the source; the minified web/ is removed only to put it back, and the work folder only after that.
+restore() {
+  status=$?
+  trap - EXIT INT TERM
+  if [ -e web.ci-source ]; then
+    rm -rf web
+    mv web.ci-source web || { echo "package-build: couldn't put web/ back; it is web.ci-source" >&2; exit 1; }
+  fi
+  rm -rf "$work"
+  exit "$status"
+}
+trap restore EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+mv web web.ci-source
 mv "$work/web-dist" web
-# Put the checkout's own web/ back, whatever happens, then remove the work folder.
-trap 'rm -rf web; mv "$work/web-source" web; rm -rf "$work"' EXIT
 
 # As the image builds it, but installed as the package: Settings > App and the updates say so (a kit's lull run by an
 # image's hub runs as the image's, launch.rs).
