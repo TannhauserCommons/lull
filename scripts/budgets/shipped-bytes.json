@@ -1,0 +1,53 @@
+{
+  "note": "What each route's start ships, summed from the built files at the bytes the hub sends (scripts/budgets/measure.mjs; response headers not counted): `mise run budgets`, the `budgets` job of check.yml. A change may grow a route by its allowance over its merge-base and may never take it past its ceiling. The check reads these limits from the merge-base, never from the change, so raising one is its own commit, with the owner's yes: docs/context/quality.md#budgets-check. Every limit is PROPOSED until the owner confirms it: they were set from the data below, not by the owner. allowance 500 B: the 20 newest commits that touched web/ or scripts/web-dist (11-12 to 11-13) grew home by -40 to +356 B each (median +19 B, 90th percentile +181 B), +1,169 B in all. Each ceiling is what the route ships on the merge-base this was written on (a1dc2448: home, search, library/albums and now 342,026 B, settings/playback 345,116 B) + 1,000 B, the room the Lighthouse budgets (tests/ui/budgets.json) keep over main today; they are Lighthouse's own figures, which count response headers and the hub's covers. notAtStart: a url() in a start stylesheet that a first load fetches only when a rule matches, which a build can't tell. loads: the code a route's `need` fetches when it opens, which a build can't tell either.",
+  "allowance": {
+    "bytes": 500,
+    "status": "proposed",
+    "why": "Room for an ordinary change: 20 of the last 20 web commits grew a start by 356 B or less, and too little for a script, a font or a stylesheet to slip into the start. Growth beyond it goes to the owner with an impact note."
+  },
+  "notAtStart": {
+    "designs/lull/assets/floor.svg": "The default design's desk floor: its rule only matches from 1,100 px, so no phone or tablet start fetches it (quality.md, Budgets).",
+    "designs/lull/assets/stars.svg": "The default design's stars: the same rule, from 1,100 px."
+  },
+  "routes": {
+    "home": {
+      "ceiling": {
+        "bytes": 343100,
+        "status": "proposed",
+        "why": "What home's start ships on a1dc2448 (342,026 B) + 1,000 B, as tests/ui/budgets.json keeps room over main. Home, Search and Now Playing are the shell and the start's scripts; their own screens' code is part of it."
+      }
+    },
+    "search": {
+      "ceiling": {
+        "bytes": 343100,
+        "status": "proposed",
+        "why": "What search's start ships on a1dc2448 (342,026 B) + 1,000 B: the same files as home, as in Lighthouse's runs."
+      }
+    },
+    "library/albums": {
+      "ceiling": {
+        "bytes": 343100,
+        "status": "proposed",
+        "why": "What library/albums' start ships on a1dc2448 (342,026 B) + 1,000 B. Its album covers (about 16 KB in Lighthouse's runs) are the hub's answers, not what lull ships, and aren't counted."
+      }
+    },
+    "now": {
+      "ceiling": {
+        "bytes": 343100,
+        "status": "proposed",
+        "why": "What now's start ships on a1dc2448 (342,026 B) + 1,000 B: the same files as home, as in Lighthouse's runs."
+      }
+    },
+    "settings/playback": {
+      "ceiling": {
+        "bytes": 346200,
+        "status": "proposed",
+        "why": "What settings/playback's start ships on a1dc2448 (345,116 B) + 1,000 B."
+      },
+      "loads": {
+        "screens/settings-fit.js": "Settings' fits, loaded when the route opens (system.js settingsNeeds).",
+        "screens/eq.js": "The equaliser's panel, which Settings > Playback shows and loads on its first render (system.js eqPanel)."
+      }
+    }
+  }
+}
