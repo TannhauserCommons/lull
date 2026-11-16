@@ -168,7 +168,10 @@ object Engine {
         if (fade == null) arrangeNext()
     }
 
-    /** Lock screen, notification, Bluetooth or headset next/prev: the web UI owns the queue. */
+    /**
+     * Lock screen, notification, Bluetooth or headset keys: the web UI owns the queue and the listener's intent, so
+     * next, prev, play and pause go to it (`remote`) and come back through `load`, `play` and `pause`.
+     */
     fun remote(action: String) {
         emit("remote", JSObject().put("action", action))
     }
@@ -359,7 +362,14 @@ object Engine {
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-            if (isActive) sendTime()
+            if (!isActive) return
+            sendTime()
+            // Another app took the audio focus or gave it back, or headphones came out: the system's pause or
+            // resume. The web UI's intent follows it (`system`); a change the engine itself made is its own.
+            val system = reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS ||
+                reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
+            val item = current ?: return
+            if (system) emit("system", JSObject().put("key", item.key).put("playing", playWhenReady))
         }
 
         override fun onPlaybackStateChanged(state: Int) {
@@ -414,8 +424,8 @@ object Engine {
     }
 
     /**
-     * What the MediaSession sees: the active deck, except that next/prev go to the web UI (it owns
-     * the queue) and play/pause go through the engine (so a fade stops with them).
+     * What the MediaSession sees: the active deck, except that next/prev and play/pause go to the web UI
+     * (it owns the queue and the intent; its play and pause then reach the engine, which stops a fade).
      */
     private class SessionPlayer(player: Player) : androidx.media3.common.ForwardingPlayer(player) {
         private val extra = intArrayOf(
@@ -437,8 +447,8 @@ object Engine {
         override fun seekToNextMediaItem() = remote("next")
         override fun seekToPrevious() = remote("prev")
         override fun seekToPreviousMediaItem() = remote("prev")
-        override fun play() = Engine.play()
-        override fun pause() = Engine.pause()
-        override fun setPlayWhenReady(playWhenReady: Boolean) = if (playWhenReady) Engine.play() else Engine.pause()
+        override fun play() = remote("play")
+        override fun pause() = remote("pause")
+        override fun setPlayWhenReady(playWhenReady: Boolean) = remote(if (playWhenReady) "play" else "pause")
     }
 }

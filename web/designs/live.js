@@ -280,10 +280,10 @@
      these don't stall there */
   var latest = null;   // the player's view as the page last published or read it (null before the page's player is hooked in)
   function placeValues(o, view, now) {
-    var t = view && view.track, dur = t ? view.clock.duration || 0 : 0, pos = t ? PlayerView.posAt(view, now) : 0, parts = t ? view.transfer.parts : [];
+    var t = view && view.track, dur = t ? view.clock.duration || 0 : 0, pos = t ? PlayerView.posAt(view, now) : 0, buffered = t ? view.transfer.buffered : 0;
     o['song.pos'] = t && dur ? hundredths(pos / dur) : 0;
     o['song.elapsed'] = t ? App.fmt.time(pos) : '';
-    o['song.buffered'] = t && parts.length ? hundredths(parts[parts.length - 1][1]) : 0;
+    o['song.buffered'] = hundredths(buffered);
     o['song.received'] = t ? hundredths(view.transfer.received) : 0;
   }
   function writePlace(view) { var o = {}; placeValues(o, view, Date.now()); Object.keys(o).forEach(function (p) { set(p, o[p]); }); }

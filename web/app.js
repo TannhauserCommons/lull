@@ -1290,7 +1290,7 @@
   };
   /* the round play key (sizes with a .btn-gloss--N class: 40 48 52 56 64), kept by data-bind="play" (renderBar) */
   ui.playButton = function (size) {
-    var on = P.state.playing;
+    var on = PlayerView.pressed(P.view());
     return html`<button class="btn-gloss btn-gloss--${size || 56}" data-act="play" data-bind="play" aria-label="${on ? 'Pause' : 'Play'}" data-tip="${on ? 'Pause (Space)' : 'Play (Space)'}"><i class="btn-gloss__spin" aria-hidden="true"></i>${icon(on ? 'pause' : 'play', null, on ? '' : 'ic-play')}</button>`;
   };
 
@@ -2116,6 +2116,7 @@
       track: t, status: ps.status, intent: ps.playing, sound: sound, words: t ? P.stateWords() : '',
       copy: copy && Object.assign({ lossless: !!(M.formats[copy.format] || {}).lossless }, copy),
       pos: ps.pos, duration: P.duration(), durationKnown: ps.durationKnown, received: ps.received, front: bar.front, parts: bar.parts,
+      buffered: ps.buffered.length ? ps.buffered[ps.buffered.length - 1][1] : 0,
       seekWait: ps.seekWait, liked: !!t && App.isLiked(t.id), saved: !!t && App.isSaved(t.id), shuffle: ps.shuffle, repeat: ps.repeat,
       volume: ps.volume, muted: ps.muted, crossfading: ps.crossfade, now: Date.now()
     });
@@ -2871,12 +2872,8 @@
     if (d.duration > 0 && d.duration !== duration) { duration = d.duration; ps.durationKnown = !cur.soulseek || ps.received >= 1; changed('status'); }
     trackListening(d.position, d.playing);
     ps.pos = d.position;
-    /* the output stopped sound that had been coming out, and nothing here asked it to (P.pause sets the intent first):
-       the system paused it (another app took the audio, headphones out). The intent follows, as any player's does */
-    var outsidePause = ps.playing && !d.playing && !!sound && sound.playing;
     var soundMoved = !sound || sound.playing !== d.playing || sound.waiting !== d.waiting;
     sound = { playing: d.playing, waiting: d.waiting };
-    if (outsidePause) { ps.playing = false; changed('play'); }
     noteHeard();
     if (d.playing && !d.waiting && (ps.status === 'finding' || ps.status === 'queued' || ps.status === 'buffering' || ps.status === 'stalled' || ps.status === 'library' || ps.status === 'streaming')) {
       ps.status = cur.soulseek ? 'streaming' : 'library'; ps.error = null;
@@ -2893,7 +2890,15 @@
     if (isCur(d.key)) onOutputError(cur, d.message);
   });
   out.on('crossfade', function (d) { if (isCur(d.key)) { ps.crossfade = !!d.next; changed('status'); } });
-  out.on('remote', function (d) { if (d.action === 'next') P.next(); else if (d.action === 'prev') P.prev(); });
+  /* the lock screen's, a headset's or a notification's keys: the output applies none of them itself, the intent does */
+  out.on('remote', function (d) {
+    if (d.action === 'next') P.next(); else if (d.action === 'prev') P.prev();
+    else if (d.action === 'play') P.play(); else if (d.action === 'pause') P.pause();
+  });
+  /* the system paused or resumed the output (another app took the audio, headphones out): the intent follows, as any
+     player shows a pause the system made. Only an output says so; it is never guessed from a `time` (a song's end, a
+     clear and a seek after the end report playing: false too, and nothing would undo it) */
+  out.on('system', function (d) { if (isCur(d.key) && ps.playing !== d.playing) { ps.playing = d.playing; changed('play'); } });
 
   /* the equaliser: this device's (web/eq.js), followed live, also when Classic's Webamp or another window changes it.
      An Android app older than its native equaliser has none: Settings says so (P.canEqualize) */
@@ -2929,7 +2934,7 @@
     function element(d) {
       var el = new Audio();
       el.preload = 'auto';
-      ['playing', 'waiting', 'pause', 'timeupdate', 'durationchange', 'ended', 'error'].forEach(function (type) {
+      ['play', 'playing', 'waiting', 'pause', 'timeupdate', 'durationchange', 'ended', 'error'].forEach(function (type) {
         el.addEventListener(type, function () { if (d.el === el) onEl(d, type); });
       });
       return el;
@@ -2937,7 +2942,7 @@
     /* waiting: no sound yet for want of data, from the start until 'playing' */
     function hold(d, it) {
       d.item = it; d.waiting = true; d.fade = 1; d.norm = 1; d.ms = 0; d.msN = 0;
-      if (it) { d.el.src = it.url; d.el.load(); } else { d.el.pause(); d.el.removeAttribute('src'); d.el.load(); }
+      if (it) { d.el.src = it.url; d.el.load(); } else { halt(d.el); d.el.removeAttribute('src'); d.el.load(); }
       setLag(d, 0); d.offset = 0;
       if (d.sw) { d.sw.gain.cancelScheduledValues(0); d.sw.gain.value = 1; }
     }
@@ -2953,17 +2958,26 @@
     function start(d) {
       ensureGraph();
       if (d.el.readyState < 3) d.waiting = true;
-      var p = d.el.play();
+      var wasPaused = d.el.paused, p = d.el.play();
+      if (wasPaused && !d.el.paused) ask(d.el, 'play');       // a play the browser refused (autoplay) makes no event
       return p && p.catch ? p : Promise.resolve();
     }
+    /* A pause or play this output asks of an element makes an event of its own; one it didn't ask for is the system's
+       (`system`). The events come later, so each ask is counted and its event takes it. */
+    function ask(el, type) { (el._asked || (el._asked = { pause: 0, play: 0 }))[type]++; }
+    function took(el, type) { var n = el._asked; if (n && n[type] > 0) { n[type]--; return true; } return false; }
+    function halt(el) { if (!el.paused) { el.pause(); ask(el, 'pause'); } }
     function onEl(d, type) {
+      var own = (type === 'pause' || type === 'play') && took(d.el, type);
       if (!d.item) return;
       if (type === 'waiting') d.waiting = true;
       else if (type === 'playing') d.waiting = false;
       if (switching && d === b) { if (type === 'error') abandonSwitch(); return; }   // the better copy, still silent
       if (type === 'error') { emit('error', { key: key(d), message: null, status: null }); return; }
       if (d !== a) return;                                   // the preloading deck reports only errors
-      if (type === 'pause' && d.el.ended) return;            // a song's end pauses its element: 'ended' says it, not a pause
+      if (type === 'play') { if (!own) emit('system', { key: key(d), playing: true }); return; }
+      /* not the pause an element makes at its end: 'ended' says that */
+      if (type === 'pause' && !own && !d.el.ended) emit('system', { key: key(d), playing: false });
       if (type === 'ended') { abandonSwitch(); if (fading) finishFade(); else ended(); return; }
       time(d);
     }
@@ -2994,7 +3008,7 @@
     function finishFade() { if (!fading) return; fading = null; var from = key(a); swap(); emit('ended', { key: from, next: key(a) }); time(a); }
     function abandonFade() {
       if (!fading) return;
-      fading = null; b.fade = 1; b.el.pause(); b.el.currentTime = 0; a.fade = 1; levels();
+      fading = null; b.fade = 1; halt(b.el); b.el.currentTime = 0; a.fade = 1; levels();
       emit('crossfade', { key: key(a), next: null });
     }
 
@@ -3214,7 +3228,7 @@
       var old = a, pos = old.el.currentTime - shift(old), paused = old.el.paused;
       if (sw.cut) { b.sw.gain.cancelScheduledValues(0); b.sw.gain.value = 1; b.el.currentTime = pos + shift(b); }
       a = b; b = old; hold(b, null);
-      if (paused) a.el.pause();
+      if (paused) halt(a.el);
       levels(); time(a);
     }
     /* a load (hard) drops it; a pause, seek or end before the hub switched drops it, after that finishes it at once */
@@ -3275,11 +3289,11 @@
         hold(b, null);
         if (o.at) a.el.currentTime = o.at;
         levels();
-        if (o.autoplay === false) { a.el.pause(); return Promise.resolve(); }
+        if (o.autoplay === false) { halt(a.el); return Promise.resolve(); }
         return start(a);
       },
       play: function () { return start(a); },
-      pause: function () { abandonSwitch(); a.el.pause(); abandonFade(); return Promise.resolve(); },
+      pause: function () { abandonSwitch(); halt(a.el); abandonFade(); return Promise.resolve(); },
       seek: function (sec) { abandonSwitch(); a.el.currentTime = sec + shift(a); time(a); return Promise.resolve(); },
       setVolume: function (v) { volume = v; levels(); return Promise.resolve(); },
       setNext: function (it) {
@@ -3537,8 +3551,7 @@
     $$kept('.wave[data-seek="player"]').forEach(function (el) {
       var bars = $$('.wave__bar', el), n = bars.length;
       setVar(el, '--pos', f.toFixed(4));
-      var moving = view.activity === 'playing';
-      if (el.classList.contains('is-playing') !== moving) el.classList.toggle('is-playing', moving);
+      waveMoves(el, view);
       bars.forEach(function (b, i) {
         var x = (i + .5) / n, inBuf = parts.some(function (r) { return x >= r[0] && x <= r[1]; });
         var c = x <= f ? 'is-played' : inBuf ? 'is-buf' : x <= front ? 'is-xfer' : '';
@@ -4006,6 +4019,25 @@
   App.on('layout:switch', function () { layoutCtx(); followSplit(); });
 
   /* ---------- player bar + mini-player ---------- */
+  /* what the view's activity shows: the play keys (Pause, the waiting spinner) and the wave's motion. A song goes from
+     loading to playing with no other player event, so these repaint on every view, not only with the bar */
+  function paintActivity(view) {
+    var pressed = PlayerView.pressed(view), waitingForSound = view.activity === 'loading';
+    $$kept('[data-bind="play"]').forEach(function (b) {
+      b.setAttribute('aria-label', pressed ? 'Pause' : 'Play'); b.setAttribute('data-tip', pressed ? 'Pause (Space)' : 'Play (Space)');
+      /* a theme's own key (words, no icon) keeps its words: only lull's icon follows */
+      var u = $('use', b), svg = $('svg', b);
+      if (u) u.setAttribute('href', '#i-' + (pressed ? 'pause' : 'play'));
+      if (svg) svg.classList.toggle('ic-play', !pressed);
+      b.classList.toggle('is-buffering', waitingForSound);
+    });
+    $$kept('.wave[data-seek="player"]').forEach(function (el) { waveMoves(el, view); });
+  }
+  function waveMoves(el, view) {
+    var moving = view.activity === 'playing';
+    if (el.classList.contains('is-playing') !== moving) el.classList.toggle('is-playing', moving);
+  }
+  App.on('view', paintActivity);
   function renderBar() {
     var t = P.current(), bar = $('#pbar'), mini = $('#mini');
     var view = P.view(), st = ps.status, idle = !t || st === 'idle';
@@ -4062,16 +4094,7 @@
     } else { stEl.hidden = true; stEl.innerHTML = ''; }
     /* transport: every key and word bound to the player (data-bind: play, shuffle, repeat, save, mute, xfade), wherever it
        is: the player bar's, Now Playing's, a slot's part (designs/parts.js), a theme's own button */
-    var waitingForSound = view.activity === 'loading';
-    $$kept('[data-bind="play"]').forEach(function (b) {
-      var playingNow = PlayerView.pressed(view);
-      b.setAttribute('aria-label', playingNow ? 'Pause' : 'Play'); b.setAttribute('data-tip', playingNow ? 'Pause (Space)' : 'Play (Space)');
-      /* a theme's own key (words, no icon) keeps its words: only lull's icon follows */
-      var u = $('use', b), svg = $('svg', b);
-      if (u) u.setAttribute('href', '#i-' + (playingNow ? 'pause' : 'play'));
-      if (svg) svg.classList.toggle('ic-play', !playingNow);
-      b.classList.toggle('is-buffering', waitingForSound);
-    });
+    paintActivity(view);
     $$kept('[data-bind="shuffle"]').forEach(function (b) { b.setAttribute('aria-pressed', String(ps.shuffle)); });
     $$kept('[data-bind="repeat"]').forEach(function (b) {
       b.setAttribute('aria-pressed', String(ps.repeat !== 'off'));

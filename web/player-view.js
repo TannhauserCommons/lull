@@ -12,8 +12,7 @@
   V.STRAY_S = 1;                // a clock this far (or farther) from where the last view said it would be has strayed
 
   /* the statuses the player has (app.js, "Player engine"); an unknown one fails loudly rather than guessing */
-  var LOADING = { finding: 1, queued: 1, buffering: 1, stalled: 1 };
-  var OUTPUT = { streaming: 1, library: 1 };
+  var SOURCE = { finding: 1, queued: 1, buffering: 1, stalled: 1, streaming: 1, library: 1 };
 
   /* what the player is doing, by the first row that matches (ADR-0041's table) */
   function activityOf(i) {
@@ -21,9 +20,9 @@
     if (i.status === 'failed' || i.status === 'jellyfin-error') return 'error';
     if (i.status === 'ended') return 'ended';
     if (i.status === 'choose') return 'choose';
-    if (!LOADING[i.status] && !OUTPUT[i.status]) throw new Error('Unknown player status: ' + i.status);
+    if (!SOURCE[i.status]) throw new Error('Unknown player status: ' + i.status);
     if (!i.intent) return 'paused';
-    if (LOADING[i.status]) return 'loading';
+    /* the status says why, the sound says whether: a stalled peer whose arrived part still plays is playing */
     return i.sound && i.sound.playing && !i.sound.waiting ? 'playing' : 'loading';
   }
 
@@ -37,7 +36,7 @@
       track: t ? { id: t.id, title: t.title, artist: t.artist, album: t.album } : null,
       copy: c ? { where: c.where, format: c.format, lossless: !!c.lossless, peer: c.peer || null, received: c.received } : null,
       clock: { pos: i.pos, at: i.now, rate: activity === 'playing' ? 1 : 0, duration: i.duration, known: !!i.durationKnown },
-      transfer: { received: i.received, front: i.front, parts: i.parts,
+      transfer: { received: i.received, front: i.front, parts: i.parts, buffered: i.buffered || 0,
         transferring: i.received < 1 && (i.status === 'streaming' || i.status === 'buffering') },
       seekWait: i.seekWait ? i.seekWait.fraction : null,
       liked: !!i.liked, saved: !!i.saved, shuffle: !!i.shuffle, repeat: i.repeat, volume: i.volume, muted: !!i.muted,
@@ -63,8 +62,9 @@
     return !prev || Math.abs(V.posAt(next, now) - V.posAt(prev, now)) >= V.STRAY_S;
   };
 
-  /* the play key shows Pause while the song plays or is about to: loading is the listener's play still waiting for sound */
-  V.pressed = function (view) { return view.activity === 'playing' || view.activity === 'loading'; };
+  /* the play key shows Pause while the listener's play stands: the song plays, waits for sound, or waits for a copy to
+     be picked. A paused, ended or failed song shows Play, so the key always does what it shows */
+  V.pressed = function (view) { return view.activity === 'playing' || view.activity === 'loading' || view.activity === 'choose'; };
 
   root.PlayerView = V;
   if (typeof module === 'object' && module.exports) module.exports = V;

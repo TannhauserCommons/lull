@@ -1,10 +1,11 @@
 /* lull Connect (ADR-0005): every paired device sees the others, reports what it plays, and can be controlled.
    - The device list lives in the store as `devices` { items, me, loading, error } (GET /api/devices), kept current
      by `device.online` and `device.state` events. Settings > Devices (hub.js) reads it too.
-   - This device reports its state to POST /api/devices/me/state when it changes: at once on a new song, or when the
-     player's view changes what it is doing (its `activity`: `playing` is true only while it plays, so a failure, an end
-     or a pause the system made reaches the others), otherwise at most once a second; an unchanged state is sent again
-     only as the slow heartbeat, while it plays.
+   - This device reports its state to POST /api/devices/me/state when it changes: at once on a new song, or whenever the
+     player's view changes what it is doing (its `activity`, so a failure, an end or a pause the system made reaches
+     the others), otherwise at most once a second; an unchanged state is sent again only as the slow heartbeat, while it
+     plays. `playing` is the listener's intent (every terminal state clears it), so a device taking over a song that
+     was still loading plays it on.
    - `device.command` events for this device drive the engine; `takeover` reports at once and pauses; `enqueue` adds
      songs to next up without interrupting (a share page's Add to queue, opened on another of the listener's devices).
    - The picker (App.connect.open(anchor)): the devices, a remote's controls, and "Play here" (takeover). */
@@ -50,7 +51,7 @@
   /* ---------- reporting this device's state ---------- */
   var HEARTBEAT = 30000, sendTimer = null, lastSent = 0, lastBody = null, reporting = true;
   function stateBody() {
-    return { trackId: P.currentId(), position: Math.round(ps.pos * 10) / 10, playing: P.view().activity === 'playing', volume: ps.muted ? 0 : ps.volume,
+    return { trackId: P.currentId(), position: Math.round(ps.pos * 10) / 10, playing: ps.playing, volume: ps.muted ? 0 : ps.volume,
       queue: ps.queue.map(function (q) { return q.trackId; }), queueIndex: ps.index };
   }
   /* force: a takeover waits for this device's state event, so it is sent even when unchanged */
@@ -74,7 +75,7 @@
   });
   var activityWas = null;
   App.on('view', function (v) { if (v.activity !== activityWas) { activityWas = v.activity; report(true); } });
-  setInterval(function () { if (P.view().activity === 'playing') report(false); }, HEARTBEAT);
+  setInterval(function () { if (ps.playing) report(false); }, HEARTBEAT);
 
   /* ---------- commands for this device ---------- */
   App.on('server:device.command', function (e) {

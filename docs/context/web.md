@@ -213,20 +213,24 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   which the hub answers ([streaming.md](streaming.md#a-songs-outcome)). Before (2026-11-12), a pick made the day
   before stopped the song on "this copy can't be played", and Retry asked for the same copy again.
 - **The player's view** (`App.player.view()`, `web/player-view.js`, ADR-0041) is derived from the engine on every call and
-  is the one answer to what the player is doing. Its `activity` is `idle`, `loading`, `choose`, `playing`, `paused`,
-  `ended` or `error`, by one table (first match): a song's pause is `paused`, `finding`/`queued`/`buffering`/`stalled`
-  and an output that waits or hasn't started are `loading`, and only a song the output plays is `playing`. Nothing else
-  decides "playing" or "busy": the wave's motion, the play keys' Pause and spinner, the buffering loop's sound,
-  Connect's `playing` all read it (`data-playing` stays the listener's intent, for themes). The clock is `{ pos, at, rate,
-  duration, known }`, moving at rate 1 only while playing; surfaces place the song with `PlayerView.posAt(view, now)`.
+  is the one answer to what the player is doing. Its `activity` is `idle`, `error`, `ended`, `choose`, `paused`,
+  `playing` or `loading`, first match: the listener's pause is `paused`; a song the output plays and isn't waiting on is
+  `playing` whatever the status says (a stalled peer whose arrived part still plays is playing); anything else is
+  `loading`. Nothing else decides "playing" or "busy": the wave's motion, the play keys' Pause and spinner
+  (`PlayerView.pressed`: playing, loading or choose), Now Playing's light and state words, the buffering loop's sound
+  (not while `stalled`, which has its own cue) all read it. `data-playing` stays the listener's intent, for themes.
+  The clock is `{ pos, at, rate, duration, known }`, moving at rate 1 only while playing; surfaces place the song with
+  `PlayerView.posAt(view, now)`. The view's `transfer.buffered` is the end the output holds (`song.buffered`).
   The engine emits the `view` event (`App.on('view', fn)`, the view as the argument) when `PlayerView.key(view)` changes
-  or `PlayerView.strayed` says the clock is a second off, from `changed()` and from the player's 250 ms clock *before*
-  its hidden-page return, so a hidden page publishes too. The live model's `song.pos`, `song.elapsed`, `song.buffered`
-  and `song.received` are read from it, and Connect reports on each new activity (`playing` is `activity === 'playing'`).
-- **The intent follows the output.** `ps.playing` is what the listener asked for. When the output stops sound it had
-  been playing and nothing asked it to (an `time` with `playing: false` after one with `playing: true`, with no
-  `P.pause`), the system paused it (another app took the audio, headphones out): the engine sets `ps.playing = false`
-  and announces `play`. The browser output doesn't report an element's pause at the song's end as one.
+  or `PlayerView.strayed` says the clock is a second off, from `changed()`, from a `time` that only moved the sound, and
+  from the player's 250 ms clock *before* its hidden-page return, so a hidden page publishes too. A song can go from
+  loading to playing with no other player event, so what shows the activity repaints on `view`: the play keys and their
+  spinner, the wave, Now Playing's light. The live model's `song.pos`, `song.elapsed`, `song.buffered` and
+  `song.received` are read from it too.
+- **The intent follows the output.** `ps.playing` is what the listener asked for. An output that pauses or resumes for a
+  reason of the system's (another app took the audio, headphones out, a key the page doesn't handle) says so with the
+  `system` event, and the engine sets `ps.playing` to it. It is never guessed from a `time` with `playing: false`: an
+  output reports that at a song's end, when it is cleared and on a seek after the end, and nothing would undo it.
 - **Streaming state** comes from `stream` events (`finding queued buffering streaming stalled fallback failed`,
   `received/size`, `peer`, `peersFound`, `queuePos`, `failedPeers`), merged with the element's own `playing`/`waiting`.
   `buffered` is `audio.buffered` cut to `received`. A seek may go anywhere for saved songs and up to what has
@@ -359,7 +363,8 @@ output with one contract and two implementations:
 | `ended` | `{ key, next }` | The item ended. `next` = the key it continued into (gapless or crossfade), else `null` and playback stopped. A response that ends before the song does is reported as `ended` too: the engine knows when that is a Soulseek fallback in progress and reopens with `load` |
 | `error` | `{ key, message, status }` | The item can't play. `status` = the HTTP status when the hub answered one (the engine fetches the hub's sentence), else `null` |
 | `crossfade` | `{ key, next }` | Optional: a fade into `next` started (the player bar shows it), or was abandoned (`next: null`, on pause) |
-| `remote` | `{ action: next \| prev }` | Lock screen, notification, Bluetooth or headset. The output itself applies play, pause and seek from those controls and reports them through `time`; next and prev need the queue, so the engine does them |
+| `remote` | `{ action: next \| prev \| play \| pause }` | Lock screen, notification, Bluetooth or headset keys. The engine owns the queue and the listener's intent, so it does them (`P.next`, `P.prev`, `P.play`, `P.pause`); the output applies only a seek itself and reports it through `time` |
+| `system` | `{ key, playing }` | The system paused or resumed the output for its own reasons: another app took the audio focus (or gave it back), headphones came out. Sent only for a change the output itself didn't ask for (not for its own `pause()`/`play()`, a song's end, a clear or a seek). The engine sets the listener's intent to `playing` ([the player's view](#player-engine-appplayer)). The browser output sends it for an element `pause`/`play` event its own calls didn't make; the Android output for a play-when-ready change for audio focus or noise |
 
 Rules for the native side: playback must continue with the screen off (the WebView may be throttled, so `setNext` is
 always set one song ahead); one item plays at a time except during a crossfade; volume is the app's own stream
@@ -374,8 +379,8 @@ level, not the system's.
 Settings > Devices renders from it.
 
 - **Reporting**: `POST /api/devices/me/state` at once on a new song and on every new player view whose `activity`
-  changed (`playing` is `activity === 'playing'`, so a failure, an end or a pause the system made reaches the others,
-  and a loading song isn't reported as playing); at most once a second for seeks, volume and queue changes; every 30 s
+  changed (so a failure, an end or a pause the system made reaches the others). `playing` is the listener's intent,
+  which every terminal state clears, so a device taking over a song that was still loading plays it on; at most once a second for seeks, volume and queue changes; every 30 s
   while playing. A state identical to the last one sent is skipped
   (except the heartbeat, a takeover and the first report after a reconnect). One start runs at a time, however
   often `server` fires while the device list loads. A 404 (a hub without Connect) stops it until the next resync or

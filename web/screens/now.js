@@ -68,7 +68,7 @@
   function ledText() {
     if (!cur()) return 'off';
     if (ps.crossfade) return 'xfade';
-    if (!ps.playing && (ps.status === 'streaming' || ps.status === 'library')) return 'paused';
+    if (P.view().activity === 'paused' && (ps.status === 'streaming' || ps.status === 'library')) return 'paused';
     return LED[ps.status] || 'stream';
   }
   function headText() {
@@ -80,7 +80,7 @@
     if (!cur()) return 'nothing playing';
     return { finding: 'finding a source', queued: 'queued at peer', buffering: 'buffering', stalled: 'peer stalled',
       failed: 'couldn\'t play', 'jellyfin-error': 'unavailable', ended: 'end of queue' }[ps.status] ||
-      (ps.playing ? 'now playing' : 'paused');
+      (P.view().activity === 'paused' ? 'paused' : 'now playing');
   }
   function screenBtn(label, act, id) {
     return html`<button class="now-sbtn" data-act="${act}" ${id ? raw('data-id="' + App.esc(id) + '"') : ''} data-fk="sbtn-${act}">${label}</button>`;
@@ -920,6 +920,7 @@
     }
     var offs = [
       App.on('player', onPlayer),
+      App.on('view', function () { if (onRoute()) updateControls(); }),
       App.on('save', function (d) { if (d.id === P.currentId()) { updateSaveBits(); } }),
       App.on('like', function () { var t = cur(); $$('[data-now="b-label"]').forEach(function (el) { App.setText(el, t && App.isLiked(t.id) ? 'liked' : 'like'); }); }),
       App.on('follow', function () { var a = $('[data-now="acts"]'); if (a) swap(a, actionRow()); })
