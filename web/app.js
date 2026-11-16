@@ -2898,7 +2898,11 @@
   /* the system paused or resumed the output (another app took the audio, headphones out): the intent follows, as any
      player shows a pause the system made. Only an output says so; it is never guessed from a `time` (a song's end, a
      clear and a seek after the end report playing: false too, and nothing would undo it) */
-  out.on('system', function (d) { if (isCur(d.key) && ps.playing !== d.playing) { ps.playing = d.playing; changed('play'); } });
+  out.on('system', function (d) {
+    if (!isCur(d.key)) return;
+    if (!d.playing) out.pause();   // as P.pause: a crossfade or a better-copy switch in progress is abandoned, not finished silent
+    if (ps.playing !== d.playing) { ps.playing = d.playing; changed('play'); }
+  });
 
   /* the equaliser: this device's (web/eq.js), followed live, also when Classic's Webamp or another window changes it.
      An Android app older than its native equaliser has none: Settings says so (P.canEqualize) */
@@ -2942,7 +2946,8 @@
     /* waiting: no sound yet for want of data, from the start until 'playing' */
     function hold(d, it) {
       d.item = it; d.waiting = true; d.fade = 1; d.norm = 1; d.ms = 0; d.msN = 0;
-      if (it) { d.el.src = it.url; d.el.load(); } else { halt(d.el); d.el.removeAttribute('src'); d.el.load(); }
+      d.el._wants = false;                                 // a load drops the element's queued events, and wants nothing yet
+      if (it) { d.el.src = it.url; d.el.load(); } else { d.el.pause(); d.el.removeAttribute('src'); d.el.load(); }
       setLag(d, 0); d.offset = 0;
       if (d.sw) { d.sw.gain.cancelScheduledValues(0); d.sw.gain.value = 1; }
     }
@@ -2958,26 +2963,28 @@
     function start(d) {
       ensureGraph();
       if (d.el.readyState < 3) d.waiting = true;
-      var wasPaused = d.el.paused, p = d.el.play();
-      if (wasPaused && !d.el.paused) ask(d.el, 'play');       // a play the browser refused (autoplay) makes no event
+      d.el._wants = true;
+      var p = d.el.play();
       return p && p.catch ? p : Promise.resolve();
     }
-    /* A pause or play this output asks of an element makes an event of its own; one it didn't ask for is the system's
-       (`system`). The events come later, so each ask is counted and its event takes it. */
-    function ask(el, type) { (el._asked || (el._asked = { pause: 0, play: 0 }))[type]++; }
-    function took(el, type) { var n = el._asked; if (n && n[type] > 0) { n[type]--; return true; } return false; }
-    function halt(el) { if (!el.paused) { el.pause(); ask(el, 'pause'); } }
+    /* Each element carries whether this output wants it playing (_wants), set wherever it plays, pauses or loads one. An
+       element `pause` while it is wanted playing, or a `play` while it is wanted paused, is the system's (`system`),
+       and the output takes the system's side. A state, not a count of the asks made: a load drops an element's queued
+       events, so a count would leak and swallow a later system pause. The element's own state at the event rules out
+       a stale one (paused, then played again before it arrived). */
+    function halt(el) { el._wants = false; el.pause(); }
     function onEl(d, type) {
-      var own = (type === 'pause' || type === 'play') && took(d.el, type);
+      var el = d.el, system = false;
+      if (type === 'pause') { system = !!el._wants && el.paused && !el.ended; if (system) el._wants = false; }   // not the pause at a song's end
+      else if (type === 'play') { system = !el._wants && !el.paused; if (system) el._wants = true; }
       if (!d.item) return;
       if (type === 'waiting') d.waiting = true;
       else if (type === 'playing') d.waiting = false;
       if (switching && d === b) { if (type === 'error') abandonSwitch(); return; }   // the better copy, still silent
       if (type === 'error') { emit('error', { key: key(d), message: null, status: null }); return; }
       if (d !== a) return;                                   // the preloading deck reports only errors
-      if (type === 'play') { if (!own) emit('system', { key: key(d), playing: true }); return; }
-      /* not the pause an element makes at its end: 'ended' says that */
-      if (type === 'pause' && !own && !d.el.ended) emit('system', { key: key(d), playing: false });
+      if (type === 'play') { if (system) emit('system', { key: key(d), playing: true }); return; }
+      if (type === 'pause' && system) emit('system', { key: key(d), playing: false });
       if (type === 'ended') { abandonSwitch(); if (fading) finishFade(); else ended(); return; }
       time(d);
     }
