@@ -6,6 +6,7 @@
 
 import { expect, test } from '@playwright/test';
 import * as L from '../fixture-hub/library.mjs';
+import { contrast } from '../checks.mjs';
 import { designs, openScreen } from './lib.mjs';
 import { fireView, openMain, openMini } from './player-windows.mjs';
 
@@ -26,8 +27,8 @@ const unsaved = (() => {
 })();
 
 /* a mini player window in `design` and `style` (mini: the device, or strip), with no main beside it */
-const alone = (page, design = DEFAULT, style = 'mini') =>
-  openMini({ page, main: [], mini: [], toMini: false, toMain: false, sent: Promise.resolve(), back: Promise.resolve() }, { design, style });
+const alone = (page, design = DEFAULT, style = 'mini', theme = 'day', opaque = true) =>
+  openMini({ page, main: [], mini: [], toMini: false, toMain: false, sent: Promise.resolve(), back: Promise.resolve() }, { design, style, theme, opaque });
 
 /* the player's states as main's view says them (app.js P.statusText for the words) */
 const peerCopy = { where: 'soulseek', format: 'FLAC', lossless: true, peer: 'mira', received: 0.4 };
@@ -119,6 +120,28 @@ for (const [design, style] of [...designs.map((d) => [d, 'mini']), [DEFAULT, 'st
     if (style === 'mini') expect(found[1].n, 'the device shows the share arrived').toBeGreaterThan(0);
     for (const f of found) expect.soft(f.live, `${f.sel} inside an aria-live region`).toBe(0);
   });
+}
+
+// The status words are text to read: 4.5:1 against what is drawn behind them (checks.mjs contrast), in every design,
+// day and night, on the device and the strip, where they matter most: a song that failed. In both windows the app draws:
+// the desktop showing through (judged over black and over white, as themes:check judges it) and opaque (the lighter
+// look). Only the status words are
+// judged here (every other text is made transparent; what holds them keeps its colour, which they may inherit): the
+// rest of the window is the a11y gate's and themes:check's business.
+for (const design of designs) {
+  for (const theme of ['day', 'night']) {
+    for (const [style, opaque] of [['mini', false], ['strip', false], ['mini', true], ['strip', true]]) {
+      test(`the status words read against what is behind them / ${design} ${theme} ${style}${opaque ? ' opaque' : ''}`, async ({ page }) => {
+        const mini = await alone(page, design, style, theme, opaque);
+        await mini.waitForFunction((d) => !document.documentElement.hasAttribute('data-booting') && window.Designs && Designs.current === d, design);
+        await inState(mini, 'failed');
+        await mini.evaluate(() => document.fonts.ready);
+        expect(await mini.evaluate(showsWords, '[data-dk-player] [data-dk-status]'), 'the status words show').toBe(true);
+        await mini.addStyleTag({ content: 'body *:not([data-dk-status]):not(:has([data-dk-status])) { color: transparent !important; -webkit-text-fill-color: transparent !important; -webkit-text-stroke-color: transparent !important; } [data-dk-status] { transition: none !important; }' });
+        expect(await contrast(mini, { seeThrough: !opaque }), 'the status words\' contrast, where they fall short').toBeNull();
+      });
+    }
+  }
 }
 
 // The status line is a line: in every design the wave keeps its height whether the line is there or not, and the line is
@@ -297,6 +320,37 @@ test('a song waiting for a source publishes no view for each second it waits / p
   expect.soft(typeof seen.view.since === 'number' && seen.view.since <= began, `since: when the wait began (${seen.view.since})`).toBe(true);
   expect.soft(seen.late, 'views published from the wait\'s sixth second on').toEqual([]);
 });
+
+// A key's accessible name is what it does, as it says it; its shortcut is aria-keyshortcuts, not words in its name
+// ("Shuffle", not "Shuffle (S)"): every key on Now Playing and the player bar, in every design (lull's markup and each
+// design's slots). The player's keys with a shortcut (app.js, the page's keys) carry it.
+const SHORTCUT_IN_NAME = /\s\((?:[A-Za-z]|Space|Esc|Escape|(?:Up|Down|Left|Right) arrow|Shift\+\S+|Ctrl\+\S+)\)\s*$/;
+const PLAYER_SHORTCUTS = [['[data-bind="play"]', 'Space'], ['[data-bind="shuffle"]', 'S'], ['[data-bind="repeat"]', 'R'], ['[data-bind="like"]', 'L'],
+  ['[data-bind="save"]', 'Shift+S'], ['[data-act="prev"]', 'P'], ['[data-act="next"]', 'N'], ['[data-act="mute"]', 'M']];
+for (const design of designs) {
+  test(`no key's name carries its shortcut, and the player's keys carry theirs apart / ${design}`, async ({ page }) => {
+    await openScreen(page, '/now', { design, clock: false });
+    await page.evaluate((id) => App.player.playList([id], 0), L.savedIds[0]);
+    await page.waitForFunction(() => App.player.view().activity === 'playing', null, { timeout: 20_000 });
+    const seen = await page.evaluate(([re, keys]) => {
+      const rx = new RegExp(re), shown = (el) => el.checkVisibility();
+      const named = [...document.querySelectorAll('[aria-label]')].filter((el) => rx.test(el.getAttribute('aria-label'))).map((el) => el.getAttribute('aria-label'));
+      const missing = [], found = [];
+      for (const [sel, key] of keys) {
+        for (const el of document.querySelectorAll(`#pbar ${sel}, #view ${sel}`)) {
+          if (!shown(el)) continue;
+          found.push(sel);
+          const has = (el.getAttribute('aria-keyshortcuts') || '').split(/\s+/).some((k) => k.toLowerCase() === key.toLowerCase());
+          if (!has) missing.push(`${sel} (${el.getAttribute('aria-label')}): ${key}`);
+        }
+      }
+      return { named: [...new Set(named)], missing: [...new Set(missing)], found: [...new Set(found)] };
+    }, [SHORTCUT_IN_NAME.source, PLAYER_SHORTCUTS]);
+    expect(seen.found, 'the shuffle and repeat keys on show').toEqual(expect.arrayContaining(['[data-bind="shuffle"]', '[data-bind="repeat"]']));
+    expect.soft(seen.named, 'names that carry a shortcut').toEqual([]);
+    expect.soft(seen.missing, 'keys without their shortcut in aria-keyshortcuts').toEqual([]);
+  });
+}
 
 // A key's accessible name is what it does, as it says it; its shortcut is aria-keyshortcuts, not words in its name. The
 // repeat keys (the player bar's and Now Playing's) name the mode as it is, and Now Playing's shuffle and repeat pills

@@ -61,8 +61,9 @@ export async function openMain(page, { design = 'lull', route = '/home' } = {}) 
   return relay;
 }
 
-/** A mini player window in `style` (mini: the device, or strip), joined to main's relay. It says hello as it opens. */
-export async function openMini(relay, { design = 'lull', style = 'mini' } = {}) {
+/** A mini player window in `style` (mini: the device, or strip) and `theme` (day or night), joined to main's relay. It
+    says hello as it opens. Opaque unless `opaque` is false: the window the desktop shows through, as the app draws it. */
+export async function openMini(relay, { design = 'lull', style = 'mini', theme = 'day', opaque = true } = {}) {
   const mini = await relay.page.context().newPage();
   await mini.exposeFunction('__toMain', (name, payload) => {
     relay.mini.push({ name, payload, at: Date.now() });
@@ -72,7 +73,7 @@ export async function openMini(relay, { design = 'lull', style = 'mini' } = {}) 
   await mini.addInitScript(miniWindow);
   await mini.route('**/api/**', (r) => r.fulfill({ status: 404, body: 'not here' }));   // the app serves it: no hub beside it
   relay.miniPage = mini;
-  await mini.goto(`/desktop/wrapper.html#view=${style}&design=${design}&theme=day&opaque=1`);
+  await mini.goto(`/desktop/wrapper.html#view=${style}&design=${design}&theme=${theme}${opaque ? '&opaque=1' : ''}`);
   await mini.waitForFunction(() => document.querySelector('[data-dk-player]'));
   return mini;
 }
