@@ -2,15 +2,16 @@
 // its own trigger, and the mini player windows repainted from a hand-kept copy of the bar's painter. What that left, as
 // found in desktop app 0.2.10: the mini player drew the peer's percentage once and the catalogue's format; four of five
 // designs said nothing of "finding / buffering / failed" there; it froze for good once main reloaded, and a mini player
-// and a main of different versions talked past each other; a pause the system made went on showing as playing; and
-// Home's lead kept the song it was drawn with. Now main derives one view (web/player-view.js), publishes it when it
+// and a main of different versions talked past each other; and a pause the system made went on showing as playing.
+// Now main derives one view (web/player-view.js), publishes it when it
 // changes even while its window is hidden, sends it to the mini player as it is, with a version, and both windows say
 // hello. These gates play, skip, pause from the system and fail songs with main hidden (document.hidden,
 // visibilityState and the visibilitychange event), and feed the mini player only the views main really sent.
 // docs/context/quality.md#ui-gates.
 //
 // Per design, only what each design draws differently: the mini player's markup (lull, Petal, Skydeck and Starlight
-// have a miniPlayer slot of their own; Glasshouse draws the default) and Home's lead slot. The strip is the same default
+// have a miniPlayer slot of their own; Glasshouse draws the default). Home's lead slot, which keeps the song it was
+// drawn with until slots stay current (ADR-0041), has its checks with that change. The strip is the same default
 // markup in every design, so it runs once. The engine's pause, and the link between the windows (hello, bye, the
 // version), are the same code whatever the design: once each, in lull.
 
@@ -45,8 +46,6 @@ function ownSong(slot) {
   if (r >= REPEATS) throw new Error(`player-surfaces has songs of its own for ${REPEATS} repeats: --repeat-each ${REPEATS} at most`);
   return pool[4 + r * OWN + slot];
 }
-/* what Home's lead shows of the queue, per design (its homeLead slot): lull's desk widgets show neither */
-const LEAD = { lull: [], petal: ['next'], skydeck: ['title', 'next'], starlight: ['next'], glasshouse: ['title', 'next'] };
 
 /* one page's own events on the fixture hub; an album's page, so the app knows its songs */
 async function mainAt(page, design, route) {
@@ -55,7 +54,7 @@ async function mainAt(page, design, route) {
 }
 /* main on the page of songs[0]'s album, after the pages of the other songs' albums: the app knows every song and has
    asked the hub for their covers, as for songs it has shown. A cover asked for later repaints the whole page (app.js
-   repaintCovers), and a Home lead drawn again for that says nothing of the lead. */
+   repaintCovers). */
 async function mainWith(page, design, songs) {
   const albums = [...new Set(songs.map((t) => t.albumId))].reverse();
   const asked = () => page.waitForResponse((r) => r.url().endsWith('/api/catalog/resolve'));
@@ -160,34 +159,20 @@ test.describe('with main hidden', () => {
       expect.soft((await mini.evaluate(shown)).time, 'the time after a pause').toBe(p0);
     });
 
-    test(`a skip, a song that loads and one that fails show on the bar, Home's lead and the mini player / ${design}`, async ({ page }) => {
+    test(`a skip, a song that loads and one that fails show on the bar and the mini player / ${design}`, async ({ page }) => {
       const songs = [plain1, plain2, ownSong(designs.length + i)];
       const relay = await mainWith(page, design, songs);
       await trickle(page, songs[2].id, 200);   // far slower than the song plays: it waits for data
       const mini = await openMini(relay, { design });
       await page.evaluate((ids) => App.player.playList(ids, 0), songs.map((t) => t.id));
       await playing(page);
-      await page.evaluate(() => { location.hash = '#/home'; });
-      await page.waitForSelector('.disc-lead', { state: 'attached' });   // drawn, whether or not the design shows it at this width
-      if (LEAD[design].includes('next')) await expect(page.locator('.disc-lead'), 'the lead as drawn').toContainText(`next: ${songs[1].title}`);
       await hide(page);
 
       await page.evaluate(() => App.player.next());
-      const title = songs[1].title, next = songs[2].title;
+      const title = songs[1].title;
       await expect.poll(() => page.evaluate(() => document.querySelector('#pbar .pbar__title').textContent.trim()),
         { message: 'the bar\'s title' }).toBe(title);
       await expect.soft.poll(async () => (await mini.evaluate(shown)).title, { message: 'the mini player\'s title' }).toBe(title);
-      // Home's lead, drawn while the first song played: the song now playing and the next, not the ones it was drawn with
-      // (every lead that names the next song writes "next: <title>"; one that names the song lists the queue from it)
-      const lead = () => page.evaluate(() => document.querySelector('.disc-lead').textContent.replace(/\s+/g, ' '));
-      if (LEAD[design].includes('next')) {
-        await expect.soft.poll(lead, { message: 'Home\'s lead names the next song' }).toContain(`next: ${next}`);
-        expect.soft(await lead(), 'Home\'s lead no longer names the song now playing as the next').not.toContain(`next: ${title}`);
-      }
-      if (LEAD[design].includes('title')) {
-        await expect.soft.poll(lead, { message: 'Home\'s lead names the song now playing' }).toContain(title);
-        expect.soft(await lead(), 'Home\'s lead no longer names the song before the skip').not.toContain(songs[0].title);
-      }
 
       // the next song waits for its data: loading, in the mini player's words as in the bar's
       await page.evaluate(() => App.player.next());
