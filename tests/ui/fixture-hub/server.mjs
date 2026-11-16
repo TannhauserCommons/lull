@@ -37,6 +37,9 @@
 // With seekAhead, the transfer starts over where a request waits, as the hub's legs do (ADR-0014). With file (a path), the
 // song's bytes are that file's, as the browser reads a real MP3, M4A or FLAC; GET /__fixture/reads?id= lists the offsets
 // the browser asked for, with when.
+// POST /__fixture/noise { id } makes that song's generated WAV noise instead of silence, the same bytes on every
+// request, so the browser's output can line a better copy of it up by ear (align.js) and switch for real. A better copy
+// is served at GET /api/stream/<id>/copy, as the hub serves it: the song's own bytes here.
 // Source presets (ADR-0017, api.md): /api/sources/presets and PUT /api/sources/device as the hub answers them, kept with
 // the settings (a client's own changes stay its own) and announced as `settings`. The fixture's one device is
 // d-fixture; a request whose User-Agent names Android, iPhone, iPad, iPod or Mobi counts as a phone, as on the hub.
@@ -654,6 +657,20 @@ function wavHeader(n) {
   b.writeUInt32LE(RATE, 24); b.writeUInt32LE(RATE, 28); b.writeUInt16LE(1, 32); b.writeUInt16LE(8, 34); b.write('data', 36); b.writeUInt32LE(n, 40);
   return b;
 }
+/* the noise a song made noisy plays (POST /__fixture/noise): a byte of 8-bit sound for each byte of the data, by its
+   offset, so any range of it is the same on every read. Low, as a bass line is: a random level every millisecond (a
+   hash of its index), joined by straight lines. align.js's wide search hears only below ~1.5 kHz, at 3 kHz; noise as
+   broad as the WAV's 4 kHz changes between those samples, and two copies of it lined up only as well as the samples
+   happened to fall */
+const noisy = new Set();
+function level(k) {
+  let x = Math.imul(k ^ 0x9e3779b9, 0x85ebca6b); x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35); x ^= x >>> 16;
+  return ((x >>> 0) % 97) - 48;
+}
+function noiseAt(n) {
+  const k = Math.floor(n / 8), f = (n % 8) / 8;
+  return 128 + Math.round(level(k) * (1 - f) + level(k + 1) * f);
+}
 function audio(req, res, id, library) {
   const t = L.tracks[id];
   if (!t || (library && !t.saved)) return send(res, 404, { error: 'not_found', message: 'Not saved.' });
@@ -676,6 +693,7 @@ function audio(req, res, id, library) {
   if (m) { start = m[1] ? +m[1] : 0; end = m[2] ? Math.min(+m[2], total - 1) : total - 1; }
   const head = wavHeader(n);
   const body = Buffer.alloc(end - start + 1, 128);
+  if (noisy.has(id)) for (let i = Math.max(0, 44 - start); i < body.length; i++) body[i] = noiseAt(start + i - 44);
   if (start < 44) head.copy(body, 0, start, Math.min(44, end + 1));
   res.writeHead(m ? 206 : 200, { 'content-type': 'audio/wav', 'accept-ranges': 'bytes', 'content-length': body.length, ...(m ? { 'content-range': `bytes ${start}-${end}/${total}` } : {}) });
   res.end(body);
@@ -1068,7 +1086,9 @@ const server = createServer(async (req, res) => {
   }
   if (path === '/__fixture/reads') { const tr = trickles.get(q.get('id')); return send(res, 200, tr ? { size: tr.size, reads: tr.reads } : null); }
   if (path === '/__fixture/trickle' && req.method === 'POST') { const b = await readBody(req); const out = trickle(b.id, b.bytesPerS, b.seekAhead, b.file); return send(res, out.status, out.body); }
-  if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'GET' && trickles.has(m[1])) return trickleAudio(req, res, m[1]);
+  if (path === '/__fixture/noise' && req.method === 'POST') { noisy.add((await readBody(req)).id); return send(res, 204); }
+  if ((m = /^\/api\/stream\/([^/]+)(?:\/copy)?$/.exec(path)) && req.method === 'GET' && trickles.has(m[1])) return trickleAudio(req, res, m[1]);
+  if ((m = /^\/api\/stream\/([^/]+)\/copy$/.exec(path)) && req.method === 'GET') return audio(req, res, m[1], false);
   if ((m = /^\/api\/(library\/)?stream\/([^/]+)$/.exec(path)) && req.method === 'GET') return audio(req, res, m[2], !!m[1]);
   if ((m = /^\/api\/stream\/([^/]+)\/output-error$/.exec(path)) && req.method === 'POST') return outputError(res, m[1], (await readBody(req)).jobId);
   if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'DELETE') return send(res, 204);

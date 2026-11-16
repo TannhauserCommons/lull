@@ -22,17 +22,28 @@ import { fireView, got, openMain, openMini, shown, views } from './player-window
 const fixtureClient = () => `${test.info().testId}:${test.info().repeatEachIndex}`;
 const LOADING = ['finding', 'queued', 'buffering', 'stalled'];
 
-/* the catalogue's unsaved albums (Soulseek songs: a transfer the fixture can trickle) one per design, so no two tests
-   trickle the same song (the feed's first new release, which other gates trickle, is the last of them: not used here);
-   their songs whose titles neither contain nor are in another's, so a title found on a surface is that song's */
-const unsaved = L.albumIds.slice(140, 148);
-function songsOf(album) {
-  const kept = [];
+/* The catalogue's unsaved songs (Soulseek songs: a transfer the fixture can trickle), from albums no other gate streams:
+   140 starts /__fixture/unsaved-songs (better-copy, kept-seek, race-seek, like-saves, search-covers), 147 is the feed's
+   first new release (fit, sounds, toasts and others), 148 and 149 are source-details' and the broken and failing albums.
+   Only songs whose titles neither contain nor are in another's, so a title found on a surface is that song's.
+   The fixture hub keeps one transfer per song for every page: a second trickle of a song restarts the first, and a page
+   that streams a song another page trickles gets that transfer. So every test trickles songs of its own, one per test and
+   repeat (the gate runs fullyParallel), and the songs played as they are, which any test may share, are never trickled. */
+const pool = [];
+for (const album of L.albumIds.slice(141, 147)) {
   for (const id of L.albums[album].trackIds) {
     const t = L.tracks[id];
-    if (!kept.some((k) => k.title.includes(t.title) || t.title.includes(k.title))) kept.push(t);
+    if (!pool.some((k) => k.title.includes(t.title) || t.title.includes(k.title))) pool.push(t);
   }
-  return kept;
+}
+const [plain1, plain2, copied, afterCopied] = pool;   // played as they are, never trickled
+const OWN = 12;   // trickled per repeat: the mini player's and the skip's per design, the strip's and Connect's
+const REPEATS = Math.floor((pool.length - 4) / OWN);
+/* the song this test trickles: `slot` (0 to OWN - 1) of this repeat's */
+function ownSong(slot) {
+  const r = test.info().repeatEachIndex;
+  if (r >= REPEATS) throw new Error(`player-surfaces has songs of its own for ${REPEATS} repeats: --repeat-each ${REPEATS} at most`);
+  return pool[4 + r * OWN + slot];
 }
 /* what Home's lead shows of the queue, per design (its homeLead slot): lull's desk widgets show neither */
 const LEAD = { lull: [], petal: ['next'], skydeck: ['title', 'next'], starlight: ['next'], glasshouse: ['title', 'next'] };
@@ -41,6 +52,22 @@ const LEAD = { lull: [], petal: ['next'], skydeck: ['title', 'next'], starlight:
 async function mainAt(page, design, route) {
   await page.context().setExtraHTTPHeaders({ 'x-fixture-client': fixtureClient() });
   return openMain(page, { design, route });
+}
+/* main on the page of songs[0]'s album, after the pages of the other songs' albums: the app knows every song and has
+   asked the hub for their covers, as for songs it has shown. A cover asked for later repaints the whole page (app.js
+   repaintCovers), and a Home lead drawn again for that says nothing of the lead. */
+async function mainWith(page, design, songs) {
+  const albums = [...new Set(songs.map((t) => t.albumId))].reverse();
+  const asked = () => page.waitForResponse((r) => r.url().endsWith('/api/catalog/resolve'));
+  let covers = asked();
+  const relay = await mainAt(page, design, `/album/${albums[0]}`);
+  await covers;
+  for (const album of albums.slice(1)) {
+    covers = asked();
+    await page.evaluate((a) => { location.hash = '#/album/' + a; }, album);
+    await covers;
+  }
+  return relay;
 }
 const trickle = (page, id, bytesPerS) => page.request.post('/__fixture/trickle', { data: { id, bytesPerS } });
 const playing = (page) => page.waitForFunction(() => App.player.state.playing && /^(streaming|library)$/.test(App.player.state.status)
@@ -77,8 +104,8 @@ async function failAt(page) {
 test.describe('with main hidden', () => {
   designs.forEach((design, i) => {
     test(`the mini player runs on main's views: its time, the transfer and the copy that plays / ${design}`, async ({ page }) => {
-      const album = unsaved[i], songs = songsOf(album);
-      const relay = await mainAt(page, design, `/album/${album}`);
+      const songs = [ownSong(i), plain1, plain2];
+      const relay = await mainWith(page, design, songs);
       await trickle(page, songs[0].id, 24_000);   // three times the song's rate: it plays while the share arrived climbs
       const mini = await openMini(relay, { design });
       await page.evaluate((ids) => App.player.playList(ids, 0), songs.slice(0, 3).map((t) => t.id));
@@ -131,8 +158,8 @@ test.describe('with main hidden', () => {
     });
 
     test(`a skip, a song that loads and one that fails show on the bar, Home's lead and the mini player / ${design}`, async ({ page }) => {
-      const album = unsaved[i], songs = songsOf(album).slice(3, 6);
-      const relay = await mainAt(page, design, `/album/${album}`);
+      const songs = [plain1, plain2, ownSong(designs.length + i)];
+      const relay = await mainWith(page, design, songs);
       await trickle(page, songs[2].id, 200);   // far slower than the song plays: it waits for data
       const mini = await openMini(relay, { design });
       await page.evaluate((ids) => App.player.playList(ids, 0), songs.map((t) => t.id));
@@ -170,12 +197,11 @@ test.describe('with main hidden', () => {
 
   // the strip: the time as --song-pos (it has no times of its own), and the player's words in it too
   test('the strip runs on main\'s views and says what a loading or failed song is doing', async ({ page }) => {
-    const album = unsaved[5], songs = songsOf(album);
-    const short = songs.reduce((a, b) => (b.duration < a.duration ? b : a)), slow = songs.find((t) => t !== short);
-    const relay = await mainAt(page, 'lull', `/album/${album}`);
+    const song = plain1, slow = ownSong(2 * designs.length);
+    const relay = await mainWith(page, 'lull', [song, slow]);
     await trickle(page, slow.id, 200);
     const mini = await openMini(relay, { design: 'lull', style: 'strip' });
-    await page.evaluate((id) => App.player.playList([id], 0), short.id);
+    await page.evaluate((id) => App.player.playList([id], 0), song.id);
     await playing(page);
     await hide(page);
     await page.waitForTimeout(1000);
@@ -183,7 +209,7 @@ test.describe('with main hidden', () => {
     const v = await mainVersion(page);
     expect.soft(v, 'main has PlayerView.VERSION').not.toBeNull();
     expect.soft(views(relay).filter((x) => x.v !== v || !x.clock).length, 'views without the wire version or a clock').toBe(0);
-    // a hundredth of the shortest song is under 4.2 s: 5 s moves it on at least one
+    // no song is longer than 420 s, so a hundredth of it is at most 4.2 s: 5 s moves it on at least one
     relay.toMini = false; await relay.sent;
     const s0 = (await mini.evaluate(shown)).songPos;
     await page.waitForTimeout(5000);
@@ -312,8 +338,8 @@ test.describe('the listener\'s intent', () => {
 
   // Connect's `playing` is the intent (ADR-0041): a device taking over plays on what the listener wanted, loading or not
   test('is what Connect reports for a song still loading', async ({ page }) => {
-    const song = songsOf(unsaved[6])[0];
-    await mainAt(page, 'lull', `/album/${unsaved[6]}`);
+    const song = ownSong(2 * designs.length + 1);
+    await mainWith(page, 'lull', [song]);
     const reports = [];
     page.on('request', (r) => { if (r.method() === 'POST' && r.url().endsWith('/api/devices/me/state')) reports.push(r.postDataJSON()); });
     await trickle(page, song.id, 200);
@@ -323,6 +349,131 @@ test.describe('the listener\'s intent', () => {
     const mine = reports.filter((b) => b.trackId === song.id);
     expect(mine.length, 'reports of the song').toBeGreaterThan(0);
     expect(mine.at(-1).playing, 'the last report\'s playing').toBe(true);
+  });
+});
+
+// A system pause reaches the intent on every element the browser's output plays, however it got there (ADR-0041): the
+// output keeps per element whether it wants it playing. Counting the pauses and plays it asked for leaked, because
+// loading an element drops the events it had queued: a deck the output paused and loaded (the old song's, after a
+// skip with the next preloaded, a crossfade or a better-copy switch) kept a pause it never heard back, and swallowed
+// the listener's next real one once that deck played again. Each case below plays on until the reused deck is the
+// playing one, then pauses that element directly, as the system does.
+const active = () => [...window.__played].find((e) => !e.paused && /\/api\/(library\/)?stream\//.test(e.src));
+/* the playing element, marked: the deck that gets reused */
+const markFirst = (page) => page.evaluate((f) => { const el = eval(f)(); if (el) el.__mark = 'first'; return !!el; }, `(${active})`);
+const firstHolds = (page, id) => page.waitForFunction((id) => window.__audios.some((e) => e.__mark === 'first' && e.src.includes(id)), id, { timeout: 15_000 });
+const firstPlays = (page, id) => page.waitForFunction(([f, id]) => { const el = eval(f)();
+  return el && el.__mark === 'first' && el.src.includes(id) && App.player.current().id === id && App.player.state.pos > 0.3; }, [`(${active})`, id], { timeout: 20_000 });
+const nowPlays = (page, id) => page.waitForFunction((id) => App.player.current().id === id && App.player.heard() && App.player.state.pos > 0.3, id, { timeout: 20_000 });
+async function systemPauseOnFirst(page) {
+  expect(await page.evaluate(() => { const el = [...window.__played].find((e) => e.__mark === 'first' && !e.paused); if (el) el.pause(); return !!el; }),
+    'the reused deck plays').toBe(true);
+  await expect.soft.poll(() => page.evaluate(() => App.player.state.playing), { message: 'the intent after the system paused the reused deck' }).toBe(false);
+  await expect.soft.poll(async () => (await playKey(page)).label, { message: 'the play key' }).toBe('Play');
+}
+
+test.describe('a system pause on a reused deck', () => {
+  test('after a skip with the next song preloaded', async ({ page }) => {
+    const [a, b, c] = saved.slice(6, 9);
+    await outputAt(page, 'browser');
+    await page.evaluate((ids) => App.player.playList(ids, 0), [a, b, c]);
+    await playing(page);
+    expect(await markFirst(page)).toBe(true);
+    await nearEnd(page, 'browser', 80);   // within the preload's lead: the next song loads on the other deck
+    await page.waitForFunction((id) => window.__audios.some((e) => e.__mark !== 'first' && e.src.includes(id)), b, { timeout: 15_000 });
+    await page.evaluate(() => App.player.next());
+    await nowPlays(page, b);
+    await nearEnd(page, 'browser', 80);
+    await firstHolds(page, c);            // the old song's deck, paused and loaded, now holds the next one
+    await page.evaluate(() => App.player.next());
+    await firstPlays(page, c);
+    await systemPauseOnFirst(page);
+  });
+
+  test('after a crossfade that finished', async ({ page }) => {
+    const [a, b, c] = saved.slice(9, 12);
+    await outputAt(page, 'browser');
+    await page.evaluate(() => App.setPlayback({ crossfade: 3 }));
+    await page.evaluate((ids) => App.player.playList(ids, 0), [a, b, c]);
+    await playing(page);
+    await page.evaluate(() => App.setPlayback({ crossfade: 3 }));
+    expect(await markFirst(page)).toBe(true);
+    await nearEnd(page, 'browser', 6);
+    // the fade runs on the wall clock for as long as the song had left; the outgoing deck lags it (half speed, as a deck
+    // behind its clock is), so the fade finishes while that deck still plays and the output pauses and lets it go
+    await page.waitForFunction(() => App.player.state.crossfade, null, { timeout: 10_000 });
+    await page.evaluate(() => { [...window.__played].find((e) => e.__mark === 'first').playbackRate = 0.5; });
+    await nowPlays(page, b);
+    await page.evaluate(() => { [...window.__played].find((e) => e.__mark === 'first').playbackRate = 1; });
+    await nearEnd(page, 'browser', 6);
+    await firstPlays(page, c);
+    await systemPauseOnFirst(page);
+  });
+
+  test('after a better-copy switch that finished', async ({ page, request }) => {
+    const [a, b] = [copied, afterCopied].map((t) => t.id);
+    await mainWith(page, 'lull', [copied, afterCopied]);
+    await request.post('/__fixture/noise', { data: { id: a } });   // sound to line the copies up by
+    await page.evaluate((ids) => App.player.playList(ids, 0), [a, b]);
+    await playing(page);
+    expect(await markFirst(page)).toBe(true);
+    const size = 3_000_000;
+    await request.post('/__fixture/emit', { headers: { 'x-fixture-client': fixtureClient() }, data: { topic: 'stream', data: {
+      trackId: a, jobId: 'noise-job', status: 'streaming', attempt: 1, peer: 'slowpeer', format: 'MP3 128', youtube: false,
+      received: size, size, ranges: [[0, 1]], speed: 0, failedPeers: [], peersFound: 1, belowMinimum: false, unverified: false,
+      upgrade: { peer: 'quietcanal', path: 'Music\\Artist\\Album\\02 - Song.flac', format: 'FLAC 16/44.1', status: 'streaming', received: size, size, ready: true } } } });
+    await expect.poll(() => page.evaluate(() => { const u = App.player.state.upgrade; return u ? u.state + (u.note ? ': ' + u.note : '') : null; }),
+      { message: 'the better copy switched', timeout: 45_000 }).toBe('switched');
+    await nearEnd(page, 'browser', 80);
+    await firstHolds(page, b);            // the first copy's deck, let go at the switch, now holds the next song
+    await page.evaluate(() => App.player.next());
+    await firstPlays(page, b);
+    await systemPauseOnFirst(page);
+  });
+});
+
+// A system pause runs the pause path (ADR-0041): a crossfade in progress is abandoned, not finished while silent. The
+// next song isn't handed over, nothing sounds from its deck, and the song isn't recorded as completed.
+test.describe('a system pause during a crossfade', () => {
+  test('abandons the fade / browser', async ({ page }) => {
+    const [a, b] = saved.slice(12, 14);
+    await outputAt(page, 'browser');
+    const ends = [];
+    page.on('request', (r) => { if (r.method() === 'PATCH' && /\/api\/plays\//.test(r.url())) ends.push(r.postDataJSON()); });
+    await page.evaluate(() => App.setPlayback({ crossfade: 5 }));
+    await page.evaluate((ids) => App.player.playList(ids, 0), [a, b]);
+    await playing(page);
+    await page.evaluate(() => App.setPlayback({ crossfade: 5 }));
+    await nearEnd(page, 'browser', 6);
+    await page.waitForFunction(() => App.player.state.crossfade, null, { timeout: 10_000 });
+    const before = ends.length;
+    expect(await page.evaluate((a) => { const el = [...window.__played].find((e) => !e.paused && e.src.includes(a)); if (el) el.pause(); return !!el; }, a),
+      'the fading song\'s deck').toBe(true);
+    await page.waitForTimeout(7000);      // past where the fade would have ended
+    const r = await page.evaluate((b) => ({ id: App.player.current().id, index: App.player.state.index, playing: App.player.state.playing,
+      crossfade: App.player.state.crossfade, incoming: [...window.__played].filter((e) => e.src.includes(b)).map((e) => e.paused) }), b);
+    expect.soft(r.id, 'the song is still the fading one').toBe(a);
+    expect.soft(r.index, 'the queue did not move on').toBe(0);
+    expect.soft(r.playing, 'the intent').toBe(false);
+    expect.soft(r.crossfade, 'the fade').toBe(false);
+    expect.soft(r.incoming.every((p) => p), 'the next song\'s deck is silent').toBe(true);
+    expect.soft(ends.slice(before).filter((e) => e.completed).length, 'plays recorded as completed').toBe(0);
+  });
+
+  test('abandons the fade / native', async ({ page }) => {
+    const [a, b] = saved.slice(12, 14);
+    await outputAt(page, 'native');
+    await page.evaluate(() => App.setPlayback({ crossfade: 5 }));
+    await page.evaluate((ids) => App.player.playList(ids, 0), [a, b]);
+    await playing(page);
+    await page.evaluate(() => App.setPlayback({ crossfade: 5 }));
+    await nearEnd(page, 'native', 6);
+    await page.waitForFunction(() => App.player.state.crossfade, null, { timeout: 10_000 });
+    await page.evaluate(() => window.__out.system(false));
+    await expect.soft.poll(() => page.evaluate(() => App.player.state.crossfade), { message: 'the fade, abandoned through the pause path' }).toBe(false);
+    expect.soft(await page.evaluate(() => window.__out.pauses), 'the engine paused the output').toBeGreaterThan(0);
+    expect.soft(await page.evaluate(() => App.player.state.playing), 'the intent').toBe(false);
+    expect.soft(await page.evaluate(() => App.player.current().id), 'the song is still the fading one').toBe(a);
   });
 });
 

@@ -213,17 +213,21 @@ export async function restyleFanOut(browser, page) {
    nothing, for page.addInitScript. Time runs while it "plays" and the song ends as Android's (app/plugins/player,
    Engine.kt) does: into the next item it was given (`ended` with next, gapless), or, with none, a `time` with playing
    false at the end and then `ended` with next null, after which it reports not playing until it is moved or loaded.
+   With a crossfade set, it says one starts (`crossfade` with next) once the song is that close to its end, hands over
+   at the end as gapless does, and a pause abandons it (`crossfade` with next null), as the browser's output does.
    __out.at(s) moves the song on to s as playing would, __out.end() plays it to its end now, __out.system(playing) is a
    pause or play the system made (audio focus, headphones out: the `system` event, ADR-0041); switchTo commits;
-   __out.switches and __out.seeks record what it was asked */
+   __out.switches, __out.seeks and __out.pauses record what it was asked */
 export function fakeOutput() {
   const subs = {};
-  let cur = null, next = null, pos = 0, playing = false, over = false;
+  let cur = null, next = null, pos = 0, playing = false, over = false, xfade = 0, fading = false;
   const fire = (type, d) => (subs[type] || []).forEach((fn) => fn(d));
   const length = () => cur.duration || 240;
   const time = () => fire('time', { key: cur.key, position: pos, duration: length(), playing: playing && !over, waiting: false });
+  function abandonFade() { if (fading) { fading = false; fire('crossfade', { key: cur.key, next: null }); } }
   function finish() {
     const was = cur;
+    fading = false;
     if (next) { cur = next; next = null; pos = 0; fire('ended', { key: was.key, next: cur.key }); time(); return; }
     pos = length(); over = true;
     time();
@@ -233,10 +237,11 @@ export function fakeOutput() {
     if (!cur) return;
     if (playing && !over) pos = Math.min(pos + 0.1, length());
     if (playing && !over && pos >= length()) { finish(); return; }
+    if (playing && !over && next && xfade && !fading && length() - pos <= xfade) { fading = true; fire('crossfade', { key: cur.key, next: next.key }); }
     time();
   }, 100);
   window.__out = {
-    switches: [], seeks: [],
+    switches: [], seeks: [], pauses: 0,
     at(s) { pos = s; over = false; },
     end() { pos = length(); finish(); },
     system(p) { playing = p; fire('system', { key: cur.key, playing: p }); time(); },
@@ -244,13 +249,13 @@ export function fakeOutput() {
   window.LullNative = {
     player: {
       on(type, fn) { (subs[type] = subs[type] || []).push(fn); return () => { subs[type] = subs[type].filter((f) => f !== fn); }; },
-      load(item, o) { cur = item; next = null; over = false; pos = (o && o.at) || 0; playing = !o || o.autoplay !== false; },
+      load(item, o) { abandonFade(); cur = item; next = null; over = false; pos = (o && o.at) || 0; playing = !o || o.autoplay !== false; },
       play() { playing = true; },
-      pause() { playing = false; },
+      pause() { window.__out.pauses++; playing = false; abandonFade(); },
       seek(s) { window.__out.seeks.push(s); pos = s; over = false; },
       setVolume() {},
-      setNext(item) { next = item; },
-      crossfade() {},
+      setNext(item) { if (!item || !next || item.key !== next.key) abandonFade(); next = item; },
+      crossfade(s) { xfade = s; if (!s) abandonFade(); },
       switchTo(item, o) {
         window.__out.switches.push(item.url);
         return o.commit().then(() => ({ switched: true, residualMs: 0.01, offsetS: 0 }));

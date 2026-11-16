@@ -18,9 +18,12 @@ function mainWindow() {
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') });
   window.__hide = (h) => { hidden = h; document.dispatchEvent(new Event('visibilitychange')); };
-  // the <audio> decks the engine plays (never in the document): a gate pauses the playing one as the system would
-  const play = HTMLMediaElement.prototype.play;
-  window.__played = new Set();
+  // the <audio> decks the engine plays (never in the document): a gate pauses the playing one as the system would.
+  // __audios: every element made, played or not (a deck that holds the next song before it plays)
+  const play = HTMLMediaElement.prototype.play, Made = window.Audio;
+  window.__played = new Set(); window.__audios = [];
+  window.Audio = function (src) { const el = src === undefined ? new Made() : new Made(src); window.__audios.push(el); return el; };
+  window.Audio.prototype = Made.prototype;
   HTMLMediaElement.prototype.play = function () { window.__played.add(this); return play.call(this); };
   const ev = window.__TAURI__.event, emit = ev.emit, emitTo = ev.emitTo;
   ev.emit = (name, p) => { window.__toMini(name, p === undefined ? null : p); return emit(name, p); };
