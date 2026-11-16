@@ -89,7 +89,13 @@ buffered-to, received; `[data-dk-pos]`, `[data-dk-dur]`, `[data-dk-vol]`; the pl
   (`loading`, `choose`, `error`, or the link not `ok`), in place of the artist line in the strip and of the facts line
   in the device: such a theme's mini looks as before while a song plays or pauses, and its window never changes size.
 - Lines that change while a song plays (the status line, the peer's percentage) sit outside live regions; the mini
-  player announces a change of activity once, through its announcer, as the page does.
+  player announces, once, the song and what the listener didn't cause and can't see coming: a failure, a copy to
+  pick, the queue's end, lull's window away. Not the routine moves between loading, playing and paused. A theme slot
+  that keeps its own live region on the song (`[data-dk-now][aria-live]`, as the built-in slots had) announces the
+  song itself, and lull doesn't again.
+- The default markup keeps its shape and size in play: a row that is empty takes no room it didn't take before. Any
+  part that draws the player's hooks, whenever and by whatever it is drawn (a route, a slot redrawn, a tab), is painted
+  in the same task, so no hook shows unset until the next change.
 
 **Published when it changes, not when a window is visible.** `App.player.view()` derives the view from the engine.
 The engine publishes it as the `view` event when its key changes or its clock strays, from `changed()` and from the
@@ -142,7 +148,8 @@ skipping a failed song. - **The browser output** keeps, per element, whether it 
   call, while a token to tell the two apart on Android went stale. A `system` pause applies whatever song it names
   (the intent is the player's, not a song's); a `system` play only for the song that plays, and only while it can:
   after a failure or the queue's end the intent stays cleared, so the key still shows Play and its press retries or
-  starts the queue again.
+  starts the queue again. The browser output, told the play was ignored, stops that element again, so nothing sounds
+  under a failed or ended song.
 - **The Android output, in this change, only reports:** the media session's pause and play are
   applied natively as before, then sent as `system`, and so is a play-when-ready change for audio focus or noise.
   `system` goes before the `time` that shows the change, so the page never sees the intent on over silence. Like the
@@ -183,8 +190,10 @@ commit.
 - `PlayerView.pressed(view)` is what the play key shows as Pause: the view's `intent`, which is what the key's press
   acts on, so the key always does what it shows. Every terminal state clears the intent, so a failed or ended song
   shows Play; a song waiting for the listener to pick a copy shows what the listener wanted.
-- The buffering sound follows a wait for a source (`finding`, `queued`, `stalled` with no sound), not an output
-  starting a song it already holds: a resume, a song start or a gapless handover makes no sound.
+- The buffering sound follows a wait for a source: the hub finding or queueing one, a found or fallback peer not yet
+  sending, a stalled peer with no sound. Not an output starting a song it already holds: a resume, a song start or a
+  gapless handover makes no sound. Which wait it is comes from where it was reported (the hub, or the output's own
+  `waiting`), not from the status word alone, since `buffering` names both.
 - `data-playing` keeps its meaning (the listener's intent) for themes, painted from `intent`. `activity` is not a theme hook until a theme
   needs it.
 
