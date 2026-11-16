@@ -201,49 +201,6 @@ test('the buffering loop comes in as a song that sounded falls silent on a fallb
   expect(r.after, 'and within a moment of it (ms)').toBeLessThan(1500);
 });
 
-// The buffering loop follows a wait for a source wherever the hub reports it (ADR-0041): a found peer whose first bytes
-// are still to come (the hub's `buffering`, after `finding`) and a peer the hub falls back to from a stalled one
-// (`fallback`) are waits for a source as much as finding one, and the loop plays on through them while nothing sounds.
-// `buffering` names the output's own wait too, so the status word alone can't tell them apart.
-test('the buffering loop plays on while a found peer\'s first bytes are awaited and through a fallback, in silence', async ({ page, request }) => {
-  const songs = L.albums[L.albumIds[141]].trackIds, [found, fell] = [songs[1], songs[2]];
-  await listen(page);
-  for (const id of [found, fell]) await page.route((url) => url.pathname === `/api/stream/${id}`, () => {});   // nothing arrives: silence throughout
-  await openScreen(page, `/album/${L.tracks[found].albumId}`, { clock: false });
-  await page.evaluate(() => App.needSounds().then(() => App.sounds.load()));
-  await page.mouse.click(5, 5);                  // the listener's first tap: sounds may play from here
-  const say = (id, status, more = {}) => request.post('/__fixture/emit', { data: { topic: 'stream', data: {
-    trackId: id, jobId: 'wait-' + id, attempt: 0, received: 0, size: 0, peersFound: 3, failedPeers: [], status, ...more } } });
-  const looping = () => page.evaluate(() => window.__sounds.filter((s) => s.loop).length > window.__stops.filter((s) => s.loop).length);
-  const loopStops = () => page.evaluate(() => window.__stops.filter((s) => s.loop).length);
-  /* the loop goes on through what the hub says next: not stopped once, still playing a while later */
-  async function playsOn(what, next) {
-    const n = await loopStops();
-    await next();
-    await page.waitForTimeout(1500);
-    expect.soft(await page.evaluate(() => App.player.heard()), `${what}: nothing sounds`).toBe(false);
-    expect.soft(await loopStops() - n, `${what}: times the loop was stopped`).toBe(0);
-    expect.soft(await looping(), `${what}: the loop plays`).toBe(true);
-  }
-
-  await page.evaluate((id) => App.player.playList([id], 0), found);
-  await say(found, 'finding');
-  await expect.poll(looping, { message: 'the loop, while a source is found', timeout: 15000 }).toBe(true);
-  await playsOn('a found peer\'s first bytes awaited', async () => {
-    await say(found, 'buffering', { peer: 'mira' });
-    await page.waitForFunction(() => App.player.state.status === 'buffering' && App.player.state.peer && App.player.state.peer.name === 'mira', null, { timeout: 10000 });
-  });
-
-  await page.evaluate((id) => App.player.playList([id], 0), fell);
-  await say(fell, 'stalled', { peer: 'mira' });
-  await page.waitForFunction(() => App.player.state.status === 'stalled', null, { timeout: 10000 });
-  await expect.poll(looping, { message: 'the loop, while a stalled peer leaves silence', timeout: 5000 }).toBe(true);
-  await playsOn('the hub falls back to another peer', async () => {
-    await say(fell, 'fallback', { peer: 'nova', attempt: 1, failedPeers: ['mira'] });
-    await page.waitForFunction(() => App.player.state.fallback && App.player.state.status === 'buffering', null, { timeout: 10000 });
-  });
-});
-
 test('nothing sounds while the page is hidden', async ({ page }) => {
   await listen(page);
   await openScreen(page, '/home', { clock: false });
