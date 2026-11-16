@@ -123,13 +123,18 @@ async function playFirst(page, look, errors) {
   await page.evaluate(() => { const row = document.querySelector('#view .trow[data-track-id]'); return row && App.player.playTrack(row.getAttribute('data-track-id'), [row.getAttribute('data-track-id')]); });
   await page.waitForFunction(() => App.player.current(), null, { timeout: 5000 }).catch(() => errors.push('no song started'));
 }
-/* the player says the song plays (ADR-0041's view), on the route asked; a web UI from before the view had none, and
-   that one is given the time it always was */
+/* the player says the song plays (ADR-0041's view), on the route asked, and what the route brought in has finished
+   coming in (a sheet sliding up, a hero fading in: every animation that ends); a web UI from before the view had no
+   view, and that one is given the time it always was first */
 const hasView = (page) => page.evaluate(() => typeof App.player.view === 'function');
 async function settled(page, path, errors) {
-  if (!(await hasView(page))) { await page.waitForTimeout(400); return; }
-  await page.waitForFunction((p) => App.current && App.current.path === p && App.player.view().activity === 'playing', path, { timeout: 10000 })
+  if (!(await hasView(page))) await page.waitForTimeout(400);
+  else await page.waitForFunction((p) => App.current && App.current.path === p && App.player.view().activity === 'playing', path, { timeout: 10000 })
     .catch(() => errors.push('the song never played on ' + path));
+  await page.evaluate(() => Promise.race([
+    Promise.all(document.getAnimations().filter((a) => a.effect && a.effect.getComputedTiming().endTime !== Infinity).map((a) => a.finished.catch(() => {}))),
+    new Promise((ok) => setTimeout(ok, 5000)),
+  ]));
 }
 
 /* what the checks find in a picture as it stands, the picture, and the contrast against what is drawn */
