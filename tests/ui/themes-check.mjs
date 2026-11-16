@@ -23,6 +23,7 @@
 // are the full matrix.
 
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -157,15 +158,41 @@ async function judge(page, job, errors, { seeThrough = false } = {}) {
   return { ...job, file, viewport: page.viewportSize(), problems, notes };
 }
 
-/* one picture of a web UI route: the route in that design, size and mode, with a song in the player */
+/* the output's decks (new Audio()), kept where the page can reach them */
+function keepDecks() {
+  const Made = window.Audio;
+  window.__decks = [];
+  window.Audio = function (src) { const el = src === undefined ? new Made() : new Made(src); window.__decks.push(el); return el; };
+  window.Audio.prototype = Made.prototype;
+}
+/* the song held a third of the way in while it plays, so every run draws the same moment: once what the route reads
+   has come in (no skeleton left), its decks stand still (playbackRate 0, not a pause: the player still says it plays)
+   and the player seeks there in two steps, a second short and then there, each followed by the screens' tick, so what
+   follows the song on them (synced lyrics take two: one to start, one to follow) has caught up with it */
+async function holdSong(page, errors) {
+  await page.waitForFunction(() => !document.querySelector('#view .skel, #view [aria-busy="true"]'), null, { timeout: 5000 }).catch(() => {});
+  await page.evaluate(() => { for (const el of window.__decks) el.playbackRate = 0; window.__ticks = 0; App.on('tick', () => window.__ticks++); });
+  for (const back of [1, 0]) {
+    const ticks = await page.evaluate(() => window.__ticks);
+    await page.evaluate((b) => App.player.seek(Math.floor(App.player.duration() / 3) - b), back);
+    await page.waitForFunction(([b, n]) => Math.abs(App.player.state.pos - (Math.floor(App.player.duration() / 3) - b)) < 0.05 && App.player.state.playing && window.__ticks > n,
+      [back, ticks], { timeout: 10000 }).catch(() => errors.push('the song never held a third of the way in'));
+  }
+}
+
+/* one picture of a web UI route: the route in that design, size and mode, with a song in the player, held a third of
+   the way in */
 async function shootPage(job) {
   const context = await browser.newContext({ baseURL: hub.url, reducedMotion: 'reduce', ...job.route.sizes[job.size] });
   const page = await context.newPage();
   const errors = listen(page);
   try {
     await scrollbarsAsDrawn(page, job.size);
+    await page.addInitScript(keepDecks);
     await playFirst(page, { design: job.design, theme: job.mode }, errors);
     await page.evaluate((r) => { location.hash = '#' + r; }, job.route.path);
+    await settled(page, job.route.path, errors);
+    await holdSong(page, errors);
     await settled(page, job.route.path, errors);
     return await judge(page, job, errors);
   } catch (e) {
@@ -194,7 +221,9 @@ async function readMain(design) {
     }
     return await page.evaluate(() => {
       const l = window.__bridge.last;
-      return { snap: l.player, art: (l['player-art'] || {}).art || null, pkg: (l.set_theme_package || {}).package || null, base: (l.appearance || {}).base || null };
+      const t = App.player.current();
+      return { snap: l.player, song: { id: t.id, title: t.title, artist: t.artist, album: t.album || '', duration: App.player.duration() },
+        art: (l['player-art'] || {}).art || null, pkg: (l.set_theme_package || {}).package || null, base: (l.appearance || {}).base || null };
     });
   } finally { await context.close(); }
 }
@@ -215,8 +244,10 @@ async function shootMini(job) {
     await page.goto(`/desktop/wrapper.html#${hash}`);
     await page.waitForFunction((d) => !document.documentElement.hasAttribute('data-booting') && window.Designs && Designs.current === d &&
       document.querySelector('[data-dk-player]'), job.design, { timeout: 10000 });
-    if (main.snap.clock) await page.evaluate(fireView, inState(main.snap, job.route.state));
-    else await page.evaluate((s) => window.__bridge.fire('player', s), snapInState(main.snap, job.route.state));   // before the view
+    const player = playerIn(main, job.route.state);
+    const live = liveIn(main, player);
+    if (main.snap.clock) await page.evaluate(fireView, asView(player, live));
+    else await page.evaluate((s) => window.__bridge.fire('player', s), asSnapshot(player, live));   // before the view
     await page.evaluate((art) => window.__bridge.fire('player-art', { art }), main.art);
     await page.evaluate(() => document.fonts.ready);
     // the window fits its height to the player (desktop.js, fitWindow), as the app's does
@@ -228,28 +259,53 @@ async function shootMini(job) {
   } finally { await context.close(); }
 }
 
-/* main's view in a state, its clock still a third of the way in, so each picture shows the same moment. The words are the
-   player's own for that state (app.js, P.statusText) */
-function inState(view, state) {
-  const clock = { ...view.clock, pos: Math.floor((view.clock.duration || 0) / 3), at: Date.now(), rate: 0 };
-  const half = { received: 0.4, front: 0.4, parts: [[0, 0.4]], buffered: 0.3, transferring: true };
-  return {
-    playing: { ...view, activity: 'playing', intent: true, clock },
-    paused: { ...view, activity: 'paused', intent: false, clock },
-    loading: { ...view, activity: 'loading', intent: true, status: 'buffering', words: 'Buffering from a peer', transfer: { ...view.transfer, ...half }, clock },
-    failed: { ...view, activity: 'error', intent: false, status: 'failed', words: 'No Soulseek peer shares this song right now.', clock },
-  }[state];
+/* What every mini player picture shows, whichever web UI draws it: one record per state, taken from nothing a run may
+   vary. The song and its length are main's (the fixture album's first song; the theme's live values are main's too),
+   and everything else is fixed here: a third of the way in, the copy, the volume, the keys' states and the words. A web
+   UI with the view gets it as a view (fireView), one from before the view as main's snapshot, so the two windows are
+   handed the same player, and a picture that differs between two runs differs because the product changed */
+const STATES = {
+  playing: { activity: 'playing', intent: true, status: 'library', words: 'Playing from your library', received: 1 },
+  paused: { activity: 'paused', intent: false, status: 'library', words: 'Playing from your library', received: 1 },
+  loading: { activity: 'loading', intent: true, status: 'buffering', words: 'Buffering from a peer', received: 0.4 },
+  failed: { activity: 'error', intent: false, status: 'failed', words: 'No Soulseek peer shares this song right now.', received: 1 },
+};
+function playerIn(main, state = 'playing') {
+  const { duration, ...track } = main.song;
+  return { track, format: 'FLAC', lossless: true, duration, pos: Math.floor(duration / 3), ...STATES[state],
+    liked: false, saved: true, shuffle: false, repeat: 'off', volume: 0.8 };
 }
-
-/* the same for a web UI from before the view, which sent main's snapshot of the player instead */
-function snapInState(snap, state = 'playing') {
-  const at = { ...snap, pos: Math.floor((snap.duration || 0) / 3) };
+/* the live values the theme names, as main read them, with what the record above fixes said as the record says it. The
+   song's place is no part of them: the mini player works it out (ADR-0041; before the view, it moved them on itself) */
+const PLACE = ['song.pos', 'song.elapsed', 'song.buffered', 'song.received'];
+function liveIn(main, p) {
+  if (!main.snap.live) return undefined;
+  const live = { ...main.snap.live };
+  for (const k of PLACE) delete live[k];
+  const fixed = { 'player.playing': p.intent, 'player.status': p.status, 'player.status-text': p.words, 'player.volume': p.volume,
+    'player.repeat': p.repeat, 'player.shuffle': p.shuffle, 'player.muted': false, 'song.saved': p.saved, 'song.liked': p.liked,
+    'copy.peer': p.received < 1 ? 'a peer' : '' };
+  for (const [k, v] of Object.entries(fixed)) if (k in live) live[k] = v;
+  return live;
+}
+function asView(p, live) {
+  const arriving = p.received < 1;
   return {
-    playing: { ...at, playing: true },
-    paused: { ...at, playing: false },
-    loading: { ...at, playing: true, status: 'buffering', statusText: 'Buffering from a peer', received: 0.4, front: 0.4, buffered: [[0, 0.4]] },
-    failed: { ...at, playing: false, status: 'failed', statusText: 'No Soulseek peer shares this song right now.' },
-  }[state];
+    activity: p.activity, status: p.status, words: p.words, since: null, intent: p.intent, track: p.track,
+    copy: { where: arriving ? 'soulseek' : 'library', format: p.format, lossless: p.lossless, peer: arriving ? 'a peer' : null, received: p.received },
+    clock: { pos: p.pos, at: Date.now(), rate: 0, duration: p.duration, known: true },
+    transfer: { received: p.received, front: p.received, parts: [[0, p.received]], buffered: arriving ? 0.3 : 1, transferring: arriving },
+    seekWait: null, liked: p.liked, saved: p.saved, shuffle: p.shuffle, repeat: p.repeat, volume: p.volume, muted: false, crossfading: false,
+    ...(live ? { live } : {}),
+  };
+}
+function asSnapshot(p, live) {
+  return {
+    track: { title: p.track.title, artist: p.track.artist, format: p.format, lossless: p.lossless }, playing: p.intent,
+    liked: p.liked, saved: p.saved, pos: p.pos, duration: p.duration, durationKnown: true,
+    buffered: [[0, p.received]], front: p.received, received: p.received, shuffle: p.shuffle, repeat: p.repeat, volume: p.volume,
+    status: p.status, statusText: p.words, ...(live ? { live } : {}),
+  };
 }
 
 function listen(page) {
@@ -349,6 +405,17 @@ writeFileSync(join(OUT, 'index.html'), `<!doctype html><meta charset="utf-8"><me
 ${routes.map(table).join('\n')}
 `);
 
+/* what each look's mini pictures were handed, beside the sheet: two runs whose inputs.json differ drew different players */
+if (mains.size) {
+  const inputs = {};
+  for (const [design, got] of mains) {
+    const main = await got.catch(() => null);
+    if (!main) continue;
+    inputs[design] = { states: Object.fromEntries((opts.states || ['playing']).map((st) => { const p = playerIn(main, st); return [st, { ...p, live: liveIn(main, p) || null }]; })),
+      art: main.art ? createHash('sha256').update(main.art).digest('hex').slice(0, 16) : null };
+  }
+  writeFileSync(join(OUT, 'inputs.json'), JSON.stringify(inputs, null, 1));
+}
 const where = (r) => `${r.route.mini ? miniSaid(r.route) : r.route.path} ${r.design} ${r.size} ${r.mode}`;
 console.log(`${results.length} pictures in ${Math.round((Date.now() - started) / 1000)} s; ${failed.length ? failed.length + ' with something to look at' : 'nothing found'}`);
 for (const r of failed) console.log(`  ${where(r)}: ${r.problems.join('; ')}`);
