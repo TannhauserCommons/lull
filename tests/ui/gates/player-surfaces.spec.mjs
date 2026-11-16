@@ -254,12 +254,19 @@ const nearEnd = (page, output, left) => page.evaluate(([native, left]) => {
   const at = App.player.duration() - left;
   if (native) window.__out.at(at); else App.player.seek(at);
 }, [output === 'native', left]);
-/* the deck the browser's engine plays */
+/* the deck the browser's engine plays, paused or played as the system does it */
 const deck = (page, act) => page.evaluate((act) => {
   const el = [...window.__played].find((e) => /\/api\/(library\/)?stream\//.test(e.src) && (act === 'play' ? e.paused : !e.paused));
-  if (el) el[act]();
+  if (el) { el[act](); if (act === 'pause') window.__systemAt = window.__pauseCalls.length; }
   return !!el;
 }, act);
+/* what paused the element the system paused, after it did (window.__systemAt, set as it paused it). The engine only
+   records a system pause (ADR-0041): answering it with the output's pause halts the deck it just heard from, and tells
+   the platform the listener paused (iOS then doesn't resume after a call) */
+const pausedAgain = (page) => page.evaluate(() => {
+  const calls = window.__pauseCalls, at = window.__systemAt;
+  return calls.slice(at).filter((e) => e === calls[at - 1]).length;
+});
 
 test.describe('the listener\'s intent', () => {
   for (const output of outputs) {
@@ -294,10 +301,13 @@ test.describe('the listener\'s intent', () => {
       await outputAt(page, output);
       await page.evaluate((id) => App.player.playList([id], 0), saved[2]);
       await playing(page);
+      const pauses = output === 'native' ? await page.evaluate(() => window.__out.pauses) : 0;
       if (output === 'native') await page.evaluate(() => window.__out.system(false));
       else expect(await deck(page, 'pause'), 'found the deck the engine plays').toBe(true);
       await expect.soft.poll(() => page.evaluate(() => App.player.state.playing), { message: 'the intent after the system paused' }).toBe(false);
       await expect.soft.poll(async () => (await playKey(page)).label, { message: 'the play key' }).toBe('Play');
+      expect.soft(output === 'native' ? await page.evaluate((n) => window.__out.pauses - n, pauses) : await pausedAgain(page),
+        'the engine paused the output in answer').toBe(0);
       if (output === 'native') await page.evaluate(() => window.__out.system(true));
       else expect(await deck(page, 'play'), 'found the paused deck').toBe(true);
       await expect.soft.poll(() => page.evaluate(() => App.player.state.playing), { message: 'the intent after the system played' }).toBe(true);
@@ -366,10 +376,14 @@ const firstPlays = (page, id) => page.waitForFunction(([f, id]) => { const el = 
   return el && el.__mark === 'first' && el.src.includes(id) && App.player.current().id === id && App.player.state.pos > 0.3; }, [`(${active})`, id], { timeout: 20_000 });
 const nowPlays = (page, id) => page.waitForFunction((id) => App.player.current().id === id && App.player.heard() && App.player.state.pos > 0.3, id, { timeout: 20_000 });
 async function systemPauseOnFirst(page) {
-  expect(await page.evaluate(() => { const el = [...window.__played].find((e) => e.__mark === 'first' && !e.paused); if (el) el.pause(); return !!el; }),
-    'the reused deck plays').toBe(true);
+  expect(await page.evaluate(() => {
+    const el = [...window.__played].find((e) => e.__mark === 'first' && !e.paused);
+    if (el) { el.pause(); window.__systemAt = window.__pauseCalls.length; }
+    return !!el;
+  }), 'the reused deck plays').toBe(true);
   await expect.soft.poll(() => page.evaluate(() => App.player.state.playing), { message: 'the intent after the system paused the reused deck' }).toBe(false);
   await expect.soft.poll(async () => (await playKey(page)).label, { message: 'the play key' }).toBe('Play');
+  expect.soft(await pausedAgain(page), 'the engine paused the output in answer').toBe(0);
 }
 
 test.describe('a system pause on a reused deck', () => {
@@ -432,8 +446,10 @@ test.describe('a system pause on a reused deck', () => {
   });
 });
 
-// A system pause runs the pause path (ADR-0041): a crossfade in progress is abandoned, not finished while silent. The
-// next song isn't handed over, nothing sounds from its deck, and the song isn't recorded as completed.
+// An output that reports a system pause has already stopped what it was doing (ADR-0041): a crossfade in progress is
+// abandoned, not finished while silent. The next song isn't handed over, nothing sounds from its deck, and the song
+// isn't recorded as completed. The engine only records the pause; it doesn't pause the output in answer. A play the
+// system then makes on the abandoned fade's incoming deck, which the output isn't playing, is halted, not followed.
 test.describe('a system pause during a crossfade', () => {
   test('abandons the fade / browser', async ({ page }) => {
     const [a, b] = saved.slice(12, 14);
@@ -447,8 +463,11 @@ test.describe('a system pause during a crossfade', () => {
     await nearEnd(page, 'browser', 6);
     await page.waitForFunction(() => App.player.state.crossfade, null, { timeout: 10_000 });
     const before = ends.length;
-    expect(await page.evaluate((a) => { const el = [...window.__played].find((e) => !e.paused && e.src.includes(a)); if (el) el.pause(); return !!el; }, a),
-      'the fading song\'s deck').toBe(true);
+    expect(await page.evaluate((a) => {
+      const el = [...window.__played].find((e) => !e.paused && e.src.includes(a));
+      if (el) { el.pause(); window.__systemAt = window.__pauseCalls.length; }
+      return !!el;
+    }, a), 'the fading song\'s deck').toBe(true);
     await page.waitForTimeout(7000);      // past where the fade would have ended
     const r = await page.evaluate((b) => ({ id: App.player.current().id, index: App.player.state.index, playing: App.player.state.playing,
       crossfade: App.player.state.crossfade, incoming: [...window.__played].filter((e) => e.src.includes(b)).map((e) => e.paused) }), b);
@@ -458,6 +477,14 @@ test.describe('a system pause during a crossfade', () => {
     expect.soft(r.crossfade, 'the fade').toBe(false);
     expect.soft(r.incoming.every((p) => p), 'the next song\'s deck is silent').toBe(true);
     expect.soft(ends.slice(before).filter((e) => e.completed).length, 'plays recorded as completed').toBe(0);
+    expect.soft(await pausedAgain(page), 'the engine paused the output in answer').toBe(0);
+
+    expect(await page.evaluate((b) => { const els = [...window.__played].filter((e) => e.src.includes(b) && e.paused); els.forEach((e) => e.play()); return els.length; }, b),
+      'the incoming deck, played by the system').toBeGreaterThan(0);
+    await expect.soft.poll(() => page.evaluate((b) => [...window.__played].filter((e) => e.src.includes(b)).every((e) => e.paused), b),
+      { message: 'the incoming deck, halted' }).toBe(true);
+    expect.soft(await page.evaluate(() => App.player.state.playing), 'the intent after the system played the incoming deck').toBe(false);
+    expect.soft(await page.evaluate(() => App.player.current().id), 'the song after the system played the incoming deck').toBe(a);
   });
 
   test('abandons the fade / native', async ({ page }) => {
@@ -469,12 +496,31 @@ test.describe('a system pause during a crossfade', () => {
     await page.evaluate(() => App.setPlayback({ crossfade: 5 }));
     await nearEnd(page, 'native', 6);
     await page.waitForFunction(() => App.player.state.crossfade, null, { timeout: 10_000 });
-    await page.evaluate(() => window.__out.system(false));
-    await expect.soft.poll(() => page.evaluate(() => App.player.state.crossfade), { message: 'the fade, abandoned through the pause path' }).toBe(false);
-    expect.soft(await page.evaluate(() => window.__out.pauses), 'the engine paused the output').toBeGreaterThan(0);
+    const pauses = await page.evaluate(() => window.__out.pauses);
+    await page.evaluate(() => window.__out.system(false));   // the output abandons its fade, then says so
+    await expect.soft.poll(() => page.evaluate(() => App.player.state.crossfade), { message: 'the fade, abandoned' }).toBe(false);
+    expect.soft(await page.evaluate((n) => window.__out.pauses - n, pauses), 'the engine paused the output in answer').toBe(0);
     expect.soft(await page.evaluate(() => App.player.state.playing), 'the intent').toBe(false);
     expect.soft(await page.evaluate(() => App.player.current().id), 'the song is still the fading one').toBe(a);
   });
+});
+
+// A system pause applies whatever song it names: the intent is the player's, not a song's. A system play applies only
+// to the song that plays (ADR-0041). Here the song a pause or play names has already ended into the next.
+test('a system pause naming the song before stops the intent; a play naming it does not / native', async ({ page }) => {
+  const [a, b] = saved.slice(0, 2);
+  await outputAt(page, 'native');
+  await page.evaluate((ids) => App.player.playList(ids, 0), [a, b]);
+  await playing(page);
+  const before = await page.evaluate(() => window.__out.keys[0]);
+  await nearEnd(page, 'native', 1.5);
+  await page.waitForFunction((id) => App.player.current().id === id && App.player.state.pos > 0.5, b, { timeout: 15_000 });
+  // the fake's events reach the engine at once: each step's intent is read straight after it
+  const intentAfter = (p, key) => page.evaluate(([p, key]) => { window.__out.system(p, key || undefined); return App.player.state.playing; }, [p, key]);
+  expect.soft(await intentAfter(false, before), 'the intent after a system pause naming the song before').toBe(false);
+  expect(await intentAfter(true, null), 'the intent after a system play of the song that plays').toBe(true);
+  expect(await intentAfter(false, null), 'the intent after a system pause of the song that plays').toBe(false);
+  expect.soft(await intentAfter(true, before), 'the intent after a system play naming the song before').toBe(false);
 });
 
 /* main playing a saved song, and a mini player that has its views */

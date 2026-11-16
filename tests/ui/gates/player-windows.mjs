@@ -25,6 +25,11 @@ function mainWindow() {
   window.Audio = function (src) { const el = src === undefined ? new Made() : new Made(src); window.__audios.push(el); return el; };
   window.Audio.prototype = Made.prototype;
   HTMLMediaElement.prototype.play = function () { window.__played.add(this); return play.call(this); };
+  // every pause() call, in order: what paused an element again after the system did (ADR-0041: the engine never answers
+  // a system pause by pausing the output)
+  const pause = HTMLMediaElement.prototype.pause;
+  window.__pauseCalls = [];
+  HTMLMediaElement.prototype.pause = function () { window.__pauseCalls.push(this); return pause.call(this); };
   const ev = window.__TAURI__.event, emit = ev.emit, emitTo = ev.emitTo;
   ev.emit = (name, p) => { window.__toMini(name, p === undefined ? null : p); return emit(name, p); };
   ev.emitTo = (to, name, p) => { if (to !== 'main') window.__toMini(name, p === undefined ? null : p); return emitTo(to, name, p); };

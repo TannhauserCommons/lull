@@ -215,9 +215,11 @@ export async function restyleFanOut(browser, page) {
    false at the end and then `ended` with next null, after which it reports not playing until it is moved or loaded.
    With a crossfade set, it says one starts (`crossfade` with next) once the song is that close to its end, hands over
    at the end as gapless does, and a pause abandons it (`crossfade` with next null), as the browser's output does.
-   __out.at(s) moves the song on to s as playing would, __out.end() plays it to its end now, __out.system(playing) is a
-   pause or play the system made (audio focus, headphones out: the `system` event, ADR-0041); switchTo commits;
-   __out.switches, __out.seeks and __out.pauses record what it was asked */
+   __out.at(s) moves the song on to s as playing would, __out.end() plays it to its end now, __out.system(playing, key)
+   is a pause or play the system made (audio focus, headphones out: the `system` event, ADR-0041), on the song playing
+   or the one `key` names; a pause on the song playing abandons a crossfade first, as an output that reports one has
+   (ADR-0041). switchTo commits. __out.switches, __out.seeks and __out.pauses record what it was asked, __out.keys every
+   item it was given */
 export function fakeOutput() {
   const subs = {};
   let cur = null, next = null, pos = 0, playing = false, over = false, xfade = 0, fading = false;
@@ -241,20 +243,23 @@ export function fakeOutput() {
     time();
   }, 100);
   window.__out = {
-    switches: [], seeks: [], pauses: 0,
+    switches: [], seeks: [], pauses: 0, keys: [],
     at(s) { pos = s; over = false; },
     end() { pos = length(); finish(); },
-    system(p) { playing = p; fire('system', { key: cur.key, playing: p }); time(); },
+    system(p, key = cur.key) {
+      if (key === cur.key) { playing = p; if (!p) abandonFade(); }
+      fire('system', { key, playing: p }); time();
+    },
   };
   window.LullNative = {
     player: {
       on(type, fn) { (subs[type] = subs[type] || []).push(fn); return () => { subs[type] = subs[type].filter((f) => f !== fn); }; },
-      load(item, o) { abandonFade(); cur = item; next = null; over = false; pos = (o && o.at) || 0; playing = !o || o.autoplay !== false; },
+      load(item, o) { window.__out.keys.push(item.key); abandonFade(); cur = item; next = null; over = false; pos = (o && o.at) || 0; playing = !o || o.autoplay !== false; },
       play() { playing = true; },
       pause() { window.__out.pauses++; playing = false; abandonFade(); },
       seek(s) { window.__out.seeks.push(s); pos = s; over = false; },
       setVolume() {},
-      setNext(item) { if (!item || !next || item.key !== next.key) abandonFade(); next = item; },
+      setNext(item) { if (item) window.__out.keys.push(item.key); if (!item || !next || item.key !== next.key) abandonFade(); next = item; },
       crossfade(s) { xfade = s; if (!s) abandonFade(); },
       switchTo(item, o) {
         window.__out.switches.push(item.url);
