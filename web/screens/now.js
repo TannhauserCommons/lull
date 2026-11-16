@@ -21,9 +21,6 @@
   var pendingFocus = null;                             // data-fk of the focused control before a re-render
 
   function cur() { return P.current(); }
-  /* the play key's state, from the player's view (ADR-0041): Pause while the song plays or waits to; a key that is waiting spins */
-  function playingNow() { return PlayerView.pressed(P.view()); }
-  function busy() { return P.view().activity === 'loading'; }
   function onRoute() { return App.current.path === '/now'; }
   /* the song plays from storage (the library, or a download on this device), not from a transfer; the copy says so */
   function fromLibrary() { var w = P.playingCopy().where; return w === 'library' || w === 'device'; }
@@ -138,10 +135,7 @@
   }
   function selectLabel() { var next = PAGES[(PAGES.indexOf(view.page) + 1) % PAGES.length]; return 'Screen page: ' + view.page + '. Show ' + next + ' page'; }
 
-  function playBtn(size) {
-    var on = playingNow();
-    return html`<button class="btn-gloss btn-gloss--${size}${busy() ? ' is-buffering' : ''}" data-act="play" data-bind="play" aria-label="${on ? 'Pause' : 'Play'}" data-tip="${on ? 'Pause (Space)' : 'Play (Space)'}" data-fk="a-${size}"><i class="btn-gloss__spin" aria-hidden="true"></i>${icon(on ? 'pause' : 'play', null, on ? '' : 'ic-play')}</button>`;
-  }
+  function playBtn(size) { return ui.playButton(size, 'a-' + size); }   // its state is the painter's (ADR-0041)
   function likeBtn(size) {
     var t = cur(), on = t && App.isLiked(t.id);
     if (!t) return html`<button class="btn-gloss btn-gloss--${size}" data-act="now-nothing" aria-label="Like" data-fk="b-${size}">${icon('heart')}</button>`;
@@ -172,7 +166,7 @@
         </div>
         <div class="device__ab">
           <span class="device__key device__key--b"><span data-now="b">${likeBtn(52)}</span><span data-now="b-label" aria-hidden="true">${t && App.isLiked(t.id) ? 'liked' : 'like'}</span></span>
-          <span class="device__key device__key--a"><span data-now="a">${playBtn(64)}</span><span data-now="a-label" aria-hidden="true">${playingNow() ? 'pause' : 'play'}</span></span>
+          <span class="device__key device__key--a"><span data-now="a">${playBtn(64)}</span><span data-now="a-label" aria-hidden="true">play</span></span>
         </div>
       </div>
       <div class="device__pills">

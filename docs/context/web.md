@@ -220,10 +220,12 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   `loading`. Nothing else decides "playing" or "busy": the wave's motion, the play keys' Pause and spinner
   (`PlayerView.pressed`: the view's `intent`, which is `ps.playing` and what the key's press acts on, so every end and
   failure shows Play), Now Playing's light and state words, the buffering loop's sound (`PlayerView.waitsForSource`: a
-  wait for a source with nothing sounding, `finding`, `queued` or `stalled`; never a resume, a song's start or a gapless
-  handover) all read it. `data-playing` stays the listener's intent, for themes, painted from `intent`.
+  wait for a source with nothing sounding, as the hub reports it: `finding`, `queued`, `stalled`, a found peer's first
+  bytes (its `buffering`) and a `fallback`; never the output's own wait for data, a resume, a song's start or a gapless
+  handover, which also say `buffering`) all read it. `data-playing` stays the listener's intent, for themes, painted from `intent`.
   `words` is the state without a wait's running count ("Finding a source", not "..., 7 s"), so the view's key doesn't
-  change each second of a wait; `since` is when the wait began (ms, or null), and a surface that shows the count draws it
+  change each second of a wait; `since` is when a wait for a source began (ms, or null: the engine's `ps.waitSince`, set where the hub reports the
+  wait, so it says which `buffering` is the hub's and which the output's), and a surface that shows the count draws it
   from there (the player bar's state tab, `P.statusText(true)`).
   The clock is `{ pos, at, rate, duration, known }`, moving at rate 1 only while playing; surfaces place the song with
   `PlayerView.posAt(view, now)`. The view's `transfer.buffered` is the end the output holds (`song.buffered`).
@@ -244,9 +246,11 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   (`PlayerView.find`). A write that wouldn't change a value is skipped. Markup builders (`renderBar`, Now Playing, the
   mini player's `nowMarkup`) draw the song alone, and `data-playing` is `PlayerView.pressed(view)`. The painter never
   writes over a theme's markup: it points a `<use>` of lull's sprite (`#i-...`) at the new icon and fills an empty
-  mini player key (`[data-dk]`) with lull's, but leaves a theme's own icon, words and CSS-drawn keys alone; a seek line
+  mini player key (`[data-dk]`) with lull's (play-pause and like only: an empty repeat, shuffle or save key is the theme's, drawn with CSS), but leaves a theme's own icon, words and CSS-drawn keys alone; Now Playing's pills copied from lull's older markup (`.now .device__pill--shuffle`, `--repeat`, with only `data-act`) are kept pressed as before; a seek line
   is the player's only inside `[data-dk-player]`, and every `.wave` there is (a theme may build its own in). A key's
-  shortcut is `aria-keyshortcuts`, never words in its `aria-label`. A change paints once: the bar's render, which ends
+  shortcut is `aria-keyshortcuts`, never words in its `aria-label`, and lull's own markup carries it (the painter doesn't write it). `App.patch`, where every drawing
+  happens (a screen, a part redrawn, a panel's tab, the bar), paints the markup it drew in the same task when that carries
+  any of `PlayerView.HOOKS`, so a paused song's place is on a `[data-live]` the moment it is drawn. A change paints once: the bar's render, which ends
   in the painter, covers the `view` the same change publishes; a `view` from the clock or the output's sound paints
   on its own. `--song-pos` has one writer on the parts the painter keeps (live.js leaves it to it).
 - **The intent follows the output.** `ps.playing` is what the listener asked for. An output that pauses or resumes for a

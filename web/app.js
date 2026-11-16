@@ -86,8 +86,13 @@
   function patch(el, markup) {
     var tpl = document.createElement('template');
     tpl.innerHTML = String(markup == null ? '' : markup);
+    var hooked = !!tpl.content.querySelector(PlayerView.HOOKS);
     patchChildren(el, decorated(el, tpl.content));
     pruneFills();
+    /* the one place drawing happens (a screen, a part, a panel's tab, the bar): markup with the player's hooks is painted in the
+       task it is drawn in, so a paused song's place is on it at once, with no tick or player event to come. Inside a change the
+       painter runs once at its end, over everything drawn */
+    if (hooked && !inChange && P && P.view) PlayerView.paint(el, P.view(), Date.now());
     return el;
   }
   /* where the page decorates what screens render (card heads, see ui.cardHeads), the new markup gets the same
@@ -1285,10 +1290,11 @@
     var on = App.isLiked(id), t = M.track(id);
     return html`<button class="btn-icon btn-icon--bare ${on ? 'is-liked' : ''} ${cls || ''}" data-act="like" data-id="${id}" data-like="${id}" aria-pressed="${on ? 'true' : 'false'}" aria-label="Like ${t ? t.title : ''}" data-tip="${on ? 'Liked' : 'Like'}">${icon(on ? 'heart-fill' : 'heart')}</button>`;
   };
-  /* the round play key (sizes with a .btn-gloss--N class: 40 48 52 56 64), kept by data-bind="play" (renderBar) */
-  ui.playButton = function (size) {
+  /* the round play key (sizes with a .btn-gloss--N class: 40 48 52 56 64), kept by data-bind="play" (renderBar); `fk` is its
+     focus key where a screen puts it back after a redraw */
+  ui.playButton = function (size, fk) {
     var on = PlayerView.pressed(P.view());
-    return html`<button class="btn-gloss btn-gloss--${size || 56}" data-act="play" data-bind="play" aria-label="${on ? 'Pause' : 'Play'}" data-tip="${on ? 'Pause (Space)' : 'Play (Space)'}"><i class="btn-gloss__spin" aria-hidden="true"></i>${icon(on ? 'pause' : 'play', null, on ? '' : 'ic-play')}</button>`;
+    return html`<button class="btn-gloss btn-gloss--${size || 56}" data-act="play" data-bind="play" aria-label="${on ? 'Pause' : 'Play'}" aria-keyshortcuts="Space" data-tip="${on ? 'Pause (Space)' : 'Play (Space)'}"${fk ? raw(' data-fk="' + fk + '"') : ''}><i class="btn-gloss__spin" aria-hidden="true"></i>${icon(on ? 'pause' : 'play', null, on ? '' : 'ic-play')}</button>`;
   };
 
   /* Track row. opts: { index, dense, added (ISO), draggable (default true), showSources, dup ('saved'|'better'),
@@ -2086,7 +2092,7 @@
   var P = App.player = {};
   var saved0 = storage('player') || {};
   var ps = P.state = {
-    queue: [], index: 0, playing: false, pos: 0, status: 'idle',
+    queue: [], index: 0, playing: false, pos: 0, status: 'idle', waitSince: null,
     received: 0, arrived: [], buffered: [], aheadS: null, durationKnown: false, seekWait: null,
     peer: null, peersFound: 0, queuePos: 0, fallback: null, failedPeers: [], source: null,
     crossfade: false, shuffle: !!saved0.shuffle, repeat: saved0.repeat || 'off',
@@ -2104,15 +2110,15 @@
   function changed(kind) {
     inChange++;
     var v;
-    try { App.emit('player', kind || 'state'); noteHeard(); v = publishView(); } finally { inChange--; }
+    try { App.emit('player', kind || 'state'); v = publishView(); noteHeard(v); } finally { inChange--; }
     if (!inChange) PlayerView.paint(document, v, Date.now());
     persistSoon();
   }
-  /* music is heard: the listener wants it playing and sound is coming out (not waiting for data). P.heard() and the
-     `heard` event (true or false, on each change) are what the UI sounds keep quiet for (ADR-0081). */
+  /* music is heard: the view says the player plays (the listener wants it and sound is coming out, not waiting for data).
+     P.heard() and the `heard` event (true or false, on each change) are what the UI sounds keep quiet for (ADR-0081). */
   var heardWas = false;
-  P.heard = function () { return !!(ps.playing && sound && sound.playing && !sound.waiting); };
-  function noteHeard() { var h = P.heard(); if (h !== heardWas) { heardWas = h; App.emit('heard', h); } }
+  P.heard = function () { return P.view().activity === 'playing'; };
+  function noteHeard(view) { var h = view.activity === 'playing'; if (h !== heardWas) { heardWas = h; App.emit('heard', h); } }
 
   /* the one player view (web/player-view.js, ADR-0041): what every surface shows of the player. `activity` is the answer
      to "is it playing, loading, paused": no surface decides that from the status on its own. It is published as the
@@ -2120,7 +2126,7 @@
   P.view = function () {
     var t = P.current(), bar = P.transferBar(), copy = t ? P.playingCopy() : null;
     return PlayerView.derive({
-      track: t, status: ps.status, intent: ps.playing, sound: sound, words: t ? P.stateWords() : '', since: t ? P.waitSince() : null,
+      track: t, status: ps.status, intent: ps.playing, sound: sound, words: t ? P.stateWords() : '', since: t ? ps.waitSince : null,
       copy: copy && Object.assign({ lossless: !!(M.formats[copy.format] || {}).lossless }, copy),
       pos: ps.pos, duration: P.duration(), durationKnown: ps.durationKnown, received: ps.received, front: bar.front, parts: bar.parts,
       buffered: ps.buffered,
@@ -2135,6 +2141,9 @@
     viewLast = v; viewKey = k; App.emit('view', v);
     return v;
   }
+  /* a like or a save is no player event, and it changes the view (liked, saved): published as any change of its key is */
+  App.on('like', function () { publishView(); });
+  App.on('save', function () { publishView(); });
 
   /* playback settings (Settings > Playback; GET /api/settings), defaults until the server answers */
   var playback = { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, radioWhenQueueEnds: true, volumeStep: 5, prefetchCount: 2,
@@ -2194,8 +2203,12 @@
     ps.pos = 0; duration = 0; ps.fallback = null; ps.failedPeers = []; ps.error = null; ps.crossfade = false;
     ps.peer = null; ps.peersFound = 0; ps.queuePos = 0; ps.durationKnown = false; lastRanges = [];
     ps.belowMinimum = false; ps.unverified = false; ps.choices = null; ps.upgrade = null; ps.seekWait = null; ps.aheadS = null;
-    sound = null;
+    sound = null; waitFor(false);
   }
+  /* where a wait for a source stands (ADR-0041): the hub's finding, queued, stalled, its found peer's first bytes (buffering) and a
+     fallback, with when it began (the view's `since`: the buffering sound and the wait's count follow it). The output's own wait
+     for data (a stream it holds, a gapless handover) is none: `buffering` names both, so the status can't tell them apart */
+  function waitFor(on) { if (!on) ps.waitSince = null; else if (ps.waitSince == null) ps.waitSince = Date.now(); }
   /* begin playing queue[index]: opts { autoplay (default true), at (seconds), reason (how the last song ended), forceSoulseek } */
   function load(index, opts) {
     opts = opts || {};
@@ -2205,18 +2218,18 @@
     var was = [cur, nxt], e = ps.queue[ps.index], seq = ++loadSeq;
     cur = e || null; nxt = null;
     was.forEach(letGo);
-    if (!e || !M.track(e.trackId)) { out.pause(); out.setNext(null); ps.status = 'idle'; ps.playing = false; ps.source = null; changed('track'); return; }
+    if (!e || !M.track(e.trackId)) { out.pause(); out.setNext(null); ps.status = 'idle'; waitFor(false); ps.playing = false; ps.source = null; changed('track'); return; }
     e.attempt = null; e.job = null; e.better = null; e.last = null; if (opts.forceSoulseek) e.complete = false;
     ps.source = e.source || null;
     ps.playing = opts.autoplay !== false;
     var library = App.isSaved(e.trackId) && !opts.forceSoulseek;
-    ps.status = library ? 'library' : 'finding'; ps.received = library ? 1 : 0; ps.arrived = library ? [[0, 1]] : []; ps.buffered = [];
+    ps.status = library ? 'library' : 'finding'; waitFor(!library); ps.received = library ? 1 : 0; ps.arrived = library ? [[0, 1]] : []; ps.buffered = [];
     ps.durationKnown = library;
     if (opts.at) ps.pos = opts.at;
     changed('track');
     itemFor(e, opts.forceSoulseek).then(function (it) {
       if (seq !== loadSeq || !it) return;
-      if (!e.soulseek && ps.status === 'finding') { ps.status = 'library'; ps.received = 1; ps.arrived = [[0, 1]]; ps.durationKnown = true; changed('status'); }
+      if (!e.soulseek && ps.status === 'finding') { ps.status = 'library'; waitFor(false); ps.received = 1; ps.arrived = [[0, 1]]; ps.durationKnown = true; changed('status'); }
       out.load(it, { at: opts.at || 0, autoplay: ps.playing }).catch(playRefused);
       applyLevels();
       if (out.eagerNext) preloadNext();
@@ -2288,7 +2301,7 @@
   }
   function endQueue(auto) {
     endPlay(auto ? 'completed' : 'skipped');
-    ps.status = 'ended'; ps.playing = false; ps.pos = P.duration(); out.pause();
+    ps.status = 'ended'; waitFor(false); ps.playing = false; ps.pos = P.duration(); out.pause();
     changed('ended');
   }
   P.prev = function () {
@@ -2688,21 +2701,21 @@
     switch (ev.status) {
       /* streaming `below: ask`: no copy passes the minimum; the listener picks one of `choices` (or skips) */
       case 'choose':
-        ps.status = 'choose'; ps.choices = ev.choices || [];
+        ps.status = 'choose'; waitFor(false); ps.choices = ev.choices || [];
         if (!e.asked) { e.asked = true; App.hooks.sourcePicker(e.trackId, { choose: true }); }
         break;
       case 'finding': case 'queued': case 'stalled':
-        if (!heard || ev.status === 'stalled') ps.status = ev.status; break;
-      case 'buffering': if (!heard) ps.status = 'buffering'; break;
-      case 'streaming': ps.status = heard || !ps.playing ? 'streaming' : 'buffering'; ps.fallback = null; break;
+        if (!heard || ev.status === 'stalled') { ps.status = ev.status; waitFor(true); } break;
+      case 'buffering': if (!heard) { ps.status = 'buffering'; waitFor(true); } break;
+      case 'streaming': ps.status = heard || !ps.playing ? 'streaming' : 'buffering'; waitFor(false); ps.fallback = null; break;
       case 'fallback':
         ps.fallback = { from: prevPeer, to: ev.peer, n: ps.failedPeers.length + 1, of: ps.peersFound || null };
-        ps.status = 'buffering';
+        ps.status = 'buffering'; waitFor(true);
         if (ev.peer && ev.peer !== prevPeer) App.toast('Now from ' + ev.peer, { group: 'now-from', icon: 'soulseek', kind: 'ok' });
         break;
       case 'failed':
         if (ps.playing) skipFailed(cur);
-        ps.status = 'failed'; ps.playing = false; out.pause(); ps.seekWait = null;
+        ps.status = 'failed'; waitFor(false); ps.playing = false; out.pause(); ps.seekWait = null;
         ps.error = ev.error || null;
         cur.resolve = 'none';
         break;
@@ -2815,7 +2828,7 @@
     var t = P.current();
     function show(status, text) {
       if (e !== cur || P.current() !== t) return;
-      ps.playing = false; ps.status = status; ps.error = text; out.pause();
+      ps.playing = false; ps.status = status; waitFor(false); ps.error = text; out.pause();
       changed('status');
     }
     if (e.soulseek) {
@@ -2867,7 +2880,7 @@
     if (next) { if (nxt && nxt.uid === next) handOver(nxt); return; }
     /* a Soulseek response that ends early is a fallback in progress, not the song's end: the `stream` event
        with the next attempt reopens it */
-    if (LullRules.endedEarly(cur.soulseek, cur.complete, P.duration(), ps.pos)) { ps.status = 'buffering'; changed('status'); return; }
+    if (LullRules.endedEarly(cur.soulseek, cur.complete, P.duration(), ps.pos)) { ps.status = 'buffering'; waitFor(false); changed('status'); return; }
     P.next(true);
   }
 
@@ -2881,13 +2894,12 @@
     ps.pos = d.position;
     var soundMoved = !sound || sound.playing !== d.playing || sound.waiting !== d.waiting;
     sound = { playing: d.playing, waiting: d.waiting };
-    noteHeard();
     if (d.playing && !d.waiting && (ps.status === 'finding' || ps.status === 'queued' || ps.status === 'buffering' || ps.status === 'stalled' || ps.status === 'library' || ps.status === 'streaming')) {
-      ps.status = cur.soulseek ? 'streaming' : 'library'; ps.error = null;
+      ps.status = cur.soulseek ? 'streaming' : 'library'; waitFor(false); ps.error = null;
       beginPlay(P.current());
-    } else if (d.waiting && ps.playing && (ps.status === 'streaming' || ps.status === 'library')) ps.status = 'buffering';
+    } else if (d.waiting && ps.playing && (ps.status === 'streaming' || ps.status === 'library')) { ps.status = 'buffering'; waitFor(false); }
     if (ps.status !== was) changed('status');
-    else if (soundMoved) publishView();   // the sound alone can make a song play or wait
+    else if (soundMoved) noteHeard(publishView());   // the sound alone can make a song play or wait
   }
   out.on('time', onTime);
   out.on('buffered', function (d) { if (isCur(d.key)) { lastRanges = d.ranges; updateBuffered(); } });
@@ -2904,9 +2916,11 @@
      whatever song it names (the intent is the player's, not a song's); a play only the song that plays, and only while
      it can: after a failure or the queue's end the intent stays cleared, so the key shows Play and its press retries or
      starts the queue again. It is never guessed from a `time` (a song's end, a clear and a seek after the end report
-     playing: false too) */
+     playing: false too). A play on a song that is over is ignored, and the output is told so (pause): it stops what the
+     system started, so nothing sounds under a failed or ended song */
   out.on('system', function (d) {
-    if ((d.playing && (!isCur(d.key) || /^(idle|error|ended)$/.test(P.view().activity))) || ps.playing === d.playing) return;
+    if (d.playing && isCur(d.key) && /^(idle|error|ended)$/.test(P.view().activity)) { out.pause(); return; }
+    if ((d.playing && !isCur(d.key)) || ps.playing === d.playing) return;
     ps.playing = d.playing; changed('play');
   });
 
@@ -3465,13 +3479,8 @@
     queueChanged(); changed('mode');
   };
 
-  /* how long the song has waited in this state, once that is long enough to wonder (5 s) */
-  var statusWas = null, statusSince = 0;
-  /* noted whenever the player is asked (every change of status goes through changed(), which derives the view) */
-  function noteStatus() { if (ps.status !== statusWas) { statusWas = ps.status; statusSince = Date.now(); } }
-  /* when a wait for a source began (ms), or null: the view carries it, and a surface that shows the count draws it from here */
-  P.waitSince = function () { noteStatus(); return ps.status === 'finding' || ps.status === 'queued' ? statusSince : null; };
-  function waited() { noteStatus(); var sec = Math.floor((Date.now() - statusSince) / 1000); return sec >= 5 ? ', ' + sec + ' s' : ''; }
+  /* how long the song has waited for a source, once that is long enough to wonder (5 s): from when the view's `since` says it began */
+  function waited() { if (ps.waitSince == null) return ''; var sec = Math.floor((Date.now() - ps.waitSince) / 1000); return sec >= 5 ? ', ' + sec + ' s' : ''; }
   /* one line describing the current status (player bar state tab, aria): with the wait's running count when `counted`,
      which the view's words (P.stateWords) never have, or each second of a wait would be a new view */
   P.statusText = function (counted) {
@@ -3520,9 +3529,6 @@
      second, and rewriting the same text, attribute or custom property still costs a style recalculation of what it touches */
   var setText = PlayerView.setText;
   function setAttr(el, name, v) { v = String(v); if (el.getAttribute(name) !== v) el.setAttribute(name, v); }
-  function setVar(el, name, v) { v = String(v); if (el.style.getPropertyValue(name) !== v) el.style.setProperty(name, v); }
-  /* text as a CSS string, for content: (a custom property holding words) */
-  App.cssString = PlayerView.cssString;
   /* the parts drawn as arrived (.seek__buf): what the output holds and what the hub has, merged; the part from the start
      is the transfer's solid part (--xfer) too, and parts further on come from a seek ahead */
   function shownParts() {
@@ -4062,7 +4068,6 @@
   App.on('player', renderBar);
   App.on('player', function (k) { if (k === 'track' || k === 'queue') ui.warmArt(P.upNext(1)[0]); });
   App.on('save', function (d) { if (d.id === P.currentId()) renderBar(); });
-  App.on('like', function (d) { if (d.id === P.currentId()) App.syncRows(); });
 
   /* a theme's markup at every region's edge (designs/parts.js, loaded only for a theme that has some or uses lull's
      catalogue of parts; it also takes the boxes away when the theme in use has none) */
