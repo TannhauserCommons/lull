@@ -10,7 +10,7 @@ from, how the player plays, and the rules screens follow. The endpoint contract 
 ```
 index.html   tokens.css base.css components.css screens/{discover,now,library,system}.css designs/<name>/design.css (last)
              designs/designs.js + the pre-paint script (design, theme, motion, text size)
-             icons.js data.js align.js eq.js player-rules.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance}.js
+             icons.js data.js align.js eq.js player-rules.js player-view.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance}.js
              screens/setup.js
              the desktop app only (window.__TAURI__): screens/classic.css desktop/desktop.css
              desktop/webamp-session.js screens/{skins,classic}.js desktop/desktop.js, from the start, as its crash
@@ -24,6 +24,10 @@ player-rules.js  window.LullRules: the player's rules (what the queue moves to, 
              (tests/player-rules.json, tested on both sides). Its `playingCopy` is the page's alone (tests/web/playing-copy.test.mjs):
              where the playing song comes from (device, library, soulseek, youtube), what to call it, its format when known; the
              player bar, Now Playing and source details all read it, so they can't disagree (`App.player.playingCopy()`)
+player-view.js  window.PlayerView (ADR-0041): the one player view. `derive(input)` turns the player's plain state into what every
+             surface shows (`activity`, the clock, the transfer, the copy that plays, the listener's settings); `posAt`, `key` and
+             `strayed` are the clock's readers; `VERSION` is raised on any change to the view's shape. Pure, tested by
+             tests/web/player-view.test.mjs
 align.js     window.LullAlign: how far apart two recordings of one moment are (switching to a better copy); pure,
              tested by tests/web/align.test.mjs (`node --test`, part of `mise run check`)
 eq.js        window.LullEq: the equaliser's settings (per device), its curve and automatic level, its Web Audio chain;
@@ -208,6 +212,21 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   couldn't play, so lull chose one"), since a kept pick can outlive the copy; only then is it the song's outcome,
   which the hub answers ([streaming.md](streaming.md#a-songs-outcome)). Before (2026-11-12), a pick made the day
   before stopped the song on "this copy can't be played", and Retry asked for the same copy again.
+- **The player's view** (`App.player.view()`, `web/player-view.js`, ADR-0041) is derived from the engine on every call and
+  is the one answer to what the player is doing. Its `activity` is `idle`, `loading`, `choose`, `playing`, `paused`,
+  `ended` or `error`, by one table (first match): a song's pause is `paused`, `finding`/`queued`/`buffering`/`stalled`
+  and an output that waits or hasn't started are `loading`, and only a song the output plays is `playing`. Nothing else
+  decides "playing" or "busy": the wave's motion, the play keys' Pause and spinner, the buffering loop's sound,
+  Connect's `playing` all read it (`data-playing` stays the listener's intent, for themes). The clock is `{ pos, at, rate,
+  duration, known }`, moving at rate 1 only while playing; surfaces place the song with `PlayerView.posAt(view, now)`.
+  The engine emits the `view` event (`App.on('view', fn)`, the view as the argument) when `PlayerView.key(view)` changes
+  or `PlayerView.strayed` says the clock is a second off, from `changed()` and from the player's 250 ms clock *before*
+  its hidden-page return, so a hidden page publishes too. The live model's `song.pos`, `song.elapsed`, `song.buffered`
+  and `song.received` are read from it, and Connect reports on each new activity (`playing` is `activity === 'playing'`).
+- **The intent follows the output.** `ps.playing` is what the listener asked for. When the output stops sound it had
+  been playing and nothing asked it to (an `time` with `playing: false` after one with `playing: true`, with no
+  `P.pause`), the system paused it (another app took the audio, headphones out): the engine sets `ps.playing = false`
+  and announces `play`. The browser output doesn't report an element's pause at the song's end as one.
 - **Streaming state** comes from `stream` events (`finding queued buffering streaming stalled fallback failed`,
   `received/size`, `peer`, `peersFound`, `queuePos`, `failedPeers`), merged with the element's own `playing`/`waiting`.
   `buffered` is `audio.buffered` cut to `received`. A seek may go anywhere for saved songs and up to what has
@@ -354,8 +373,10 @@ level, not the system's.
 `GET /api/devices`, kept current by `device.online` / `device.state` (an unknown device id rereads the list).
 Settings > Devices renders from it.
 
-- **Reporting**: `POST /api/devices/me/state` at once on a new song, play, pause or end; at most once a second for
-  seeks, volume and queue changes; every 30 s while playing. A state identical to the last one sent is skipped
+- **Reporting**: `POST /api/devices/me/state` at once on a new song and on every new player view whose `activity`
+  changed (`playing` is `activity === 'playing'`, so a failure, an end or a pause the system made reaches the others,
+  and a loading song isn't reported as playing); at most once a second for seeks, volume and queue changes; every 30 s
+  while playing. A state identical to the last one sent is skipped
   (except the heartbeat, a takeover and the first report after a reconnect). One start runs at a time, however
   often `server` fires while the device list loads. A 404 (a hub without Connect) stops it until the next resync or
   hub restart.
