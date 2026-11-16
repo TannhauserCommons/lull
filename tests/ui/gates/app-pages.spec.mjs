@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { ownHub } from './lib.mjs';
+import { fireView } from './player-windows.mjs';
 
 const bridge = fileURLToPath(new URL('./desktop-bridge.js', import.meta.url));
 const fixture = fileURLToPath(new URL('../fixtures/themes', import.meta.url));
@@ -141,8 +142,7 @@ test('every key in the mini player and the strip reaches what runs it, in every 
       const at = `${design} ${view}`, page = await browser.newPage();
       await openWrapper(page, `view=${view}&design=${design}&theme=day&opaque=1`, null, recordSent);
       await page.waitForFunction((d) => Designs.current === d && document.querySelector('[data-dk-player]'), design);
-      await page.evaluate(() => window.__bridge.fire('player', { track: { id: 't1', title: 'Song', artist: 'Artist', format: 'FLAC', lossless: true },
-        playing: false, liked: false, pos: 20, duration: 200, durationKnown: true, buffered: [[0, 1]], received: 1, shuffle: false, repeat: 'off', volume: .5 }));
+      await page.evaluate(fireView, { activity: 'paused', clock: { rate: 0 } });
       const keys = await page.$$eval('[data-dk-player] [data-dk]', (els) => els.map((el) => el.getAttribute('data-dk')));
       expect(keys.filter((k) => !(k in KEYS)), `${at}: keys nothing runs`).toEqual([]);
       expect(keys, `${at}: the transport`).toEqual(expect.arrayContaining(['previous', 'play-pause', 'next']));
@@ -190,31 +190,28 @@ test('the unreachable page shows how the wrapper reconnects, and keeps no timer 
   await expect(label).toHaveText('trying now');
 });
 
-// The player's words reach the mini player windows too (docs/themes.md, The player's words): main's snapshot carries the
+// The player's words reach the mini player windows too (docs/themes.md, The player's words): main's view carries the
 // state and lull's words for it, set on [data-dk-player] as data-status, data-status-text and --status-text.
 test('the mini player windows carry the player\'s state and its words, for a theme to show', async ({ page }) => {
   await openWrapper(page, 'view=mini&design=lull&theme=day&opaque=1', null);
   await page.waitForSelector('[data-dk-player]');
-  const snap = (status, statusText) => ({ track: { id: 't', title: 'Song', artist: 'Artist', format: 'FLAC', lossless: true }, playing: false, liked: false,
-    pos: 10, duration: 100, durationKnown: true, buffered: [], received: 1, shuffle: false, repeat: 'off', volume: .5, status, statusText });
   const read = () => page.evaluate(() => {
     const el = document.querySelector('[data-dk-player]');
     return { status: el.dataset.status, text: el.dataset.statusText, prop: getComputedStyle(el).getPropertyValue('--status-text').trim() };
   });
   expect(await read()).toEqual({ status: 'idle', text: '', prop: '""' });
-  for (const [status, words] of [['failed', 'YouTube couldn’t find this song'], ['buffering', 'Loading from your library'], ['streaming', 'Streaming from "mira"']]) {
-    await page.evaluate((s) => window.__bridge.fire('player', s), snap(status, words));
+  for (const [status, words, activity] of [['failed', 'YouTube couldn’t find this song', 'error'], ['buffering', 'Loading from your library', 'loading'],
+    ['streaming', 'Streaming from "mira"', 'playing']]) {
+    await page.evaluate(fireView, { status, words, activity, clock: { rate: activity === 'playing' ? 1 : 0 } });
     expect(await read(), status).toEqual({ status, text: words, prop: JSON.stringify(words) });
   }
 });
 
-// The mini player says what a button press changed (the note and the announcer); main's first snapshot is the player as
+// The mini player says what a button press changed (the note and the announcer); main's first view is the player as
 // it already was, so a window that has just opened says nothing.
 test('the mini player says what changed, never the player it opened on', async ({ page }) => {
   await openWrapper(page, 'view=mini&design=lull&theme=day&opaque=1', null);
   await page.waitForSelector('[data-dk-player]');
-  const snap = (volume) => ({ track: { id: 't', title: 'Song', artist: 'Artist' }, playing: true, liked: false, pos: 10, duration: 100,
-    durationKnown: true, buffered: [], received: 1, shuffle: false, repeat: 'off', volume, status: 'playing', statusText: '' });
   // everything the announcer says, in order (it speaks a moment after the note shows)
   await page.evaluate(() => {
     const heard = window.__announced = [];
@@ -222,9 +219,9 @@ test('the mini player says what changed, never the player it opened on', async (
       .observe(document.body, { subtree: true, childList: true, characterData: true });
   });
   const notes = () => page.evaluate(() => [...document.querySelectorAll('.dk-mini__note.is-on')].map((n) => n.textContent));
-  await page.evaluate((s) => window.__bridge.fire('player', s), snap(.7));
+  await page.evaluate(fireView, { volume: .7 });
   expect(await notes(), 'the player as it was when the window opened').toEqual([]);
-  await page.evaluate((s) => window.__bridge.fire('player', s), snap(.8));
+  await page.evaluate(fireView, { volume: .8 });
   expect(await notes(), 'a volume press').toEqual(['volume 80%']);
   await expect.poll(() => page.evaluate(() => window.__announced)).toEqual(['volume 80%']);
 });
@@ -242,15 +239,13 @@ test('a theme\'s mini player keys keep their own words; only lull\'s icon in the
     slots: { ...handed.slots, 'miniPlayer.device': mini } };
   await openWrapper(page, 'view=mini&design=paper-moon&base=skydeck&theme=day&opaque=1', pkg);
   await page.waitForSelector('.km[data-dk-player]');
-  const snap = (playing, liked) => ({ track: { id: 't', title: 'Song', artist: 'Artist' }, playing, liked, pos: 10, duration: 100,
-    durationKnown: true, buffered: [], received: 1, shuffle: false, repeat: 'off', volume: .5, status: 'playing', statusText: '' });
   const keys = () => page.evaluate(() => ({
     like: [document.querySelector('.km-like').textContent, document.querySelector('.km-like').getAttribute('aria-pressed')],
     play: [document.querySelector('.km-play').textContent.trim(), document.querySelector('.km-play use')?.getAttribute('href')],
     bare: document.querySelector('.km-bare use')?.getAttribute('href'),
   }));
   for (const [playing, liked] of [[true, true], [false, false], [true, false]]) {
-    await page.evaluate((s) => window.__bridge.fire('player', s), snap(playing, liked));
+    await page.evaluate(fireView, { activity: playing ? 'playing' : 'paused', liked, clock: { rate: playing ? 1 : 0 } });
     expect(await keys(), `playing ${playing}, liked ${liked}`).toEqual({
       like: ['LIKE', String(liked)], play: ['PLAY', playing ? '#i-pause' : '#i-play'], bare: liked ? '#i-heart-fill' : '#i-heart' });
   }

@@ -45,10 +45,10 @@ async function setUp(page, request, { slowSwitch = false, desktop = false } = {}
     await page.addInitScript({ path: bridge });
     await page.addInitScript(() => {
       window.__LULL_DESKTOP__ = { os: 'win', titlebar: 'win' };
-      /* what main sends the mini player */
-      window.__snaps = [];
+      /* the views main sends the mini player (ADR-0041) */
+      window.__views = [];
       const t = window.__TAURI__, emit = t.event.emit;
-      t.event.emit = (name, p) => { if (name === 'player') window.__snaps.push({ at: Date.now(), pos: p.pos, playing: p.playing }); return emit(name, p); };
+      t.event.emit = (name, p) => { if (name === 'player') window.__views.push(p); return emit(name, p); };
     });
   }
   if (!desktop) {
@@ -203,9 +203,10 @@ test('through the race and a seek the mini player shows the song\'s place', asyn
   await page.waitForTimeout(1000);
   await seek(page, 0.7);
   await page.waitForTimeout(2500);
+  // where the mini player's clock puts the song: the last view main sent, run on to now as the window runs it
   const r = await page.evaluate(() => {
-    const snaps = window.__snaps.filter((s) => s.playing), snap = snaps[snaps.length - 1];
-    return { real: App.player.state.pos, mini: snap ? snap.pos + (Date.now() - snap.at) / 1000 : null };
+    const view = window.__views[window.__views.length - 1];
+    return { real: App.player.state.pos, mini: view ? PlayerView.posAt(view, Date.now()) : null };
   });
   expect(r.real, 'S9 the place after the seek').toBeGreaterThanOrEqual(0.7 * dur - 0.5);
   expect(r.mini, 'S9 the mini player was told').not.toBeNull();

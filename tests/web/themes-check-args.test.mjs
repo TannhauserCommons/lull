@@ -9,7 +9,13 @@ import { parseArgs, mockupUrl, outDir, UsageError } from '../ui/themes-check-arg
 
 test('no flag keeps the plain run: every look, the default desktop', () => {
   assert.deepEqual(parseArgs(['home', '/settings/appearance']),
-    { routes: ['home', '/settings/appearance'], only: null, mine: false, sizes: null, mockup: null, out: null });
+    { routes: ['home', '/settings/appearance'], only: null, mine: false, sizes: null, states: null, mockup: null, out: null });
+});
+
+test('--states pictures the mini player in those states, once each, and only with the route mini', () => {
+  assert.deepEqual(parseArgs(['--states', 'paused,loading', '--state=failed', '--state', 'paused', 'mini']).states, ['paused', 'loading', 'failed']);
+  assert.throws(() => parseArgs(['--states', 'sleeping', 'mini']), UsageError, 'a state the mini player has no picture for');
+  assert.throws(() => parseArgs(['--states', 'paused', 'home']), UsageError, 'no mini player to picture');
 });
 
 test('--only takes a list, given once or several times, with or without =', () => {

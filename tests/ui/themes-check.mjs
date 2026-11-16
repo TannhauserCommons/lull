@@ -15,6 +15,7 @@
 // function finds something, never for contrast. Flags (themes-check-args.mjs):
 //   --only <id>[,<id>...]  those looks only (built in or in LULL_THEMES_DIR); --mine: LULL_THEMES_DIR's and no built-in
 //   --sizes WxH[,WxH...]   the desktop at each of these sizes instead (--size: one); a laptop at 125% is 1536x864
+//   --states <state>[,...] the mini player playing, paused, loading or failed (--state: one), a table each; default playing
 //   --mockup <file-or-url> the mockup beside each picture, at its size; {mode}, {route} and {size} in it are filled in
 //   --out <dir>            the folder the sheet and pictures go in, from the current folder; what an earlier run wrote
 //                          there is replaced, and a folder holding anything else is refused
@@ -28,6 +29,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from '@playwright/test';
 import { chrome, contrast, holders, overflow, plainScrollbars, squeezed, unclippedClamps, unknownFeatures } from './checks.mjs';
 import { designs as BUILT_IN, ids, openScreen, ownHub, screens } from './gates/lib.mjs';
+import { fireView } from './gates/player-windows.mjs';
 import { mockupUrl, outDir, parseArgs, USAGE, UsageError } from './themes-check-args.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -62,10 +64,12 @@ const PAGE_SIZES = Object.fromEntries([
 const slugOf = (path) => path.replace(/[^\w]+/g, '-').replace(/^-|-$/g, '') || 'home';
 // name: a key screen's, `mini`, or the path's slug (the mockup's {route}); path: what the web UI opens
 const routes = opts.routes.map((r) => {
-  if (r === 'mini') return { name: 'mini', mini: true, sizes: MINI };
+  if (r === 'mini') return (opts.states || ['playing']).map((state) => ({ name: 'mini', mini: true, state, sizes: MINI }));
   const path = screens[r] || (r.startsWith('/') ? r : '/' + r);
   return { name: screens[r] ? r : slugOf(path), path, sizes: PAGE_SIZES };
-});
+}).flat();
+// the mini player's route as said: with its state when --states asked for them
+const miniSaid = (route) => (opts.states ? `mini, ${route.state}` : 'mini');
 
 /* the listener's themes: a copy of each package in LULL_THEMES_DIR, with its modes */
 const copy = mkdtempSync(join(tmpdir(), 'lull-themes-check-'));
@@ -97,7 +101,7 @@ if (!looks.length) { rmSync(copy, { recursive: true, force: true }); fail('--min
 
 const jobs = routes.flatMap((route) => looks.flatMap((d) => Object.keys(route.sizes).flatMap((size) =>
   d.modes.map((mode) => ({ route, design: d.id, builtIn: d.builtIn, size, mode })))));
-const slug = (j) => `${j.route.mini ? 'mini' : slugOf(j.route.path)}--${j.design}--${j.size}--${j.mode}`;
+const slug = (j) => `${j.route.mini ? slugOf(miniSaid(j.route)) : slugOf(j.route.path)}--${j.design}--${j.size}--${j.mode}`;
 
 if (existsSync(OUT)) for (const entry of readdirSync(OUT)) rmSync(join(OUT, entry), { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
@@ -119,11 +123,19 @@ async function playFirst(page, look, errors) {
   await page.evaluate(() => { const row = document.querySelector('#view .trow[data-track-id]'); return row && App.player.playTrack(row.getAttribute('data-track-id'), [row.getAttribute('data-track-id')]); });
   await page.waitForFunction(() => App.player.current(), null, { timeout: 5000 }).catch(() => errors.push('no song started'));
 }
+/* the player says the song plays (ADR-0041's view), on the route asked; a web UI from before the view had none, and
+   that one is given the time it always was */
+const hasView = (page) => page.evaluate(() => typeof App.player.view === 'function');
+async function settled(page, path, errors) {
+  if (!(await hasView(page))) { await page.waitForTimeout(400); return; }
+  await page.waitForFunction((p) => App.current && App.current.path === p && App.player.view().activity === 'playing', path, { timeout: 10000 })
+    .catch(() => errors.push('the song never played on ' + path));
+}
 
 /* what the checks find in a picture as it stands, the picture, and the contrast against what is drawn */
 async function judge(page, job, errors, { seeThrough = false } = {}) {
   await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(300);
+  if (job.route.mini || !(await hasView(page))) await page.waitForTimeout(300);
   // a built-in design's features findings the owner has yet to decide on (gates/features-known.json) aren't counted
   const known = (found) => (job.builtIn ? unknownFeatures(found, { design: job.design, width: page.viewportSize().width, screen: job.route.name }) : found);
   const found = [...known(await chrome(page)), await overflow(page), await unclippedClamps(page), await squeezed(page)].filter(Boolean).map(String);
@@ -149,14 +161,14 @@ async function shootPage(job) {
     await scrollbarsAsDrawn(page, job.size);
     await playFirst(page, { design: job.design, theme: job.mode }, errors);
     await page.evaluate((r) => { location.hash = '#' + r; }, job.route.path);
-    await page.waitForTimeout(400);
+    await settled(page, job.route.path, errors);
     return await judge(page, job, errors);
   } catch (e) {
     return { ...job, problems: [...errors, 'could not draw it: ' + e.message.split('\n')[0]], notes: [] };
   } finally { await context.close(); }
 }
 
-/* main, as the app runs the web UI, for each look once: the song it plays, as the snapshot and cover it sends the mini
+/* main, as the app runs the web UI, for each look once: the song it plays, as the view and cover it sends the mini
    player when one opens, and the look as it hands it to the app (a package for a listener's theme, and the design it
    extends). The design's own: the song and its cover are the same in every look */
 const mains = new Map();
@@ -183,7 +195,7 @@ async function readMain(design) {
 }
 
 /* one picture of a mini player window: the app's page (desktop/wrapper.html) with no hub beside it, the look main handed
-   over, a song playing a third of the way in */
+   over, main's song a third of the way in, in the state asked (--states) */
 async function shootMini(job) {
   const context = await browser.newContext({ baseURL: hub.url, reducedMotion: 'reduce', ...MINI[job.size] });
   const page = await context.newPage();
@@ -198,8 +210,9 @@ async function shootMini(job) {
     await page.goto(`/desktop/wrapper.html#${hash}`);
     await page.waitForFunction((d) => !document.documentElement.hasAttribute('data-booting') && window.Designs && Designs.current === d &&
       document.querySelector('[data-dk-player]'), job.design, { timeout: 10000 });
-    const snap = { ...main.snap, playing: true, pos: Math.floor((main.snap.duration || 0) / 3) };
-    await page.evaluate(({ s, art }) => { window.__bridge.fire('player', s); window.__bridge.fire('player-art', { art }); }, { s: snap, art: main.art });
+    if (main.snap.clock) await page.evaluate(fireView, inState(main.snap, job.route.state));
+    else await page.evaluate((s) => window.__bridge.fire('player', s), { ...main.snap, playing: true, pos: Math.floor((main.snap.duration || 0) / 3) });   // before the view
+    await page.evaluate((art) => window.__bridge.fire('player-art', { art }), main.art);
     await page.evaluate(() => document.fonts.ready);
     // the window fits its height to the player (desktop.js, fitWindow), as the app's does
     const fit = await page.evaluate(() => window.__bridge.last.setSize);
@@ -208,6 +221,19 @@ async function shootMini(job) {
   } catch (e) {
     return { ...job, problems: [...errors, 'could not draw it: ' + e.message.split('\n')[0]], notes: [] };
   } finally { await context.close(); }
+}
+
+/* main's view in a state, its clock still a third of the way in, so each picture shows the same moment. The words are the
+   player's own for that state (app.js, P.statusText) */
+function inState(view, state) {
+  const clock = { ...view.clock, pos: Math.floor((view.clock.duration || 0) / 3), at: Date.now(), rate: 0 };
+  const half = { received: 0.4, front: 0.4, parts: [[0, 0.4]], buffered: 0.3, transferring: true };
+  return {
+    playing: { ...view, activity: 'playing', clock },
+    paused: { ...view, activity: 'paused', clock },
+    loading: { ...view, activity: 'loading', status: 'buffering', words: 'Buffering from a peer', transfer: { ...view.transfer, ...half }, clock },
+    failed: { ...view, activity: 'error', status: 'failed', words: 'No Soulseek peer shares this song right now.', clock },
+  }[state];
 }
 
 function listen(page) {
@@ -269,7 +295,7 @@ const sizeLabel = (route, size) => { const v = route.sizes[size].viewport; retur
 const picture = (file, alt, see) => `<a href="${file}"><img src="${file}" alt="${esc(alt)}" loading="lazy"${see ? ' class="see"' : ''}></a>`;
 const cell = (r) => {
   if (!r) return '<td class="none">no such mode</td>';
-  const alt = `${r.design}, ${r.size}, ${r.mode}`, see = r.route.mini;
+  const alt = `${r.design}, ${r.size}, ${r.mode}${r.route.mini && opts.states ? ', ' + r.route.state : ''}`, see = r.route.mini;
   const theme = r.file ? picture(r.file, alt, see) : '';
   const shown = !r.mockup ? theme : `<div class="pair"><figure>${theme}<figcaption>theme</figcaption></figure><figure>${r.mockup.error
     ? `<p class="bad">could not open the mockup: ${esc(r.mockup.error)}</p>` : picture(r.mockup.file, 'mockup, ' + alt)}<figcaption>mockup</figcaption></figure></div>`;
@@ -278,7 +304,7 @@ const cell = (r) => {
 };
 const table = (route) => {
   const cols = Object.keys(route.sizes).flatMap((size) => ['day', 'night'].map((mode) => ({ size, mode })));
-  const title = route.mini ? 'mini: the desktop app\'s mini player, device and strip' : route.path;
+  const title = route.mini ? `${miniSaid(route)}: the desktop app's mini player, device and strip` : route.path;
   return `<h2>${esc(title)}</h2><table><thead><tr><th></th>${cols.map((c) => `<th>${esc(sizeLabel(route, c.size))}, ${c.mode}</th>`).join('')}</tr></thead><tbody>
 ${looks.map((d) => `<tr><th scope="row">${esc(d.id)}${d.builtIn ? '<br><small>built in</small>' : ''}</th>${cols.map((c) =>
     cell(results.find((r) => r.route === route && r.design === d.id && r.size === c.size && r.mode === c.mode))).join('')}</tr>`).join('\n')}
@@ -307,7 +333,7 @@ writeFileSync(join(OUT, 'index.html'), `<!doctype html><meta charset="utf-8"><me
 ${routes.map(table).join('\n')}
 `);
 
-const where = (r) => `${r.route.mini ? 'mini' : r.route.path} ${r.design} ${r.size} ${r.mode}`;
+const where = (r) => `${r.route.mini ? miniSaid(r.route) : r.route.path} ${r.design} ${r.size} ${r.mode}`;
 console.log(`${results.length} pictures in ${Math.round((Date.now() - started) / 1000)} s; ${failed.length ? failed.length + ' with something to look at' : 'nothing found'}`);
 for (const r of failed) console.log(`  ${where(r)}: ${r.problems.join('; ')}`);
 if (noted.length) console.log(`for you to weigh, not counted (contrast and lull's own scrollbars, information for the author):\n${noted.map((r) => `  ${where(r)}: ${r.notes.join('; ')}`).join('\n')}`);

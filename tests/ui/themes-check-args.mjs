@@ -6,19 +6,21 @@ import { pathToFileURL } from 'node:url';
 
 export class UsageError extends Error {}
 
-export const USAGE = `usage: mise run themes:check -- [--only <id>[,<id>...] | --mine] [--sizes WxH[,WxH...]] [--mockup <file-or-url>] [--out <dir>] <route> [<route>...]
+export const USAGE = `usage: mise run themes:check -- [--only <id>[,<id>...] | --mine] [--sizes WxH[,WxH...]] [--states <state>[,<state>...]] [--mockup <file-or-url>] [--out <dir>] <route> [<route>...]
   a route: home, search, playlist, album, now, settings, mini (the desktop app's mini player), or a path (/settings/appearance)
   --only    these looks only: built-in designs or themes in LULL_THEMES_DIR, by id
   --mine    every theme in LULL_THEMES_DIR, and none of the built-ins
   --sizes   the desktop at each of these sizes (--size: one), instead of 1440x900
+  --states  the mini player in each of these states (--state: one): playing, paused, loading, failed; instead of playing
   --mockup  a mockup page drawn beside each picture at its size; {mode}, {route} and {size} in it are filled in
   --out     the folder the contact sheet and pictures go in, from the current folder (default tests/ui/themes-check)`;
 
-// { routes, only, mine, sizes, mockup, out }: routes as given, only a list of ids or null, sizes a list of { width, height }
-// or null (the default desktop), out the folder as given or null (outDir resolves it). Throws UsageError on anything it
-// doesn't know.
+// { routes, only, mine, sizes, states, mockup, out }: routes as given, only a list of ids or null, sizes a list of
+// { width, height } or null (the default desktop), states the mini player's (STATES) or null (playing), out the folder as
+// given or null (outDir resolves it). Throws UsageError on anything it doesn't know.
+export const STATES = ['playing', 'paused', 'loading', 'failed'];
 export function parseArgs(argv) {
-  const o = { routes: [], only: null, mine: false, sizes: null, mockup: null, out: null };
+  const o = { routes: [], only: null, mine: false, sizes: null, states: null, mockup: null, out: null };
   for (let i = 0; i < argv.length; i++) {
     let flag = argv[i], given;
     const eq = flag.startsWith('--') ? flag.indexOf('=') : -1;
@@ -35,6 +37,7 @@ export function parseArgs(argv) {
         if (given !== undefined) throw new UsageError('--mine takes no value');
         o.mine = true; break;
       case '--size': case '--sizes': o.sizes = [...(o.sizes || []), ...value().split(',').map(size)]; break;
+      case '--state': case '--states': o.states = [...(o.states || []), ...ids(value()).map(state)]; break;
       case '--mockup': o.mockup = value(); break;
       case '--out':
         o.out = value();
@@ -49,10 +52,17 @@ export function parseArgs(argv) {
   if (o.only && !o.only.length) throw new UsageError('--only needs at least one id');
   if (!o.routes.length) throw new UsageError('name at least one route');
   if (o.sizes) o.sizes = o.sizes.filter((s, i) => o.sizes.findIndex((t) => t.width === s.width && t.height === s.height) === i);
+  if (o.states && !o.routes.includes('mini')) throw new UsageError('--states pictures the mini player: name the route mini');
+  if (o.states) o.states = [...new Set(o.states)];
   return o;
 }
 
 const ids = (list) => list.split(',').map((s) => s.trim()).filter(Boolean);
+
+function state(s) {
+  if (!STATES.includes(s)) throw new UsageError(`a state is one of ${STATES.join(', ')}: ${JSON.stringify(s)}`);
+  return s;
+}
 
 function size(s) {
   const m = /^(\d+)x(\d+)$/.exec(s.trim());
