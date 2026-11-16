@@ -1745,13 +1745,14 @@
 :root[data-design="glasshouse"] .dk-strip__artist { font: 500 .75rem/1.3 var(--f-px); }
 :root[data-design="glasshouse"] .dk-strip__artist::before { content: ":: "; }
 :root[data-design="glasshouse"] .dk-strip__artist:empty::before { content: none; }
+:root[data-design="glasshouse"] .dk-strip__state { color: var(--fg); }
 :root[data-design="glasshouse"] .dk-strip > .seek--line { top: auto; bottom: 7px; left: 70px; right: 24px; }
 :root[data-design="glasshouse"] .dk-strip > .seek--line .seek__track { height: 2px; margin-top: 0; box-shadow: none; background: color-mix(in srgb, var(--gh-ring-track) 70%, transparent); }
 :root[data-design="glasshouse"] .dk-strip > .seek--line .seek__played { background: linear-gradient(90deg, color-mix(in srgb, var(--gh-ring-fill) 30%, transparent), var(--gh-ring-fill)); }
 :root[data-design="glasshouse"] .dk-strip .dk-sep { background: color-mix(in srgb, var(--gh-frame) 55%, transparent); }
 :root[data-design="glasshouse"] .dk-strip__keys .btn-icon { color: var(--fg-panel); }
 :root[data-design="glasshouse"] .dk-strip__keys .btn-gloss { --size: 44px; width: 44px; height: 44px; }
-:root[data-design="glasshouse"] .dk-strip[data-playing="false"] .dk-strip__title { opacity: .92; }
+:root[data-design="glasshouse"] .dk-strip-wrap[data-playing="false"] .dk-strip__title { opacity: .92; }
 
 /* =====================================================================
    Classic stage: Webamp alone on the misty desktop itself (the app is hidden while the stage is open, so nothing smears

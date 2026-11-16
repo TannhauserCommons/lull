@@ -551,9 +551,10 @@
       received: 1, front: 1, parts: [], buffered: [], seekWait: null, liked: false, saved: false, shuffle: false, repeat: 'off',
       volume: 1, muted: false, crossfading: false, now: Date.now() });
   }
-  /* what the window draws: the view, and while the link isn't ok, why in the status line's place */
+  /* what the window draws: the view, and while the link isn't ok, why in the status line's place. Nothing it knows says the
+     song plays then, so it is a pause: the key, the wave and data-playing show none of it playing */
   function shown() {
-    return link === 'ok' ? latest : Object.assign({}, latest, { words: LINK_WORDS[link], activity: latest.activity === 'idle' ? 'paused' : latest.activity });
+    return link === 'ok' ? latest : Object.assign({}, latest, { words: LINK_WORDS[link], activity: 'paused', intent: false });
   }
   function barHeight(i) { return (0.32 + 0.6 * Math.abs(Math.sin(i * 1.7) * Math.cos(i * .43))).toFixed(2); }
   function chip(copy) {
@@ -567,13 +568,17 @@
     return '<div class="wave" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" data-dk="seek">' + b +
       '<div class="wave__rail"><div class="wave__head"></div></div></div>';
   }
-  /* the song: its cover, title, artist, and the copy that plays (the bar's format; the peer's share while it arrives) */
-  function nowMarkup() {
-    var t = latest.track;
-    if (!t) return '<div class="dk-mini__now">' + cover(84) + '<div><div class="device__title">Nothing playing</div><div class="device__artist">Pick something in lull</div></div></div>';
+  /* the default markup's status line (data-dk-status): shown only when there is news, in the place of the line it replaces
+     (the facts here, the artist in the strip); a design's own slot places its line as it likes */
+  var STATUS = '<div class="device__state" data-dk-status hidden></div>';
+  /* the song: its cover, title, artist, and the copy that plays (the bar's format; the peer's share while it arrives).
+     `withStatus`: the default device's, which has its status line beside the facts */
+  function nowMarkup(withStatus) {
+    var t = latest.track, status = withStatus ? STATUS : '';
+    if (!t) return '<div class="dk-mini__now">' + cover(84) + '<div><div class="device__title">Nothing playing</div><div class="device__artist">Pick something in lull</div>' + status + '</div></div>';
     return '<div class="dk-mini__now">' + cover(84) + '<div><div class="device__title">' + esc(t.title) + '</div>' +
       '<div class="device__artist">' + esc(t.artist) + '</div><div class="device__facts">' + chip(latest.copy) +
-      (latest.transfer.received < 1 ? '<span class="device__fact">peer <span data-bind="received"></span></span>' : '') + '</div></div></div>';
+      (latest.transfer.received < 1 ? '<span class="device__fact">peer <span data-bind="received"></span></span>' : '') + '</div>' + status + '</div></div>';
   }
 
   /* miniPlayer slot: a design.js may replace the window content. ctx = { style: 'device'|'strip', opaque,
@@ -599,7 +604,7 @@
       '<button class="dk-mini__win" data-dk="mini-close" aria-label="Close mini player" data-tip="Close mini player">' + ic('close') + '</button></div>' +
       '<div class="device__bezel" data-tauri-drag-region><div class="device__screen s-screen">' +
       '<div class="device__page"><div class="device__page-head"><span>now playing</span><span data-dk-vol></span></div>' +
-      '<div data-dk-now aria-live="polite">' + nowMarkup() + '</div><div class="device__state" data-dk-status></div>' + waveMarkup() +
+      '<div class="dk-mini__now-host" data-dk-now>' + nowMarkup(true) + '</div>' + waveMarkup() +
       '<div class="wave-times"><b data-dk-pos></b><span data-dk-dur></span></div></div>' +
       '<div class="dk-mini__note" aria-hidden="true"></div></div>' +
       '<div class="device__brand">' + wordmark() + '</div></div>' +
@@ -618,9 +623,9 @@
   function stripMarkup() {
     var t = latest.track;
     return '<div class="dk-strip-wrap" data-dk-player="strip" data-link="ok"><section class="dk-strip s-panel" aria-label="lull mini player" data-tauri-drag-region>' +
-      '<div class="seek seek--line" aria-hidden="true"><div class="seek__track"><div class="seek__xfer"></div><div class="seek__bufs"></div><div class="seek__played"></div></div></div>' +
+      '<div class="seek seek--line" aria-hidden="true"><div class="seek__track"><div class="seek__xfer"></div><div class="seek__bufs"><div class="seek__buf" data-dk-buf></div></div><div class="seek__played"></div></div></div>' +
       '<button class="bezel-thumb" data-dk="full" aria-label="Open full window" data-tip="Open full window" data-dk-thumb>' + cover(40) + '</button>' +
-      '<div class="dk-strip__text" data-tauri-drag-region aria-live="polite"><div class="dk-strip__title" data-dk-title>' + esc(t ? t.title : 'Nothing playing') + '</div><div class="dk-strip__sub"><span class="dk-strip__artist" data-dk-artist>' + esc(t ? t.artist : '') + '</span><span class="dk-strip__state" data-dk-status></span></div></div>' +
+      '<div class="dk-strip__text" data-tauri-drag-region><div class="dk-strip__title" data-dk-title>' + esc(t ? t.title : 'Nothing playing') + '</div><div class="dk-strip__artist" data-dk-artist>' + esc(t ? t.artist : '') + '</div><div class="dk-strip__state" data-dk-status hidden></div></div>' +
       '<div class="dk-strip__keys">' +
       '<button class="btn-icon btn-icon--bare" data-dk="previous" aria-label="Previous" data-tip="Previous">' + ic('prev') + '</button>' +
       '<button class="btn-gloss btn-gloss--40" data-dk="play-pause" aria-label="Play" data-tip="Play">' + ic('play', 'ic-play') + '</button>' +
@@ -632,26 +637,31 @@
       '</div></section></div>';
   }
 
-  /* the window's hooks, from the view at `now`; the link's state beside them */
+  /* the window's hooks, from the view at `now`; the link's state beside them. The default markup's status lines show
+     only when there is news: the player is waiting, has to ask, failed, or the link isn't ok */
+  var NEWS = { loading: 1, choose: 1, error: 1 };
   function paint(scope) {
+    var view = shown(), news = link !== 'ok' || !!NEWS[view.activity];
     $$('[data-dk-player]', scope).forEach(function (el) { if (el.getAttribute('data-link') !== link) el.setAttribute('data-link', link); });
-    V.paint(scope, shown(), Date.now());
+    $$('.device__state, .dk-strip__state', scope).forEach(function (el) { if (el.hidden === news) el.hidden = !news; });
+    V.paint(scope, view, Date.now());
   }
   /* the song's own parts: drawn again when the song or its copy changes, or the share starts or stops arriving */
   var songKey = function (v) { return JSON.stringify([v.track, v.copy && [v.copy.format, v.copy.lossless], v.transfer.received < 1]); };
   function paintSong(scope) {
     var t = latest.track;
-    $$('[data-dk-now]', scope).forEach(function (n) { n.innerHTML = nowMarkup(); });
+    $$('[data-dk-now]', scope).forEach(function (n) { n.innerHTML = nowMarkup(n.classList.contains('dk-mini__now-host')); });
     $$('[data-dk-thumb]', scope).forEach(function (n) { n.innerHTML = cover(40); });
     $$('[data-dk-title]', scope).forEach(function (n) { n.textContent = t ? t.title : 'Nothing playing'; });
     $$('[data-dk-artist]', scope).forEach(function (n) { n.textContent = t ? t.artist : ''; });
   }
-  function note(scope, text, ms) {
+  /* `says`: one view's changes in words, announced together (once) by the caller instead of by each note */
+  function note(scope, text, ms, says) {
     $$('.dk-mini__note', scope).forEach(function (n) {
       n.textContent = text; n.classList.add('is-on');
       clearTimeout(n._t); n._t = setTimeout(function () { n.classList.remove('is-on'); }, ms || 1600);
     });
-    announce(text);
+    if (says) says.push(text); else announce(text);
   }
 
   /* the live model's values the theme names: main's, with the song's place worked out here from the view's clock (the
@@ -662,7 +672,7 @@
     var c = latest.clock, pos = V.posAt(latest, Date.now());
     Live.feed(Object.assign({}, liveValues, {
       'song.pos': latest.track && c.duration ? hundredths(pos / c.duration) : 0, 'song.elapsed': latest.track ? V.time(pos) : '',
-      'song.buffered': hundredths(latest.transfer.buffered), 'song.received': latest.track ? hundredths(latest.transfer.received) : 0
+      'song.buffered': latest.track ? hundredths(latest.transfer.buffered) : 0, 'song.received': latest.track ? hundredths(latest.transfer.received) : 0
     }));
   }
   /* the clock stops where it is: the window is away, or main's view isn't one it can draw */
@@ -690,10 +700,15 @@
     if (songKey(prev) !== songKey(next)) paintSong(scope);
     link = 'ok'; paint(scope); feedLive();
     if (!heardMain) { heardMain = true; return; }
+    var says = [];
+    if (next.track && (!prev.track || prev.track.id !== next.track.id)) says.push(next.track.title + ', ' + next.track.artist);
+    /* a change of what the player is doing is said once, here: no live region reads out each step of it */
+    if (prev.activity !== next.activity && next.activity !== 'idle') says.push(next.activity === 'playing' || next.activity === 'paused' ? next.activity : next.words || next.activity);
     var was = prev.muted ? 0 : prev.volume, now = next.muted ? 0 : next.volume;
-    if (was !== now) note(scope, 'volume ' + Math.round(now * 100) + '%');
-    if (prev.shuffle !== next.shuffle) note(scope, next.shuffle ? 'shuffle on' : 'shuffle off');
-    if (prev.repeat !== next.repeat) note(scope, REPEAT_TEXT[next.repeat] || 'repeat');
+    if (was !== now) note(scope, 'volume ' + Math.round(now * 100) + '%', 0, says);
+    if (prev.shuffle !== next.shuffle) note(scope, next.shuffle ? 'shuffle on' : 'shuffle off', 0, says);
+    if (prev.repeat !== next.repeat) note(scope, REPEAT_TEXT[next.repeat] || 'repeat', 0, says);
+    if (says.length) announce(says.join('. '));
   }
   /* main's page is gone (hidden, reloading, its renderer dead) until it says hello again with a view */
   function mainAway(scope) { stopClock(); link = 'away'; paint(scope); feedLive(); }
@@ -841,7 +856,7 @@
       };
       Designs.ready(render);
       T.event.listen('player', function (e) { receive(doc, e.payload); });
-      T.event.listen('player-art', function (e) { if (coverArt !== e.payload.art) { coverArt = e.payload.art; paintSong(doc); } });
+      T.event.listen('player-art', function (e) { if (coverArt !== e.payload.art) { coverArt = e.payload.art; paintSong(doc); paint(doc); } });
       /* DESKTOP.md 6.1: follow the web UI live. A listener's theme comes from main (theme-package, once main has
          loaded it, and again whenever it changes on the hub); until then the design it extends shows. */
       var want = { design: q.get('design'), base: q.get('base') };

@@ -1591,7 +1591,7 @@
 :root[data-design="starlight"] .dk-strip > .seek--line .seek__track { height: 2px; margin-top: -1px; border-radius: 0; box-shadow: none; background: repeating-linear-gradient(90deg, var(--line) 0 2px, transparent 2px 6px); }
 :root[data-design="starlight"] .dk-strip .seek__played { border-radius: 0; }
 :root[data-design="starlight"] .dk-strip .dk-strip__text { padding-top: 8px; }
-:root[data-design="starlight"] .dk-strip[data-playing="true"] .dk-strip__title::after, :root[data-design="starlight"] .sl-mini[data-playing="true"] .device__title::after { content: none; }
+:root[data-design="starlight"] .dk-strip-wrap[data-playing="true"] .dk-strip__title::after, :root[data-design="starlight"] .sl-mini[data-playing="true"] .device__title::after { content: none; }
 /* the mini window's head: a band of the night sky, its words in the night's cream */
 :root[data-design="starlight"] .sl-mini__head { margin: -16px -18px 4px; padding: 11px 14px 11px 18px; background: #262a40 url("assets/art/nebula.webp") 70% 30% / cover no-repeat; border-bottom: var(--stroke) solid var(--line); }
 :root[data-design="starlight"] .sl-mini__head :is(.sl-mini__label, .dk-mini__win) { color: #f2e3d1; }
