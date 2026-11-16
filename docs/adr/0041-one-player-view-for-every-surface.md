@@ -39,7 +39,8 @@ the view every surface shows:
 ```
 { v,                        // the wire version, PlayerView.VERSION
   activity,                 // idle | loading | choose | playing | paused | ended | error
-  status, words,            // ps.status and P.stateWords(), as today
+  status, words, since,     // ps.status; P.stateWords() without a wait's running count; when that wait began (ms) or null
+  intent,                   // ps.playing: the listener's intent
   track,                    // { id, title, artist, album } or null
   copy,                     // what P.playingCopy() says plays: { where, format, lossless, peer, received } or null
   clock,                    // { pos, at, rate, duration, known }: pos seconds at time at (ms), moving at rate (0 or 1)
@@ -66,7 +67,8 @@ wave, the clock and Connect at every stalled peer the next copy covers.
 `clock.rate` is 1 only while `activity` is `playing`. Every surface places the song with `PlayerView.posAt(view, now)`,
 never by extrapolating on its own. `PlayerView.key(view)` is the view without `clock.pos` and `clock.at`, and
 `PlayerView.strayed(prev, next, now)` says the clock is a second or more off. Together they decide when a view is new:
-the position never makes it new while it runs where the clock says.
+the position never makes it new while it runs where the clock says, and neither does a wait's running count: `words`
+changes with the state, and a surface that shows the count ("Finding a source, 7 s") draws it from `since`.
 
 **One writer for the player's hooks.** `PlayerView.paint(scope, view, now)` is the only code that writes a hook whose
 value changes during a song, in the page and in the mini player windows alike. These are the player hosts'
@@ -74,16 +76,25 @@ value changes during a song, in the page and in the mini player windows alike. T
 (`[data-seek="player"]`, the mini's `[data-dk="seek"]`), their classes and aria values; `[data-bind]` pos, dur,
 buffered-to, received; `[data-dk-pos]`, `[data-dk-dur]`, `[data-dk-vol]`; the play, like, shuffle and repeat keys
 (`[data-bind]` and `[data-dk]` alike); the volume slider.
-- The hook names stay as docs/themes.md lists them, so no theme changes.
+- The hook names stay as docs/themes.md lists them, so no theme changes. Every stable hook stays (a removal is a
+  breaking change, docs/themes.md section 9), and so does the default markup's shape.
+- `paint` never writes over a theme's markup: it points a `<use>` lull drew at another icon, and fills an empty
+  `[data-dk]` key with lull's icon as docs/themes.md promises; nothing else. It looks for the mini player's parts
+  inside `[data-dk-player]` only.
 - Markup builders (the bar, the mini's `nowMarkup`, slots) draw the song: title, artist, cover, the copy's format. They
   leave state to `paint`, so nothing drawn once can go stale. The peer's percentage becomes a `[data-bind="received"]` hook, as on the page.
 - The mini player's default markup and each design's `miniPlayer` slot gain a status line, `[data-dk-status]`, whose
-  text `paint` writes from `words`, so every design says what the player is doing.
+  text `paint` writes from `words`, so every design says what the player is doing. A design's own slot places it as
+  it likes. The default markup, which listener themes without a mini slot use, shows it only when there is news
+  (`loading`, `choose`, `error`, or the link not `ok`), in place of the artist line in the strip and of the facts line
+  in the device: such a theme's mini looks as before while a song plays or pauses, and its window never changes size.
+- Lines that change while a song plays (the status line, the peer's percentage) sit outside live regions; the mini
+  player announces a change of activity once, through its announcer, as the page does.
 
 **Published when it changes, not when a window is visible.** `App.player.view()` derives the view from the engine.
 The engine publishes it as the `view` event when its key changes or its clock strays, from `changed()` and from the
 player's clock before the clock's `document.hidden` early return. So a hidden page still publishes. The page paints
-on `view`, and on its visible clock between views. Every part that shows the activity (the play key and its
+once per view, and on its visible clock between views. Every part that shows the activity (the play key and its
 spinner, the wave, Now Playing's light) repaints on `view`: a song can go from loading to playing with no other
 player event. The live model's player values (`song.pos`, `song.elapsed`,
 `song.buffered`, `song.received`) are read from the view. Connect reports whenever the view's activity changes, so a failure, an end or an outside pause reaches other devices
@@ -95,7 +106,8 @@ plays on what the listener there wanted, loading or not).
 - The mini player's `hello` carries `v`. `main` emits `main-hello` when its page starts, and the mini player answers
   with `hello` again, so a reloaded `main` learns it is open.
 - `main` emits `main-bye` on `pagehide`, and the app emits it when `main`'s renderer dies. The mini player then
-  stops its clock and shows that lull's window is away until a view comes.
+  stops its clock and shows that lull's window is away until a view comes: nothing there says it plays (not the key,
+  the wave or `data-playing`), since nothing it knows does.
 - A `hello` or a view whose `v` isn't the mini player's own is refused loudly. The mini player says which side needs
   updating and stops its clock, instead of drawing a shape it doesn't know.
 - `PlayerView.VERSION` is a whole number from 1, raised on any change to the view's shape. `main` answers every
@@ -128,9 +140,13 @@ skipping a failed song. - **The browser output** keeps, per element, whether it 
 - **The engine only records it:** `ps.playing` follows a `system` event and nothing more. It never
   pauses the output in answer: that would tell the platform the listener paused, and iOS then doesn't resume after a
   call, while a token to tell the two apart on Android went stale. A `system` pause applies whatever song it names
-  (the intent is the player's, not a song's); a `system` play only for the song that plays.
+  (the intent is the player's, not a song's); a `system` play only for the song that plays, and only while it can:
+  after a failure or the queue's end the intent stays cleared, so the key still shows Play and its press retries or
+  starts the queue again.
 - **The Android output, in this change, only reports:** the media session's pause and play are
   applied natively as before, then sent as `system`, and so is a play-when-ready change for audio focus or noise.
+  `system` goes before the `time` that shows the change, so the page never sees the intent on over silence. Like the
+  browser output, it abandons its crossfade on a system pause.
   It needs no page to work, so a pause from the lock screen works with lull swiped away. Without the reports, a
   session pause would leave the intent playing over a silent output, and the view would call it loading (a
   spinner, and the buffering sound).
@@ -164,9 +180,12 @@ commit.
 - The mini player and `main` must share `PlayerView.VERSION`. Changing the view's shape raises it, and an app or hub
   that lags shows a message instead of a frozen or wrong player. The 0.2.10 app predates the version and can't be
   told; its own updater is its fix.
-- `PlayerView.pressed(view)` is what the play key shows as Pause: the intent while the song is neither over nor
-  failed (`playing`, `loading`, `choose`), so the key always does what it shows.
-- `data-playing` keeps its meaning (the listener's intent) for themes. `activity` is not a theme hook until a theme
+- `PlayerView.pressed(view)` is what the play key shows as Pause: the view's `intent`, which is what the key's press
+  acts on, so the key always does what it shows. Every terminal state clears the intent, so a failed or ended song
+  shows Play; a song waiting for the listener to pick a copy shows what the listener wanted.
+- The buffering sound follows a wait for a source (`finding`, `queued`, `stalled` with no sound), not an output
+  starting a song it already holds: a resume, a song start or a gapless handover makes no sound.
+- `data-playing` keeps its meaning (the listener's intent) for themes, painted from `intent`. `activity` is not a theme hook until a theme
   needs it.
 
 ## Alternatives
