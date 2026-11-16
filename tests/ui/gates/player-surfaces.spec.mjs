@@ -82,18 +82,21 @@ const receivedOf = (v) => Math.round(shareOf(v));
 const showsShare = (percents, v) => percents.some((p) => p === Math.round(shareOf(v)) || p === Math.floor(shareOf(v)));
 const rateOf = (v) => (v.clock ? v.clock.rate : v.playing ? 1 : 0);
 
-/* the mini player's words for the player's state are the bar's, while main's player is in `state` */
+/* the mini player's words for the player's state are the bar's, and the words of the view main sent last, while main's
+   player is in `state`: all three read at one moment, the bar's read again after the others, so a state main moves on
+   from between the reads (finding, then buffering) is read again rather than compared with the next one's words */
 async function sameWords(page, mini, relay, inState) {
+  const bar = () => page.evaluate(() => ({ status: App.player.state.status, playing: App.player.state.playing,
+    words: document.querySelector('#pbar').getAttribute('data-status-text') }));
   await expect.soft.poll(async () => {
-    const main = await page.evaluate(() => ({ status: App.player.state.status, playing: App.player.state.playing,
-      words: document.querySelector('#pbar').getAttribute('data-status-text') }));
+    const main = await bar();
     if (!inState(main)) return `main is ${main.status}`;
-    const m = await mini.evaluate(shown);
-    return m.status === main.words && main.words ? 'same' : `mini: ${JSON.stringify(m.status)}, bar: ${JSON.stringify(main.words)}`;
-  }, { message: 'the mini player\'s [data-dk-status] says what the bar says', timeout: 15_000 }).toBe('same');
-  const last = views(relay).at(-1);
-  expect.soft(last && last.words, 'the view main sent last carries the same words').toBe(
-    await page.evaluate(() => document.querySelector('#pbar').getAttribute('data-status-text')));
+    if (!main.words) return 'the bar says nothing';
+    const m = await mini.evaluate(shown), last = views(relay).at(-1), again = await bar();
+    if (again.status !== main.status || again.words !== main.words) return 'main moved on while it was read';
+    if (!last || last.words !== main.words) return `the view main sent last: ${JSON.stringify(last && last.words)}, bar: ${JSON.stringify(main.words)}`;
+    return m.status === main.words ? 'same' : `mini: ${JSON.stringify(m.status)}, bar: ${JSON.stringify(main.words)}`;
+  }, { message: 'the mini player\'s [data-dk-status], the view main sent last and the bar say the same', timeout: 15_000 }).toBe('same');
 }
 async function failAt(page) {
   await page.evaluate((a) => { location.hash = '#/album/' + a; }, L.failingAlbum);
