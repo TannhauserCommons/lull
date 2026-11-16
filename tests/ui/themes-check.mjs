@@ -276,12 +276,15 @@ function playerIn(main, state = 'playing') {
     liked: false, saved: true, shuffle: false, repeat: 'off', volume: 0.8 };
 }
 /* the live values the theme names, as main read them, with what the record above fixes said as the record says it. The
-   song's place is no part of them: the mini player works it out (ADR-0041; before the view, it moved them on itself) */
-const PLACE = ['song.pos', 'song.elapsed', 'song.buffered', 'song.received'];
+   song's place is the record's too: a mini player from before the view drew it from these (and moved it on itself), one
+   with the view works it out from the view's clock and writes over them */
+const hundredths = (f) => Math.floor(Math.max(0, Math.min(1, f)) * 100) / 100;
+const clockTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 function liveIn(main, p) {
   if (!main.snap.live) return undefined;
   const live = { ...main.snap.live };
-  for (const k of PLACE) delete live[k];
+  Object.assign(live, { 'song.pos': hundredths(p.pos / p.duration), 'song.elapsed': clockTime(p.pos),
+    'song.buffered': p.received < 1 ? 0.3 : 1, 'song.received': hundredths(p.received) });
   const fixed = { 'player.playing': p.intent, 'player.status': p.status, 'player.status-text': p.words, 'player.volume': p.volume,
     'player.repeat': p.repeat, 'player.shuffle': p.shuffle, 'player.muted': false, 'song.saved': p.saved, 'song.liked': p.liked,
     'copy.peer': p.received < 1 ? 'a peer' : '' };
