@@ -212,11 +212,11 @@
   function slideSwap(host, makeMarkup) {
     if (!host) return;
     var old = host.firstElementChild;
-    if (App.reducedMotion() || !old) { host.innerHTML = String(makeMarkup()); return; }
+    if (App.reducedMotion() || !old) { host.innerHTML = String(makeMarkup()); App.paintDrawn(host); return; }
     old.classList.add('is-out');
     clearTimeout(host._t);
     host._t = setTimeout(function () {
-      host.innerHTML = String(makeMarkup());
+      host.innerHTML = String(makeMarkup()); App.paintDrawn(host);
       var n = host.firstElementChild; n.classList.add('is-in'); n.getBoundingClientRect(); n.classList.remove('is-in');
     }, 120);
   }
