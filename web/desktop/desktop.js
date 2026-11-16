@@ -687,6 +687,7 @@
     if (!v || typeof v.v !== 'number' || v.v < V.VERSION) return 'update-hub';
     return v.v > V.VERSION ? 'update-app' : null;
   }
+  var NOTICED = { error: 1, choose: 1, ended: 1 };
   var REPEAT_TEXT = { off: 'repeat off', all: 'repeat all', one: 'repeat one' };
   var heardMain = false;
   /* a view from main: draw it, and say what the last button press changed. Until main's first view the window shows the
@@ -703,9 +704,11 @@
     link = 'ok'; paint(scope); feedLive();
     if (!heardMain) { heardMain = true; return; }
     var says = [];
-    if (next.track && (!prev.track || prev.track.id !== next.track.id)) says.push(next.track.title + ', ' + next.track.artist);
-    /* a change of what the player is doing is said once, here: no live region reads out each step of it */
-    if (prev.activity !== next.activity && next.activity !== 'idle') says.push(next.activity === 'playing' || next.activity === 'paused' ? next.activity : next.words || next.activity);
+    /* the song, unless the slot's own live region on it says it (asked now: the slot may gain or lose it as it likes) */
+    if (next.track && (!prev.track || prev.track.id !== next.track.id) && !$('[data-dk-now][aria-live]:not([aria-live="off"])')) says.push(next.track.title + ', ' + next.track.artist);
+    /* news the listener didn't cause and can't see coming, said once on the change: a failure, a copy to pick, the queue's end.
+       The routine moves (loading, playing, paused) are heard and seen already: no live region reads out each step of them */
+    if (prev.activity !== next.activity && NOTICED[next.activity]) says.push(next.words || next.activity);
     var was = prev.muted ? 0 : prev.volume, now = next.muted ? 0 : next.volume;
     if (was !== now) note(scope, 'volume ' + Math.round(now * 100) + '%', 0, says);
     if (prev.shuffle !== next.shuffle) note(scope, next.shuffle ? 'shuffle on' : 'shuffle off', 0, says);
@@ -713,7 +716,7 @@
     if (says.length) announce(says.join('. '));
   }
   /* main's page is gone (hidden, reloading, its renderer dead) until it says hello again with a view */
-  function mainAway(scope) { stopClock(); link = 'away'; paint(scope); feedLive(); }
+  function mainAway(scope) { var said = link === 'away'; stopClock(); link = 'away'; paint(scope); feedLive(); if (!said) announce(LINK_WORDS.away); }
   /* the song moves on between views: this window's clock, while main's view says the song runs */
   function tickClock() {
     if (link !== 'ok' || latest.clock.rate !== 1) return;
@@ -935,7 +938,7 @@
         case 'vol-down': return P.setVolume(ps.volume - .1);
         case 'seek': return typeof detail.fraction === 'number' && P.seekFraction(detail.fraction);
         case 'act': return typeof detail.name === 'string' && (App.run(detail.name, detail.attrs) || console.warn('lull desktop: unknown action', detail.name));
-        case 'hello': miniOpen = true; return sendPlayer(true);
+        case 'hello': miniOpen = true; sendArt(true); return sendView(P.view());
         case 'bye': miniOpen = false; return;            // also sent by the app when it destroys the mini player
         default: console.warn('lull desktop: unknown action', a);
       }
@@ -1018,21 +1021,21 @@
       if (!force && data === sentArt) return; sentArt = data;
       T.event.emit('player-art', { art: data }).catch(logFailure('cover art'));
     };
-    /* views feed only the mini player: none while it's closed ('hello' when it opens, 'bye' when it goes). One goes when
-       its key changed, or when the position is not where the mini player's clock has it (a seek, a stall, a drifting
-       clock: a second off, PlayerView.strayed), so while the song plays none is needed for the position. The page
-       publishes its view while hidden too (the player's own clock, app.js), and a clock of this one checks every second
-       for what changes without a player event (the live model's values). */
-    var lastKey = '', lastView = null, miniOpen = false;
-    var sendPlayer = function (force) {
+    /* views feed only the mini player: none while it's closed ('hello' when it opens, 'bye' when it goes). The page's player
+       publishes a view when its key changes or its clock strays, hidden or not (the `view` event, app.js), and each goes
+       on as it is: while the song plays none is needed for the position. A clock of this page's checks every second for
+       what changes without one (the live model's values, the cover). */
+    var liveSent = '', miniOpen = false;
+    var sendView = function (view) {
       if (!miniOpen) return;
-      sendArt(force);
-      var view = P.view(), live = liveNow(), key = JSON.stringify([PlayerView.key(view), live]);
-      if (!force && key === lastKey && !PlayerView.strayed(lastView, view, view.clock.at)) return;
-      lastKey = key; lastView = view;
+      var live = liveNow(); liveSent = JSON.stringify(live || null);
       T.event.emit('player', live ? Object.assign({}, view, { live: live }) : view).catch(logFailure('player view'));
     };
-    setInterval(function () { sendPlayer(false); }, 1000);
+    setInterval(function () {
+      if (!miniOpen) return;
+      sendArt(false);
+      if (JSON.stringify(liveNow() || null) !== liveSent) sendView(P.view());
+    }, 1000);
     var sendAppearance = function () {
       var design = App.design(), base = Designs.designOf(design);
       T.event.emit('appearance', { design: design, base: base !== design ? base || undefined : undefined, theme: App.prefs().theme })
@@ -1064,7 +1067,7 @@
     askGlass();
 
     ['player', 'like', 'save', 'ready'].forEach(function (ev) { App.on(ev, sendNow); });
-    ['player', 'view', 'like', 'save'].forEach(function (ev) { App.on(ev, function () { sendPlayer(false); }); });
+    App.on('view', function (view) { sendArt(false); sendView(view); });
     ['design', 'prefs'].forEach(function (ev) { App.on(ev, sendAppearance); });
     App.on('design', sendPackage);
     App.on('ready', reattach); App.on('design', reattach); App.on('route', markDragRegions);

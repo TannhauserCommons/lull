@@ -186,8 +186,7 @@
 .dk-mini .device__facts { margin-top: 6px; }
 /* what the player is doing, in words (data-dk-status; PlayerView.paint writes it). The default device shows it only when there
    is news (desktop.js unhides it: loading, a copy to pick, an error, the link not ok), in the place of the facts, in the same
-   room: the facts keep their row's height (a tag) when they have nothing in them, so the window never changes size */
-.dk-mini__now-host .device__facts { min-height: var(--tag-h); }
+   room (a tag's height, as the facts row has with a chip in it). A facts row with nothing in it takes no room, as before */
 .dk-mini__now-host .device__facts:has(~ .device__state:not([hidden])) { display: none; }
 .dk-mini .device__state { contain: inline-size; margin-top: 6px; height: var(--tag-h); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-meta); line-height: var(--tag-h); color: var(--fg-2); }
 .dk-mini .device__state[hidden], .dk-mini__hint-state[hidden] { display: none; }
