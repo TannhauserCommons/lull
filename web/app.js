@@ -2097,12 +2097,15 @@
   P.currentId = function () { var q = ps.queue[ps.index]; return q ? q.trackId : null; };
   P.duration = function () { var t = P.current(); return duration || (t ? t.duration : 0); };
   P.upNext = function (n) { return ps.queue.slice(ps.index + 1, ps.index + 1 + (n || 2)).map(function (q) { return M.track(q.trackId); }).filter(Boolean); };
-  /* a change paints once: the bar's render (a `player` handler) ends in the painter, so the view it publishes next is
-     already on screen (a view published from the clock or the output's sound, outside a change, is painted on `view`) */
+  /* a change paints once, at its end: the handlers redraw their markup first (the bar, Now Playing, the parts), and the
+     painter's calls inside them (App.syncRows) wait for it. A view published from the clock or the output's sound,
+     outside a change, is painted on `view`. */
   var inChange = 0;
   function changed(kind) {
     inChange++;
-    try { App.emit('player', kind || 'state'); noteHeard(); publishView(); } finally { inChange--; }
+    var v;
+    try { App.emit('player', kind || 'state'); noteHeard(); v = publishView(); } finally { inChange--; }
+    if (!inChange) PlayerView.paint(document, v, Date.now());
     persistSoon();
   }
   /* music is heard: the listener wants it playing and sound is coming out (not waiting for data). P.heard() and the
@@ -3537,7 +3540,7 @@
      the player's view and on the visible clock between views. The page asks for its parts through $$kept: a long
      playlist's thousands of elements make every query cost. */
   PlayerView.find = function (scope, sel) { return scope === document ? $$kept(sel) : $$(sel, scope); };
-  function paintNow() { PlayerView.paint(document, P.view(), Date.now()); }
+  function paintNow() { if (!inChange) PlayerView.paint(document, P.view(), Date.now()); }
   App.setText = setText;
   App.on('tick', paintNow);
   App.on('view', function (view) { if (!inChange) PlayerView.paint(document, view, Date.now()); });

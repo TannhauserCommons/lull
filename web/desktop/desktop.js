@@ -575,7 +575,9 @@
      `withStatus`: the default device's, which has its status line beside the facts */
   function nowMarkup(withStatus) {
     var t = latest.track, status = withStatus ? STATUS : '';
-    if (!t) return '<div class="dk-mini__now">' + cover(84) + '<div><div class="device__title">Nothing playing</div><div class="device__artist">Pick something in lull</div>' + status + '</div></div>';
+    /* with no song there are no facts: the status takes the hint's line, at its height */
+    if (!t) return '<div class="dk-mini__now">' + cover(84) + '<div><div class="device__title">Nothing playing</div><div class="device__artist"><span class="dk-mini__hint">Pick something in lull</span>' +
+      (withStatus ? '<span class="dk-mini__hint-state" data-dk-status hidden></span>' : '') + '</div></div></div>';
     return '<div class="dk-mini__now">' + cover(84) + '<div><div class="device__title">' + esc(t.title) + '</div>' +
       '<div class="device__artist">' + esc(t.artist) + '</div><div class="device__facts">' + chip(latest.copy) +
       (latest.transfer.received < 1 ? '<span class="device__fact">peer <span data-bind="received"></span></span>' : '') + '</div>' + status + '</div></div>';
@@ -643,7 +645,7 @@
   function paint(scope) {
     var view = shown(), news = link !== 'ok' || !!NEWS[view.activity];
     $$('[data-dk-player]', scope).forEach(function (el) { if (el.getAttribute('data-link') !== link) el.setAttribute('data-link', link); });
-    $$('.device__state, .dk-strip__state', scope).forEach(function (el) { if (el.hidden === news) el.hidden = !news; });
+    $$('.device__state, .dk-strip__state, .dk-mini__hint-state', scope).forEach(function (el) { if (el.hidden === news) el.hidden = !news; });
     V.paint(scope, view, Date.now());
   }
   /* the song's own parts: drawn again when the song or its copy changes, or the share starts or stops arriving */

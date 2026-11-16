@@ -190,7 +190,9 @@
 .dk-mini__now-host .device__facts { min-height: var(--tag-h); }
 .dk-mini__now-host .device__facts:has(~ .device__state:not([hidden])) { display: none; }
 .dk-mini .device__state { contain: inline-size; margin-top: 6px; height: var(--tag-h); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-meta); line-height: var(--tag-h); color: var(--fg-2); }
-.dk-mini .device__state[hidden] { display: none; }
+.dk-mini .device__state[hidden], .dk-mini__hint-state[hidden] { display: none; }
+.dk-mini__hint-state { display: inline-block; vertical-align: top; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dk-mini__hint:has(~ .dk-mini__hint-state:not([hidden])) { display: none; }
 .dk-mini .wave { height: 36px; margin-top: var(--sp-2); }
 .dk-mini .device__page-head { min-height: 24px; }
 .dk-mini .device__brand { padding-top: 4px; }

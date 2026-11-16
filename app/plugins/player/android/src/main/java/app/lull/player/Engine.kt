@@ -169,8 +169,10 @@ object Engine {
     }
 
     /**
-     * The system's play or pause, or the media session's (lock screen, notification, headset, car): applied by the caller
-     * and reported, so the web UI's intent follows what the output did (docs/context/web.md, output interface: `system`).
+     * The system's play or pause, or the media session's (lock screen, notification, headset, car), reported so the web
+     * UI's intent follows what the output did (docs/context/web.md, output interface: `system`). It goes before the `time`
+     * that shows the change: the media session's keys report first and then apply, and the focus and noisy changes are
+     * reported as Media3 has already applied them.
      */
     private fun system(playing: Boolean) {
         val item = current ?: return
