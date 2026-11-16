@@ -43,7 +43,7 @@ the view every surface shows:
   track,                    // { id, title, artist, album } or null
   copy,                     // what P.playingCopy() says plays: { where, format, lossless, peer, received } or null
   clock,                    // { pos, at, rate, duration, known }: pos seconds at time at (ms), moving at rate (0 or 1)
-  transfer,                 // { received, front, parts, transferring }
+  transfer,                 // { received, front, parts, transferring, buffered }: buffered is the end the output holds (0-1)
   seekWait,                 // the fraction a pending seek lands at, or null
   liked, saved, shuffle, repeat, volume, muted, crossfading }
 ```
@@ -57,8 +57,11 @@ the view every surface shows:
 | `ended` | status `ended` |
 | `choose` | status `choose` (waiting for the listener to pick a copy) |
 | `paused` | the listener's intent is paused |
-| `loading` | status `finding`, `queued`, `buffering` or `stalled`; or `streaming`/`library` while the output waits or hasn't started (no `time` yet, or one with `playing: false`) |
-| `playing` | status `streaming` or `library`, and the output plays and isn't waiting |
+| `playing` | the output plays and isn't waiting, whatever the status says about the source (a stalled peer whose arrived part still plays is playing) |
+| `loading` | anything else: status `finding`, `queued`, `buffering`, `stalled`, `streaming` or `library` with no sound yet (no `time`, or one with `playing: false` or `waiting: true`) |
+
+The status says why; the sound says whether. A view that called a song loading while it was heard would stop the
+wave, the clock and Connect at every stalled peer the next copy covers.
 
 `clock.rate` is 1 only while `activity` is `playing`. Every surface places the song with `PlayerView.posAt(view, now)`,
 never by extrapolating on its own. `PlayerView.key(view)` is the view without `clock.pos` and `clock.at`, and
@@ -80,9 +83,12 @@ buffered-to, received; `[data-dk-pos]`, `[data-dk-dur]`, `[data-dk-vol]`; the pl
 **Published when it changes, not when a window is visible.** `App.player.view()` derives the view from the engine.
 The engine publishes it as the `view` event when its key changes or its clock strays, from `changed()` and from the
 player's clock before the clock's `document.hidden` early return. So a hidden page still publishes. The page paints
-on `view`, and on its visible clock between views. The live model's player values (`song.pos`, `song.elapsed`,
-`song.buffered`, `song.received`) are read from the view. Connect reports on every new view's activity, with
-`playing` meaning `activity === 'playing'`, so a failure, an end or an outside pause reaches other devices.
+on `view`, and on its visible clock between views. Every part that shows the activity (the play key and its
+spinner, the wave, Now Playing's light) repaints on `view`: a song can go from loading to playing with no other
+player event. The live model's player values (`song.pos`, `song.elapsed`,
+`song.buffered`, `song.received`) are read from the view. Connect reports whenever the view's activity changes, so a failure, an end or an outside pause reaches other devices
+at once. Its `playing` stays the listener's intent (every terminal state clears the intent, and a device taking over
+plays on what the listener there wanted, loading or not).
 
 **The mini player's link has a version and two ends that each say hello.**
 - `main` sends the view itself as the `player` event, and the cover on its own as today (`player-art`).
@@ -98,9 +104,15 @@ on `view`, and on its visible clock between views. The live model's player value
 - The link's state is `data-link` on `[data-dk-player]`: `ok`, `away` (after `main-bye`, until a view comes),
   `update-app` (`main` is newer) or `update-hub` (`main` is older, or sent a snapshot with no `v`).
 
-**The listener's intent follows the output.** When the output pauses on its own (an output `time` with
-`playing: false` that no `P.pause` asked for), the engine sets `ps.playing = false`, as any player shows a pause the
-system made.
+**The listener's intent follows the output.** An output that pauses or resumes for a reason of the system's (another
+app took the audio focus, headphones out, the lock screen's or a headset's keys) says so: the output interface's
+`system` event, `{ key, playing }`. The engine sets `ps.playing` to it, as any player shows a pause the system made.
+The engine never guesses one from a `time` with `playing: false`: an output reports that at a song's end, when it is
+cleared and on a seek after the end too, and a guessed pause nothing ever undid broke repeat-one, peer fallbacks and
+skipping a failed song. The browser output sends `system` for an element `pause` or `play` that its own `pause()` or
+`play()` didn't ask for (and not for the pause an element makes at its end). The Android output sends the media
+session's play and pause to the page as the `remote` commands next and previous already are, so they set the intent
+through `P.play`/`P.pause`, and sends `system` for a play-when-ready change for audio focus or noise.
 
 **Every slot field stays current.** A slot's `{{fields}}` are drawn when it draws. A slot is drawn again when a value
 of its pace changes (docs/themes.md section 14: a song-pace field on a new song, next song or status), on every
@@ -126,6 +138,8 @@ commit.
 - The mini player and `main` must share `PlayerView.VERSION`. Changing the view's shape raises it, and an app or hub
   that lags shows a message instead of a frozen or wrong player. The 0.2.10 app predates the version and can't be
   told; its own updater is its fix.
+- `PlayerView.pressed(view)` is what the play key shows as Pause: the intent while the song is neither over nor
+  failed (`playing`, `loading`, `choose`), so the key always does what it shows.
 - `data-playing` keeps its meaning (the listener's intent) for themes. `activity` is not a theme hook until a theme
   needs it.
 
