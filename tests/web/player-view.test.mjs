@@ -182,6 +182,15 @@ test('a view\'s key ignores where its clock says the song is, and changes with a
   assert.notDeepEqual(V.key({ ...base, transfer: { ...base.transfer, buffered: 0.9 } }), V.key(base), 'transfer.buffered');
 });
 
+// The words count up how long a song has waited ("Finding a source, 6 s", app.js waited()): a second more is not a new
+// view, or main would publish one, and send it to every mini player window, each second a song waits.
+test('a view\'s key ignores the seconds its words count up while the song waits', () => {
+  for (const [status, words] of [['finding', 'Finding a source'], ['finding', 'Finding a source, 4 peers answered'], ['queued', 'Queued at peer mira, position 3']]) {
+    const at = (sec) => V.derive(input({ status, sound: null, words: `${words}, ${sec} s` }));
+    assert.deepEqual(V.key(at(7)), V.key(at(6)), `${words}: 6 s, then 7 s`);
+  }
+});
+
 test('a clock a second or more off from the last view\'s has strayed; one running where it said has not', () => {
   const prev = V.derive(input({ pos: 20 }));
   const at = (pos, now, over) => V.derive(input({ pos, now, ...over }));

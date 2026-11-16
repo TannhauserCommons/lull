@@ -76,6 +76,8 @@ export default defineConfig({
     // the mini player's position moves while the song plays, with the main window hidden
     { name: 'mini-seek', testMatch: 'mini-seek.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'player-surfaces', testMatch: 'player-surfaces.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
+    // what the painter and the mini player windows draw of the player view: status words, a theme's own parts, the link
+    { name: 'player-paint', testMatch: 'player-paint.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // a tooltip never shows away from its control: a sheet's Close takes focus while the sheet still slides up
     { name: 'sheet-tip', testMatch: 'sheet-tip.spec.mjs', fullyParallel: true },
     // the phone's chrome: Now Playing's play button, the Search tab, inputs that never zoom the page
