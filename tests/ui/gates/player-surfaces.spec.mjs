@@ -744,3 +744,41 @@ test('a view of another version, or none, is refused and says which side to upda
   await mini.evaluate(fireView, {});
   await expect.soft.poll(async () => (await mini.evaluate(shown)).link, { message: 'a view of its own version' }).toBe('ok');
 });
+
+/* every wave the painter paints (player-view.js WAVES): how many bars it shows played, and how many the song's place says */
+const wavesPlayed = (page) => page.evaluate(() => {
+  const v = App.player.view(), f = PlayerView.posAt(v, Date.now()) / (v.clock.duration || 1);
+  return [...document.querySelectorAll('.wave[data-seek="player"], [data-dk-player] .wave')].map((w) => {
+    const bars = [...w.querySelectorAll('.wave__bar')];
+    return { wave: w.className, played: bars.filter((b) => b.classList.contains('is-played')).length, due: bars.filter((b, i) => (i + 0.5) / bars.length <= f).length };
+  }).filter((w) => w.due > 0);
+});
+
+// Nothing the page draws is left unpainted (ADR-0041): a page drawn again (App.refresh, as a stored theme or a hub
+// event does) while the song is paused partway in shows on every wave as many bars played as the song's place says,
+// at once, not when the song next moves. Each design's Now Playing, paused halfway.
+for (const design of designs) {
+  test(`a paused song's waves show its place after the page is drawn again / ${design}`, async ({ page }) => {
+    const album = L.tracks[L.savedIds[0]].albumId;
+    await openScreen(page, `/album/${album}`, { design, clock: false });
+    await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id'));
+      App.player.playTrack(rows[0], rows);
+    });
+    await page.waitForFunction(() => App.player.view().activity === 'playing', null, { timeout: 20_000 });
+    await page.evaluate(() => { location.hash = '#/now'; });
+    await page.waitForSelector('.wave[data-seek="player"] .wave__bar, [data-dk-player] .wave .wave__bar', { state: 'attached' });
+    await page.waitForTimeout(800);
+    await page.evaluate(() => { App.player.seekFraction(0.5); App.player.pause(); });
+    await page.waitForFunction(() => App.player.view().activity === 'paused', null, { timeout: 10_000 });
+    await page.waitForTimeout(500);
+    const before = await wavesPlayed(page);
+    expect(before.length, 'waves with bars to play').toBeGreaterThan(0);
+    expect(before, 'played bars halfway, before the page is drawn again').toEqual(before.map((w) => ({ ...w, played: w.due })));
+    await page.evaluate(() => App.refresh());
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))));
+    const after = await wavesPlayed(page);
+    expect(after.length, 'the waves, drawn again').toBe(before.length);
+    expect(after, 'played bars once the page is drawn again').toEqual(after.map((w) => ({ ...w, played: w.due })));
+  });
+}
