@@ -369,11 +369,16 @@ object Engine {
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             if (!isActive) return
-            sendTime()
-            // Another app took the audio focus or gave it back, or headphones came out: the system's pause or resume
+            // The system's pause: another app took the audio focus for good (a lasting loss; in Media3 1.5.1 a transient
+            // one is a suppression and leaves play-when-ready alone), or headphones came out. A crossfade stops with it
+            // (as the browser output's does), and `system` goes before the `time` that shows the change.
             if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS ||
                 reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
-            ) system(playWhenReady)
+            ) {
+                if (!playWhenReady) abandonFade()
+                system(playWhenReady)
+            }
+            sendTime()
         }
 
         override fun onPlaybackStateChanged(state: Int) {
@@ -429,7 +434,7 @@ object Engine {
 
     /**
      * What the MediaSession sees: the active deck, except that next/prev go to the web UI (it owns
-     * the queue) and play/pause go through the engine (so a fade stops with them) and are reported as `system`.
+     * the queue) and play/pause go through the engine (so a fade stops with them) and are reported as `system` first.
      */
     private class SessionPlayer(player: Player) : androidx.media3.common.ForwardingPlayer(player) {
         private val extra = intArrayOf(
@@ -455,10 +460,14 @@ object Engine {
         override fun pause() = session(false)
         override fun setPlayWhenReady(playWhenReady: Boolean) = session(playWhenReady)
 
-        /** Played or paused through the engine (so a fade stops with it), then reported to the web UI. */
+        /**
+         * Played or paused through the engine (so a fade stops with it), reported to the web UI first: `system` goes before
+         * the `time` the change sends, after a pause's crossfade is abandoned, as the focus path does.
+         */
         private fun session(playing: Boolean) {
-            if (playing) Engine.play() else Engine.pause()
+            if (!playing) abandonFade()
             system(playing)
+            if (playing) Engine.play() else Engine.pause()
         }
     }
 }
