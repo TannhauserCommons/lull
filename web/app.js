@@ -2100,12 +2100,33 @@
   P.currentId = function () { var q = ps.queue[ps.index]; return q ? q.trackId : null; };
   P.duration = function () { var t = P.current(); return duration || (t ? t.duration : 0); };
   P.upNext = function (n) { return ps.queue.slice(ps.index + 1, ps.index + 1 + (n || 2)).map(function (q) { return M.track(q.trackId); }).filter(Boolean); };
-  function changed(kind) { App.emit('player', kind || 'state'); noteHeard(); persistSoon(); }
+  function changed(kind) { App.emit('player', kind || 'state'); noteHeard(); publishView(); persistSoon(); }
   /* music is heard: the listener wants it playing and sound is coming out (not waiting for data). P.heard() and the
      `heard` event (true or false, on each change) are what the UI sounds keep quiet for (ADR-0081). */
   var heardWas = false;
   P.heard = function () { return !!(ps.playing && sound && sound.playing && !sound.waiting); };
   function noteHeard() { var h = P.heard(); if (h !== heardWas) { heardWas = h; App.emit('heard', h); } }
+
+  /* the one player view (web/player-view.js, ADR-0041): what every surface shows of the player. `activity` is the answer
+     to "is it playing, loading, paused": no surface decides that from the status on its own. It is published as the
+     `view` event when its key changes or its clock strays, from changed() and from the clock below, hidden page or not. */
+  P.view = function () {
+    var t = P.current(), bar = P.transferBar(), copy = t ? P.playingCopy() : null;
+    return PlayerView.derive({
+      track: t, status: ps.status, intent: ps.playing, sound: sound, words: t ? P.stateWords() : '',
+      copy: copy && Object.assign({ lossless: !!(M.formats[copy.format] || {}).lossless }, copy),
+      pos: ps.pos, duration: P.duration(), durationKnown: ps.durationKnown, received: ps.received, front: bar.front, parts: bar.parts,
+      seekWait: ps.seekWait, liked: !!t && App.isLiked(t.id), saved: !!t && App.isSaved(t.id), shuffle: ps.shuffle, repeat: ps.repeat,
+      volume: ps.volume, muted: ps.muted, crossfading: ps.crossfade, now: Date.now()
+    });
+  };
+  var viewLast = null, viewKey = '';
+  function publishView() {
+    var v = P.view(), k = JSON.stringify(PlayerView.key(v));
+    if (viewLast && k === viewKey && !PlayerView.strayed(viewLast, v, v.clock.at)) return viewLast;
+    viewLast = v; viewKey = k; App.emit('view', v);
+    return v;
+  }
 
   /* playback settings (Settings > Playback; GET /api/settings), defaults until the server answers */
   var playback = { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, radioWhenQueueEnds: true, volumeStep: 5, prefetchCount: 2,
@@ -2119,7 +2140,7 @@
 
   /* ---------- what the output plays: the playing queue entry (cur) and the one set to follow it (nxt) ----------
      Entries carry their stream facts: url, soulseek, complete (the transfer finished), attempt (fallbacks seen). */
-  var cur = null, nxt = null, loadSeq = 0, sound = { playing: false, waiting: false };
+  var cur = null, nxt = null, loadSeq = 0, sound = null;   // sound: what the output last reported of the song, null until it has
   /* sound comes from an output (docs/context/web.md#output-interface): <audio> here, the native player in the app */
   var out = window.LullNative && window.LullNative.player ? nativeOutput(window.LullNative.player) : audioOutput();
   function streamUrl(t, source, forceSoulseek) {
@@ -2165,7 +2186,7 @@
     ps.pos = 0; duration = 0; ps.fallback = null; ps.failedPeers = []; ps.error = null; ps.crossfade = false;
     ps.peer = null; ps.peersFound = 0; ps.queuePos = 0; ps.durationKnown = false; lastRanges = [];
     ps.belowMinimum = false; ps.unverified = false; ps.choices = null; ps.upgrade = null; ps.seekWait = null; ps.aheadS = null;
-    sound = { playing: false, waiting: false };
+    sound = null;
   }
   /* begin playing queue[index]: opts { autoplay (default true), at (seconds), reason (how the last song ended), forceSoulseek } */
   function load(index, opts) {
@@ -2655,7 +2676,7 @@
         format: ev.format || (ps.source && ps.source.format) || t.format, sizeMB: ev.size ? ev.size / 1e6 : t.sizeMB };
     }
     ps.belowMinimum = !!ev.belowMinimum; ps.unverified = !!ev.unverified;
-    var heard = sound.playing && !sound.waiting;
+    var heard = !!sound && sound.playing && !sound.waiting;
     switch (ev.status) {
       /* streaming `below: ask`: no copy passes the minimum; the listener picks one of `choices` (or skips) */
       case 'choose':
@@ -2719,7 +2740,7 @@
     var up = ps.upgrade, e = cur, dur = P.duration();
     if (!up || up.state !== 'ready' || switching || !e || !e.soulseek) return;
     var now = LullRules.switchNow({ picked: !!e.source, canSwitch: !!out.switchTo, duration: dur, pos: ps.pos, arrived: up.pct,
-      steady: ps.playing && sound.playing && !sound.waiting && !ps.crossfade });
+      steady: P.heard() && !ps.crossfade });
     if (now === 'next-play') {
       waitForNextPlay(e, out.switchTo ? 'The song is nearly over, so the better copy plays from the next play.'
         : 'This player can\'t line two copies up, so the better copy plays from the next play.', out.switchTo ? 'nearEnd' : 'cantSwitch');
@@ -2850,13 +2871,19 @@
     if (d.duration > 0 && d.duration !== duration) { duration = d.duration; ps.durationKnown = !cur.soulseek || ps.received >= 1; changed('status'); }
     trackListening(d.position, d.playing);
     ps.pos = d.position;
+    /* the output stopped sound that had been coming out, and nothing here asked it to (P.pause sets the intent first):
+       the system paused it (another app took the audio, headphones out). The intent follows, as any player's does */
+    var outsidePause = ps.playing && !d.playing && !!sound && sound.playing;
+    var soundMoved = !sound || sound.playing !== d.playing || sound.waiting !== d.waiting;
     sound = { playing: d.playing, waiting: d.waiting };
+    if (outsidePause) { ps.playing = false; changed('play'); }
     noteHeard();
     if (d.playing && !d.waiting && (ps.status === 'finding' || ps.status === 'queued' || ps.status === 'buffering' || ps.status === 'stalled' || ps.status === 'library' || ps.status === 'streaming')) {
       ps.status = cur.soulseek ? 'streaming' : 'library'; ps.error = null;
       beginPlay(P.current());
     } else if (d.waiting && ps.playing && (ps.status === 'streaming' || ps.status === 'library')) ps.status = 'buffering';
     if (ps.status !== was) changed('status');
+    else if (soundMoved) publishView();   // the sound alone can make a song play or wait
   }
   out.on('time', onTime);
   out.on('buffered', function (d) { if (isCur(d.key)) { lastRanges = d.ranges; updateBuffered(); } });
@@ -2936,6 +2963,7 @@
       if (switching && d === b) { if (type === 'error') abandonSwitch(); return; }   // the better copy, still silent
       if (type === 'error') { emit('error', { key: key(d), message: null, status: null }); return; }
       if (d !== a) return;                                   // the preloading deck reports only errors
+      if (type === 'pause' && d.el.ended) return;            // a song's end pauses its element: 'ended' says it, not a pause
       if (type === 'ended') { abandonSwitch(); if (fading) finishFade(); else ended(); return; }
       time(d);
     }
@@ -3332,9 +3360,10 @@
     if (cur.resumeAt && ps.playing && ps.pos > cur.resumeAt + 1) cur.resumeAt = 0;   // the resume worked
     preloadNext(); trySwitch();
     updateBuffered(); landKept();
+    var view = publishView();   // before the hidden page's return: a page nobody sees still says where the song is
     if (document.hidden) return;
-    var waiting = /^(finding|queued|buffering|stalled)$/.test(ps.status) ? Math.floor(Date.now() / 1000) : 0;
-    var sig = [ps.playing, ps.pos.toFixed(2), ps.received.toFixed(3), bufKey(ps.buffered), ps.status, waiting].join('|');
+    var waiting = view.activity === 'loading' ? Math.floor(Date.now() / 1000) : 0;
+    var sig = [view.activity, ps.playing, ps.pos.toFixed(2), ps.received.toFixed(3), bufKey(ps.buffered), ps.status, waiting].join('|');
     if (sig === tickWas) return;
     tickWas = sig;
     App.emit('tick', ps);
@@ -3480,11 +3509,11 @@
     at.forEach(function (el) { setVar(el, '--song-pos', step); });
   }
   function updateSeeks() {
-    var dur = P.duration() || 1, f = clamp(ps.pos / dur, 0, 1), parts = shownParts(), bk = bufKey(parts), front = arrivedFront();
+    var view = P.view(), dur = P.duration() || 1, f = clamp(ps.pos / dur, 0, 1), parts = shownParts(), bk = bufKey(parts), front = arrivedFront();
     var bufTo = ps.buffered.length ? ps.buffered[ps.buffered.length - 1][1] * dur : 0;
     var valText = fmtTime(ps.pos) + ' of ' + (ps.durationKnown ? '' : 'about ') + fmtTime(dur) + (ps.received < 1 ? ', downloaded to ' + fmtTime(bufTo) : '')
       + (ps.seekWait ? ', waiting for ' + fmtTime(ps.seekWait.fraction * dur) : '');
-    var transferring = ps.received < 1 && (ps.status === 'streaming' || ps.status === 'buffering');
+    var transferring = view.transfer.transferring;
     // player bar + mini: play state and the received percentage (an integer, usable as counter(rx) in CSS)
     ['pbar', 'mini'].forEach(function (s) { var el = document.getElementById(s); if (!el) return; setAttr(el, 'data-playing', !!ps.playing); setVar(el, '--rx', Math.round(ps.received * 100)); });
     setAttr(document.documentElement, 'data-playing', !!ps.playing);
@@ -3508,7 +3537,7 @@
     $$kept('.wave[data-seek="player"]').forEach(function (el) {
       var bars = $$('.wave__bar', el), n = bars.length;
       setVar(el, '--pos', f.toFixed(4));
-      var moving = ps.playing && ps.status !== 'buffering';
+      var moving = view.activity === 'playing';
       if (el.classList.contains('is-playing') !== moving) el.classList.toggle('is-playing', moving);
       bars.forEach(function (b, i) {
         var x = (i + .5) / n, inBuf = parts.some(function (r) { return x >= r[0] && x <= r[1]; });
@@ -3979,7 +4008,7 @@
   /* ---------- player bar + mini-player ---------- */
   function renderBar() {
     var t = P.current(), bar = $('#pbar'), mini = $('#mini');
-    var st = ps.status, idle = !t || st === 'idle';
+    var view = P.view(), st = ps.status, idle = !t || st === 'idle';
     bar.setAttribute('data-status', idle ? 'idle' : st);
     mini.setAttribute('data-status', idle ? 'idle' : st);
     /* the same state on the page's root, for a design to draw from anywhere (docs/themes.md: data-player): it changes
@@ -4033,15 +4062,15 @@
     } else { stEl.hidden = true; stEl.innerHTML = ''; }
     /* transport: every key and word bound to the player (data-bind: play, shuffle, repeat, save, mute, xfade), wherever it
        is: the player bar's, Now Playing's, a slot's part (designs/parts.js), a theme's own button */
-    var busy = st === 'finding' || st === 'queued' || st === 'buffering' || st === 'stalled';
+    var waitingForSound = view.activity === 'loading';
     $$kept('[data-bind="play"]').forEach(function (b) {
-      var playingNow = ps.playing && !idle && st !== 'ended' && st !== 'failed';
+      var playingNow = PlayerView.pressed(view);
       b.setAttribute('aria-label', playingNow ? 'Pause' : 'Play'); b.setAttribute('data-tip', playingNow ? 'Pause (Space)' : 'Play (Space)');
       /* a theme's own key (words, no icon) keeps its words: only lull's icon follows */
       var u = $('use', b), svg = $('svg', b);
       if (u) u.setAttribute('href', '#i-' + (playingNow ? 'pause' : 'play'));
       if (svg) svg.classList.toggle('ic-play', !playingNow);
-      b.classList.toggle('is-buffering', busy && ps.playing);
+      b.classList.toggle('is-buffering', waitingForSound);
     });
     $$kept('[data-bind="shuffle"]').forEach(function (b) { b.setAttribute('aria-pressed', String(ps.shuffle)); });
     $$kept('[data-bind="repeat"]').forEach(function (b) {

@@ -234,7 +234,7 @@
   /* ---------- the buffering loop: only in silence, gone the moment the music sounds ---------- */
   var loopSrc = null, loopUrl = null, loopInstead = null;
   function waiting() {
-    return armed && ps.playing && !P.heard() && (ps.status === 'finding' || ps.status === 'queued' || ps.status === 'buffering');
+    return armed && P.view().activity === 'loading';
   }
   function loopEntry() {
     if (loopInstead) { var g = S.soundFor(loopInstead, stack(), settings, known, true); if (g && g.entry.loop) return g.entry; }
@@ -260,8 +260,8 @@
       });
     }, function () {});
   }
-  /* the music's first sound: the loop goes at once, before anything else hears of it */
-  App.on('heard', function () { updateLoop(); });
+  /* the music's first sound: the view says it plays, and the loop goes at once */
+  App.on('view', function () { updateLoop(); });
 
   /* ---------- the moments ---------- */
   App.on('player', function (kind) {

@@ -21,8 +21,9 @@
   var pendingFocus = null;                             // data-fk of the focused control before a re-render
 
   function cur() { return P.current(); }
-  function busy() { return ['finding', 'queued', 'buffering', 'stalled'].indexOf(ps.status) >= 0; }
-  function playingNow() { return ps.playing && cur() && ['idle', 'ended', 'failed', 'jellyfin-error'].indexOf(ps.status) < 0; }
+  /* the play key's state, from the player's view (ADR-0041): Pause while the song plays or waits to; a key that is waiting spins */
+  function playingNow() { return PlayerView.pressed(P.view()); }
+  function busy() { return P.view().activity === 'loading'; }
   function onRoute() { return App.current.path === '/now'; }
   /* the song plays from storage (the library, or a download on this device), not from a transfer; the copy says so */
   function fromLibrary() { var w = P.playingCopy().where; return w === 'library' || w === 'device'; }
@@ -139,7 +140,7 @@
 
   function playBtn(size) {
     var on = playingNow();
-    return html`<button class="btn-gloss btn-gloss--${size}${busy() && ps.playing ? ' is-buffering' : ''}" data-act="play" data-bind="play" aria-label="${on ? 'Pause' : 'Play'}" data-tip="${on ? 'Pause (Space)' : 'Play (Space)'}" data-fk="a-${size}"><i class="btn-gloss__spin" aria-hidden="true"></i>${icon(on ? 'pause' : 'play', null, on ? '' : 'ic-play')}</button>`;
+    return html`<button class="btn-gloss btn-gloss--${size}${busy() ? ' is-buffering' : ''}" data-act="play" data-bind="play" aria-label="${on ? 'Pause' : 'Play'}" data-tip="${on ? 'Pause (Space)' : 'Play (Space)'}" data-fk="a-${size}"><i class="btn-gloss__spin" aria-hidden="true"></i>${icon(on ? 'pause' : 'play', null, on ? '' : 'ic-play')}</button>`;
   }
   function likeBtn(size) {
     var t = cur(), on = t && App.isLiked(t.id);

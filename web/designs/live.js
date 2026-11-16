@@ -258,7 +258,7 @@
 
   /* ---------- lull's page: the song, the queue, the player, the app, the services, the week ----------
      Each read from what the page already holds (App), at the events that change it: a song, a press, a state (App's
-     'player', 'like', 'save', 'store'), the song's place at App's 'tick' (written only when a hundredth or a second
+     'player', 'like', 'save', 'store'), the song's place at App's 'tick' and 'view' (written only when a hundredth or a second
      moved), the app's attributes as .app changes them. Only the branches a theme names are read at all. */
   function named(prefix) { for (var p in used) if (p.indexOf(prefix) === 0) return true; return false; }
   function fnv(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
@@ -276,13 +276,17 @@
     o['song.duration'] = t ? App.fmt.time(P.duration() || 0) : '';
     o['song.hue'] = h % 360; o['song.seed'] = (h >>> 9) % 1000 / 1000; o['song.title-length'] = t ? t.title.length : 0;
   }
-  function placeValues(o) {
-    var P = App.player, ps = P.state, t = P.current(), dur = P.duration() || 0, b = ps.buffered || [];
-    o['song.pos'] = t && dur ? hundredths(ps.pos / dur) : 0;
-    o['song.elapsed'] = t ? App.fmt.time(ps.pos) : '';
-    o['song.buffered'] = t && b.length ? hundredths(b[b.length - 1][1]) : 0;
-    o['song.received'] = t ? hundredths(ps.received == null ? 1 : ps.received) : 0;
+  /* the song's place, from the player's view (ADR-0041) at `now`: the view is published while the page is hidden, so
+     these don't stall there */
+  var latest = null;   // the player's view as the page last published or read it (null before the page's player is hooked in)
+  function placeValues(o, view, now) {
+    var t = view && view.track, dur = t ? view.clock.duration || 0 : 0, pos = t ? PlayerView.posAt(view, now) : 0, parts = t ? view.transfer.parts : [];
+    o['song.pos'] = t && dur ? hundredths(pos / dur) : 0;
+    o['song.elapsed'] = t ? App.fmt.time(pos) : '';
+    o['song.buffered'] = t && parts.length ? hundredths(parts[parts.length - 1][1]) : 0;
+    o['song.received'] = t ? hundredths(view.transfer.received) : 0;
   }
+  function writePlace(view) { var o = {}; placeValues(o, view, Date.now()); Object.keys(o).forEach(function (p) { set(p, o[p]); }); }
   function queueValues(o) {
     var P = App.player, ps = P.state, q = P.upNext(8), n = q[0], left = (ps.queue || []).slice((ps.index || 0) + 1), secs = 0;
     o['next.title'] = n ? n.title : ''; o['next.artist'] = n ? n.artist : ''; o['next.album'] = n ? n.album || '' : '';
@@ -371,7 +375,7 @@
       if ((which && which.indexOf(r[0]) < 0) || done.indexOf(r[1]) >= 0 || !named(r[0])) return;
       done.push(r[1]); r[1](o);
     });
-    if (!which || which.indexOf('song.') >= 0) placeValues(o);
+    if (!which || which.indexOf('song.') >= 0) placeValues(o, latest, Date.now());
     if (opened) openValues(o, which);
     Object.keys(o).forEach(function (p) { set(p, o[p]); });
   }
@@ -443,22 +447,27 @@
      can load before app.js has run (it loads with the theme, in the page's head): then it hooks in once the page has */
   function hook() {
     if (!window.App || !App.on) return;
+    /* the song's place is read from the player's view, taken fresh before every read of it */
+    function read(which) { latest = App.player.view(); fromApp(which); }
     App.on('route', function () { fromApp(['app.']); L.paint(); });
     App.on('design', L.paint);
     /* the player's kinds of change (app.js changed()): the queue is read again only when it or the song changed */
     App.on('player', function (k) {
       if (!any) return;
-      fromApp(k === 'track' || k === 'queue' || k === 'ended' ? ['song.', 'next.', 'player.'] : k === 'source' || k === 'status' ? ['song.', 'player.'] : ['player.']);
+      read(k === 'track' || k === 'queue' || k === 'ended' ? ['song.', 'next.', 'player.'] : k === 'source' || k === 'status' ? ['song.', 'player.'] : ['player.']);
     });
-    App.on('tick', function () { if (any && (used['song.pos'] || used['song.elapsed'] || used['song.buffered'] || used['song.received'])) { var o = {}; placeValues(o); Object.keys(o).forEach(function (p) { set(p, o[p]); }); } });
-    App.on('like', function () { if (any) fromApp(['song.']); });
-    App.on('save', function () { if (any) fromApp(['song.', 'next.']); });
-    App.on('store', function () { if (any) fromApp(['song.', 'player.', 'services.', 'week.']); });
+    /* the song's place follows the visible clock (tick) and every published view, hidden page or not */
+    function place() { if (any && (used['song.pos'] || used['song.elapsed'] || used['song.buffered'] || used['song.received'])) writePlace(latest); }
+    App.on('tick', function () { latest = App.player.view(); place(); });
+    App.on('view', function (v) { latest = v; place(); });
+    App.on('like', function () { if (any) read(['song.']); });
+    App.on('save', function () { if (any) read(['song.', 'next.']); });
+    App.on('store', function () { if (any) read(['song.', 'player.', 'services.', 'week.']); });
     /* the app's attributes change with a route, a panel, a resize: follow .app itself, only while a theme names them */
     var app = document.getElementById('app');
     if (app) new MutationObserver(function () { if (named('app.')) fromApp(['app.']); })
       .observe(app, { attributes: true, attributeFilter: ['data-screen', 'data-view', 'data-ctx', 'data-size'] });
-    fromApp(); L.paint();
+    read(); L.paint();
   }
   if (window.App && App.on) hook();
   else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook);
