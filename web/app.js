@@ -86,15 +86,17 @@
   function patch(el, markup) {
     var tpl = document.createElement('template');
     tpl.innerHTML = String(markup == null ? '' : markup);
-    var hooked = !!tpl.content.querySelector(PlayerView.HOOKS);
+    var hooked = !inChange && !!tpl.content.querySelector(PlayerView.HOOKS);   // inside a change the painter runs once at its end
     patchChildren(el, decorated(el, tpl.content));
     pruneFills();
-    /* the one place drawing happens (a screen, a part, a panel's tab, the bar): markup with the player's hooks is painted in the
-       task it is drawn in, so a paused song's place is on it at once, with no tick or player event to come. Inside a change the
-       painter runs once at its end, over everything drawn */
-    if (hooked && !inChange && P && P.view) PlayerView.paint(el, P.view(), Date.now());
+    if (hooked) paintDrawn(el);
     return el;
   }
+  /* markup with the player's hooks is painted in the task it is drawn in, so a paused song's place is on it at once, with no tick
+     or player event to come: App.patch does it for what it draws (a screen, a part, a panel's tab, the bar), and whatever draws
+     by innerHTML calls it for what it drew (Now Playing's sliding screen). Inside a change the painter runs once at its end */
+  function paintDrawn(el) { if (!inChange && P && P.view) PlayerView.paint(el, P.view(), Date.now()); }
+  App.paintDrawn = paintDrawn;
   /* where the page decorates what screens render (card heads, see ui.cardHeads), the new markup gets the same
      decoration first, so the comparison is like for like and the decoration isn't stripped and redrawn each time.
      All of it stays in the template's own document, which loads nothing: in the page's, every picture of the new
@@ -2046,7 +2048,7 @@
     if (opts.mode) { body.duplicate = {}; ids.forEach(function (id) { body.duplicate[id] = opts.mode; }); }
     M.api('/api/saves', { method: 'POST', body: body }).then(function (res) {
       var skipped = res.skipped || [], started = ids.filter(function (id) { return skipped.indexOf(id) < 0; });
-      skipped.forEach(function (id) { setSave(id, null); M.patchTrack(id, { saved: true }); });   // already in the library
+      skipped.forEach(function (id) { M.patchTrack(id, { saved: true }); setSave(id, null); });   // already in the library: the song first, so the `save` it sends finds it saved
       (res.jobs || []).forEach(function (jobId, i) {
         var id = started[i]; if (id && state.saves[id]) setSave(id, Object.assign({}, state.saves[id], { jobId: jobId }));
       });
@@ -2092,7 +2094,7 @@
   var P = App.player = {};
   var saved0 = storage('player') || {};
   var ps = P.state = {
-    queue: [], index: 0, playing: false, pos: 0, status: 'idle', waitSince: null,
+    queue: [], index: 0, playing: false, pos: 0, status: 'idle',
     received: 0, arrived: [], buffered: [], aheadS: null, durationKnown: false, seekWait: null,
     peer: null, peersFound: 0, queuePos: 0, fallback: null, failedPeers: [], source: null,
     crossfade: false, shuffle: !!saved0.shuffle, repeat: saved0.repeat || 'off',
@@ -2126,7 +2128,7 @@
   P.view = function () {
     var t = P.current(), bar = P.transferBar(), copy = t ? P.playingCopy() : null;
     return PlayerView.derive({
-      track: t, status: ps.status, intent: ps.playing, sound: sound, words: t ? P.stateWords() : '', since: t ? ps.waitSince : null,
+      track: t, status: ps.status, intent: ps.playing, sound: sound, words: t ? P.stateWords() : '', since: t ? statusSince() : null,
       copy: copy && Object.assign({ lossless: !!(M.formats[copy.format] || {}).lossless }, copy),
       pos: ps.pos, duration: P.duration(), durationKnown: ps.durationKnown, received: ps.received, front: bar.front, parts: bar.parts,
       buffered: ps.buffered,
@@ -2203,12 +2205,8 @@
     ps.pos = 0; duration = 0; ps.fallback = null; ps.failedPeers = []; ps.error = null; ps.crossfade = false;
     ps.peer = null; ps.peersFound = 0; ps.queuePos = 0; ps.durationKnown = false; lastRanges = [];
     ps.belowMinimum = false; ps.unverified = false; ps.choices = null; ps.upgrade = null; ps.seekWait = null; ps.aheadS = null;
-    sound = null; waitFor(false);
+    sound = null;
   }
-  /* where a wait for a source stands (ADR-0041): the hub's finding, queued, stalled, its found peer's first bytes (buffering) and a
-     fallback, with when it began (the view's `since`: the buffering sound and the wait's count follow it). The output's own wait
-     for data (a stream it holds, a gapless handover) is none: `buffering` names both, so the status can't tell them apart */
-  function waitFor(on) { if (!on) ps.waitSince = null; else if (ps.waitSince == null) ps.waitSince = Date.now(); }
   /* begin playing queue[index]: opts { autoplay (default true), at (seconds), reason (how the last song ended), forceSoulseek } */
   function load(index, opts) {
     opts = opts || {};
@@ -2218,18 +2216,18 @@
     var was = [cur, nxt], e = ps.queue[ps.index], seq = ++loadSeq;
     cur = e || null; nxt = null;
     was.forEach(letGo);
-    if (!e || !M.track(e.trackId)) { out.pause(); out.setNext(null); ps.status = 'idle'; waitFor(false); ps.playing = false; ps.source = null; changed('track'); return; }
+    if (!e || !M.track(e.trackId)) { out.pause(); out.setNext(null); ps.status = 'idle'; ps.playing = false; ps.source = null; changed('track'); return; }
     e.attempt = null; e.job = null; e.better = null; e.last = null; if (opts.forceSoulseek) e.complete = false;
     ps.source = e.source || null;
     ps.playing = opts.autoplay !== false;
     var library = App.isSaved(e.trackId) && !opts.forceSoulseek;
-    ps.status = library ? 'library' : 'finding'; waitFor(!library); ps.received = library ? 1 : 0; ps.arrived = library ? [[0, 1]] : []; ps.buffered = [];
+    ps.status = library ? 'library' : 'finding'; ps.received = library ? 1 : 0; ps.arrived = library ? [[0, 1]] : []; ps.buffered = [];
     ps.durationKnown = library;
     if (opts.at) ps.pos = opts.at;
     changed('track');
     itemFor(e, opts.forceSoulseek).then(function (it) {
       if (seq !== loadSeq || !it) return;
-      if (!e.soulseek && ps.status === 'finding') { ps.status = 'library'; waitFor(false); ps.received = 1; ps.arrived = [[0, 1]]; ps.durationKnown = true; changed('status'); }
+      if (!e.soulseek && ps.status === 'finding') { ps.status = 'library'; ps.received = 1; ps.arrived = [[0, 1]]; ps.durationKnown = true; changed('status'); }
       out.load(it, { at: opts.at || 0, autoplay: ps.playing }).catch(playRefused);
       applyLevels();
       if (out.eagerNext) preloadNext();
@@ -2301,7 +2299,7 @@
   }
   function endQueue(auto) {
     endPlay(auto ? 'completed' : 'skipped');
-    ps.status = 'ended'; waitFor(false); ps.playing = false; ps.pos = P.duration(); out.pause();
+    ps.status = 'ended'; ps.playing = false; ps.pos = P.duration(); out.pause();
     changed('ended');
   }
   P.prev = function () {
@@ -2701,21 +2699,21 @@
     switch (ev.status) {
       /* streaming `below: ask`: no copy passes the minimum; the listener picks one of `choices` (or skips) */
       case 'choose':
-        ps.status = 'choose'; waitFor(false); ps.choices = ev.choices || [];
+        ps.status = 'choose'; ps.choices = ev.choices || [];
         if (!e.asked) { e.asked = true; App.hooks.sourcePicker(e.trackId, { choose: true }); }
         break;
       case 'finding': case 'queued': case 'stalled':
-        if (!heard || ev.status === 'stalled') { ps.status = ev.status; waitFor(true); } break;
-      case 'buffering': if (!heard) { ps.status = 'buffering'; waitFor(true); } break;
-      case 'streaming': ps.status = heard || !ps.playing ? 'streaming' : 'buffering'; waitFor(false); ps.fallback = null; break;
+        if (!heard || ev.status === 'stalled') ps.status = ev.status; break;
+      case 'buffering': if (!heard) ps.status = 'buffering'; break;
+      case 'streaming': ps.status = heard || !ps.playing ? 'streaming' : 'buffering'; ps.fallback = null; break;
       case 'fallback':
         ps.fallback = { from: prevPeer, to: ev.peer, n: ps.failedPeers.length + 1, of: ps.peersFound || null };
-        ps.status = 'buffering'; waitFor(true);
+        ps.status = 'buffering';
         if (ev.peer && ev.peer !== prevPeer) App.toast('Now from ' + ev.peer, { group: 'now-from', icon: 'soulseek', kind: 'ok' });
         break;
       case 'failed':
         if (ps.playing) skipFailed(cur);
-        ps.status = 'failed'; waitFor(false); ps.playing = false; out.pause(); ps.seekWait = null;
+        ps.status = 'failed'; ps.playing = false; out.pause(); ps.seekWait = null;
         ps.error = ev.error || null;
         cur.resolve = 'none';
         break;
@@ -2828,7 +2826,7 @@
     var t = P.current();
     function show(status, text) {
       if (e !== cur || P.current() !== t) return;
-      ps.playing = false; ps.status = status; waitFor(false); ps.error = text; out.pause();
+      ps.playing = false; ps.status = status; ps.error = text; out.pause();
       changed('status');
     }
     if (e.soulseek) {
@@ -2880,7 +2878,7 @@
     if (next) { if (nxt && nxt.uid === next) handOver(nxt); return; }
     /* a Soulseek response that ends early is a fallback in progress, not the song's end: the `stream` event
        with the next attempt reopens it */
-    if (LullRules.endedEarly(cur.soulseek, cur.complete, P.duration(), ps.pos)) { ps.status = 'buffering'; waitFor(false); changed('status'); return; }
+    if (LullRules.endedEarly(cur.soulseek, cur.complete, P.duration(), ps.pos)) { ps.status = 'buffering'; changed('status'); return; }
     P.next(true);
   }
 
@@ -2895,9 +2893,9 @@
     var soundMoved = !sound || sound.playing !== d.playing || sound.waiting !== d.waiting;
     sound = { playing: d.playing, waiting: d.waiting };
     if (d.playing && !d.waiting && (ps.status === 'finding' || ps.status === 'queued' || ps.status === 'buffering' || ps.status === 'stalled' || ps.status === 'library' || ps.status === 'streaming')) {
-      ps.status = cur.soulseek ? 'streaming' : 'library'; waitFor(false); ps.error = null;
+      ps.status = cur.soulseek ? 'streaming' : 'library'; ps.error = null;
       beginPlay(P.current());
-    } else if (d.waiting && ps.playing && (ps.status === 'streaming' || ps.status === 'library')) { ps.status = 'buffering'; waitFor(false); }
+    } else if (d.waiting && ps.playing && (ps.status === 'streaming' || ps.status === 'library')) ps.status = 'buffering';
     if (ps.status !== was) changed('status');
     else if (soundMoved) noteHeard(publishView());   // the sound alone can make a song play or wait
   }
@@ -3479,8 +3477,11 @@
     queueChanged(); changed('mode');
   };
 
-  /* how long the song has waited for a source, once that is long enough to wonder (5 s): from when the view's `since` says it began */
-  function waited() { if (ps.waitSince == null) return ''; var sec = Math.floor((Date.now() - ps.waitSince) / 1000); return sec >= 5 ? ', ' + sec + ' s' : ''; }
+  /* when the status began (ms): the view's `since`, and the wait's count on the bar (5 s on, in a status that waits for a source) */
+  var statusWas = null, statusAt = 0;
+  /* noted whenever the player is asked (every change of status goes through changed(), which derives the view) */
+  function statusSince() { if (ps.status !== statusWas) { statusWas = ps.status; statusAt = Date.now(); } return statusAt; }
+  function waited() { var sec = Math.floor((Date.now() - statusSince()) / 1000); return sec >= 5 ? ', ' + sec + ' s' : ''; }
   /* one line describing the current status (player bar state tab, aria): with the wait's running count when `counted`,
      which the view's words (P.stateWords) never have, or each second of a wait would be a new view */
   P.statusText = function (counted) {

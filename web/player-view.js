@@ -14,10 +14,10 @@
   /* the statuses the player has (app.js, "Player engine"); an unknown one fails loudly rather than guessing */
   var SOURCE = { finding: 1, queued: 1, buffering: 1, stalled: 1, streaming: 1, library: 1 };
 
-  /* a wait for a source: the hub's (finding, queued, stalled, a found peer's first bytes, a fallback) says when it began
-     (`since`), and the output's own wait for data, a resume or a gapless handover (also `buffering`) says nothing. The buffering
-     sound follows the first, with nothing sounding, and not the second */
-  V.waitsForSource = function (view) { return view.activity === 'loading' && view.since != null; };
+  /* the buffering sound's rule, as it always was, read from the view: it plays while the intent is on, nothing is heard and the
+     status is finding, queued or buffering */
+  var WAIT = { finding: 1, queued: 1, buffering: 1 };
+  V.waitsForSource = function (view) { return view.intent && view.activity !== 'playing' && !!WAIT[view.status]; };
 
   /* what the player is doing, by the first row that matches (ADR-0041's table) */
   function activityOf(i) {
