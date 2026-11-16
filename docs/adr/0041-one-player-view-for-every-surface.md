@@ -39,7 +39,7 @@ the view every surface shows:
 ```
 { v,                        // the wire version, PlayerView.VERSION
   activity,                 // idle | loading | choose | playing | paused | ended | error
-  status, words, since,     // ps.status; P.stateWords() without a wait's running count; when that wait began (ms) or null
+  status, words, since,     // ps.status; P.stateWords() without a wait's running count; when the status began (ms)
   intent,                   // ps.playing: the listener's intent
   track,                    // { id, title, artist, album } or null
   copy,                     // what P.playingCopy() says plays: { where, format, lossless, peer, received } or null
@@ -190,10 +190,11 @@ commit.
 - `PlayerView.pressed(view)` is what the play key shows as Pause: the view's `intent`, which is what the key's press
   acts on, so the key always does what it shows. Every terminal state clears the intent, so a failed or ended song
   shows Play; a song waiting for the listener to pick a copy shows what the listener wanted.
-- The buffering sound follows a wait for a source: the hub finding or queueing one, a found or fallback peer not yet
-  sending, a stalled peer with no sound. Not an output starting a song it already holds: a resume, a song start or a
-  gapless handover makes no sound. Which wait it is comes from where it was reported (the hub, or the output's own
-  `waiting`), not from the status word alone, since `buffering` names both.
+- The buffering sound keeps the rule it had, read from the view instead of the engine: it plays while the intent is
+  on, nothing is heard, and the status is `finding`, `queued` or `buffering`. Three rules tried here each broke a wait
+  the old one covered (a peer fallback mid-song, a slow first trickle). What the old rule gets wrong (no sound for a
+  stalled peer in silence; a short one at a resume, a song start or a handover the output itself waits on) is a change
+  of its own, with its checks.
 - `data-playing` keeps its meaning (the listener's intent) for themes, painted from `intent`. `activity` is not a theme hook until a theme
   needs it.
 
