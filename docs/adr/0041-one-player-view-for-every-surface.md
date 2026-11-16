@@ -129,10 +129,16 @@ skipping a failed song. - **The browser output** keeps, per element, whether it 
   pauses the output in answer: that would tell the platform the listener paused, and iOS then doesn't resume after a
   call, while a token to tell the two apart on Android went stale. A `system` pause applies whatever song it names
   (the intent is the player's, not a song's); a `system` play only for the song that plays.
-- **The Android half lands on its own,** after it is tried on a phone (nothing here builds or runs it):
-  the web half needs nothing from it, and without it Android behaves as before (its session pause bypasses the
-  page, as it does today). Its page is known to listen from the page's own first call to the plugin, not from
-  the plugin's load, which Tauri runs once per process.
+- **The Android output, in this change, only reports:** the media session's pause and play are
+  applied natively as before, then sent as `system`, and so is a play-when-ready change for audio focus or noise.
+  It needs no page to work, so a pause from the lock screen works with lull swiped away. Without the reports, a
+  session pause would leave the intent playing over a silent output, and the view would call it loading (a
+  spinner, and the buffering sound).
+- **The rest of the Android half lands on its own,** after it is tried on a phone (nothing here builds or runs
+  it): a session play going through the page (a retry, the queue's start) while a page listens, and a call (a
+  transient loss of focus, which Media3 reports as a suppression, not a play-when-ready change) shown as a pause
+  that resumes. A page is known to listen from the page's own first call to the plugin, not from the plugin's
+  load, which Tauri runs once per process.
 
 **Every slot field stays current.** A slot's `{{fields}}` are drawn when it draws. A slot is drawn again when a value
 of its pace changes (docs/themes.md section 14: a song-pace field on a new song, next song or status), on every
