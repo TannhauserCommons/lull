@@ -5,7 +5,7 @@
 // the song plays from its own buffer. docs/context/quality.md#ui-gates.
 
 import { expect, test } from '@playwright/test';
-import { designs, openScreen } from './lib.mjs';
+import { designs, openScreen, spareSong } from './lib.mjs';
 
 /* every chip on the page with nothing in it, wherever it is drawn */
 const emptyChips = () => [...document.querySelectorAll('.q-chip')].filter((c) => !c.textContent.trim()).length;
@@ -13,9 +13,9 @@ const emptyChips = () => [...document.querySelectorAll('.q-chip')].filter((c) =>
 async function streamWithoutAPeer(page, request) {
   await page.route('**/api/events*', (route) => route.abort());
   await openScreen(page, '/home', { clock: false });
-  const album = await page.evaluate(() => App.data.api('/api/feed').then((f) => f.newReleases[0]));
-  await page.evaluate((id) => { location.hash = '#/album/' + id; }, album);
-  const track = await page.waitForSelector('#view .trow[data-track-id]').then((r) => r.getAttribute('data-track-id'));
+  /* a song of its own: the hub keeps one transfer per song for every page, so two parallel tests trickling one restart
+     each other's, and the loser never sees its bytes arrive */
+  const track = await spareSong(page);
   await request.post('/__fixture/trickle', { data: { id: track, bytesPerS: 60000 } });
   await page.evaluate((id) => App.player.playTrack(id, [id]), track);
   await page.waitForFunction(() => App.player.state.playing && App.player.state.received > 0, null, { timeout: 20000 });

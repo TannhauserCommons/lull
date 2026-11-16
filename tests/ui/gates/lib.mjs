@@ -50,6 +50,14 @@ export async function openScreen(page, route, { design = 'lull', theme = 'day', 
   await settle(page);
 }
 
+// A song no other test was given or any gate relies on, unsaved so the test may trickle it (the fixture hub's spare pool,
+// library.mjs): the page learns it as it learns any song. Call it once the app is open.
+export async function spareSong(page) {
+  const { id, entities } = await (await page.request.get('/__fixture/spare-song')).json();
+  await page.evaluate((e) => App.data.absorb(e), entities);
+  return id;
+}
+
 // Fonts in, and the view's markup unchanged for a moment (screens render in steps as reads settle).
 export async function settle(page) {
   await page.evaluate(() => document.fonts.ready);

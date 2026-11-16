@@ -31,6 +31,7 @@
 // POST /__fixture/artist-late { id, pending, errors } makes that artist's page answer with those sections still coming
 // (empty, named in `pending`) and `errors`, for that client; POST /__fixture/artist-in { id } answers it whole again
 // and sends nothing: an `artist.updated` the page never heard.
+// GET /__fixture/spare-song hands a test an unsaved song nobody else was given (library.mjs spareSongs) to trickle: { id, entities }.
 // POST /__fixture/trickle { id, bytesPerS, seekAhead } makes that unsaved song a Soulseek transfer arriving at bytesPerS from
 // now (its WAV is 8000 bytes a second of sound): GET /api/stream/<id> serves only what has arrived and holds a range that
 // starts past it until it has, as the hub does, and `stream` events report the transfer twice a second until it is complete.
@@ -1034,6 +1035,7 @@ async function files(req, res, path, root = WEB) {
   }
 }
 
+let spareHanded = 0;
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://fixture');
   const path = url.pathname, q = url.searchParams;
@@ -1044,6 +1046,12 @@ const server = createServer(async (req, res) => {
   if (path === '/__fixture/unsaved-songs' && req.method === 'GET') {
     const out = L.trackIds.filter((id) => !L.tracks[id].saved && !state.likes.includes(id)).slice(0, +(q.get('n') || 3));
     return send(res, 200, { items: out, entities: entities({ tracks: out, albums: albumsOf(out) }) });
+  }
+  // the next song in library.mjs's spare pool, never handed out before (unsaved, so a test may trickle it), with its entities
+  if (path === '/__fixture/spare-song' && req.method === 'GET') {
+    if (spareHanded >= L.spareSongs.length) return send(res, 409, { error: 'spare_songs_used', message: 'Every spare song is in use: grow the pool in library.mjs.' });
+    const id = L.spareSongs[spareHanded++];
+    return send(res, 200, { id, entities: entities({ tracks: [id], albums: albumsOf([id]) }) });
   }
   if (path === '/__fixture/feed-shape' && req.method === 'POST') { feedShapes.set(clientOf(req), (await readBody(req)).shape); return send(res, 204); }
   if (path === '/__fixture/drop-events' && req.method === 'POST') {

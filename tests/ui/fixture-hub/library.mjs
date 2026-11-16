@@ -99,6 +99,14 @@ export const failingAlbum = Object.keys(albums)[149];
 // this album's songs arrive, but as bytes no browser can decode (a copy that can't be played here)
 export const brokenAlbum = Object.keys(albums)[148];
 export const albumIds = Object.keys(albums);
+// Unsaved songs reserved for tests that trickle one (POST /__fixture/trickle): GET /__fixture/spare-song hands each out once,
+// so no two tests, however parallel, stream the same song, and no gate relies on any of them. They sit outside trackIds and
+// every album's trackIds, so no list, count or golden of the library holds them; they are made after the library, so it
+// is the same as without them.
+export const spareSongs = Array.from({ length: 64 }, (_, k) => {
+  const base = tracks[albums[albumIds[140]].trackIds[0]], id = 't-' + hex('track:spare:' + k);
+  return (tracks[id] = { ...base, id, title: `Spare Song ${k + 1}`, no: k + 1, duration: SONG_S || 180, sizeBytes: Math.round(((SONG_S || 180) * base.kbps * 1000) / 8) }).id;
+});
 export { artistIds };
 
 export const tags = TAGS;
