@@ -210,29 +210,44 @@ export async function restyleFanOut(browser, page) {
 }
 
 /* a stand-in for the app's native player (window.LullNative.player, docs/context/web.md#output-interface) that plays
-   nothing, for page.addInitScript: time runs while it "plays", __out.end() hands over to the next item, __out.at(s)
-   moves the song on to s as playing would, switchTo commits; __out.switches and __out.seeks record what it was asked */
+   nothing, for page.addInitScript. Time runs while it "plays" and the song ends as Android's (app/plugins/player,
+   Engine.kt) does: into the next item it was given (`ended` with next, gapless), or, with none, a `time` with playing
+   false at the end and then `ended` with next null, after which it reports not playing until it is moved or loaded.
+   __out.at(s) moves the song on to s as playing would, __out.end() plays it to its end now, __out.system(playing) is a
+   pause or play the system made (audio focus, headphones out: the `system` event, ADR-0041); switchTo commits;
+   __out.switches and __out.seeks record what it was asked */
 export function fakeOutput() {
   const subs = {};
-  let cur = null, next = null, pos = 0, playing = false;
+  let cur = null, next = null, pos = 0, playing = false, over = false;
   const fire = (type, d) => (subs[type] || []).forEach((fn) => fn(d));
+  const length = () => cur.duration || 240;
+  const time = () => fire('time', { key: cur.key, position: pos, duration: length(), playing: playing && !over, waiting: false });
+  function finish() {
+    const was = cur;
+    if (next) { cur = next; next = null; pos = 0; fire('ended', { key: was.key, next: cur.key }); time(); return; }
+    pos = length(); over = true;
+    time();
+    fire('ended', { key: was.key, next: null });
+  }
   setInterval(() => {
     if (!cur) return;
-    if (playing) pos += 0.1;
-    fire('time', { key: cur.key, position: pos, duration: cur.duration || 240, playing, waiting: false });
+    if (playing && !over) pos = Math.min(pos + 0.1, length());
+    if (playing && !over && pos >= length()) { finish(); return; }
+    time();
   }, 100);
   window.__out = {
     switches: [], seeks: [],
-    at(s) { pos = s; },
-    end() { const was = cur; cur = next; next = null; pos = 0; fire('ended', { key: was.key, next: cur ? cur.key : null }); },
+    at(s) { pos = s; over = false; },
+    end() { pos = length(); finish(); },
+    system(p) { playing = p; fire('system', { key: cur.key, playing: p }); time(); },
   };
   window.LullNative = {
     player: {
       on(type, fn) { (subs[type] = subs[type] || []).push(fn); return () => { subs[type] = subs[type].filter((f) => f !== fn); }; },
-      load(item, o) { cur = item; next = null; pos = (o && o.at) || 0; playing = !o || o.autoplay !== false; },
+      load(item, o) { cur = item; next = null; over = false; pos = (o && o.at) || 0; playing = !o || o.autoplay !== false; },
       play() { playing = true; },
       pause() { playing = false; },
-      seek(s) { window.__out.seeks.push(s); pos = s; },
+      seek(s) { window.__out.seeks.push(s); pos = s; over = false; },
       setVolume() {},
       setNext(item) { next = item; },
       crossfade() {},

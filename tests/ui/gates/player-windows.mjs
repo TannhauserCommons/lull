@@ -79,9 +79,6 @@ export function shown() {
   const text = (sel) => { const el = player && player.querySelector(sel); return el ? el.textContent.trim() : null; };
   const clock = text('[data-dk-pos]');
   const [m, s] = (clock || '').split(':').map(Number);
-  // the percentages it shows, but the volume's
-  const rest = player ? player.cloneNode(true) : null;
-  if (rest) rest.querySelectorAll('[data-dk-vol]').forEach((n) => n.remove());
   return {
     link: player ? player.getAttribute('data-link') : null,
     time: clock == null ? null : m * 60 + s,
@@ -89,7 +86,7 @@ export function shown() {
     title: text('[data-dk-title]') ?? text('[data-dk-now] .device__title'),
     status: text('[data-dk-status]'),
     chip: text('.q-chip'),
-    percents: rest ? [...rest.textContent.matchAll(/(\d+)\s*%/g)].map((x) => +x[1]) : [],
+    received: text('[data-bind="received"]'),   // the share arrived, as the page's hook says it ("42%")
     version: window.PlayerView ? window.PlayerView.VERSION : null,
   };
 }

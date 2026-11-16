@@ -16,7 +16,7 @@
 
 import { expect, test } from '@playwright/test';
 import * as L from '../fixture-hub/library.mjs';
-import { designs } from './lib.mjs';
+import { designs, fakeOutput, openScreen } from './lib.mjs';
 import { fireView, got, openMain, openMini, shown, views } from './player-windows.mjs';
 
 const fixtureClient = () => `${test.info().testId}:${test.info().repeatEachIndex}`;
@@ -112,7 +112,8 @@ test.describe('with main hidden', () => {
       const m = await mini.evaluate(shown);
       relay.toMini = true;
       expect.soft(receivedOf(share.first), 'the transfer moved on').not.toBe(receivedOf(share.last));
-      expect.soft(showsShare(m.percents, share.last), `the mini player shows the last view's share, ${receivedOf(share.last)}%: it shows ${m.percents.join(', ')}%`).toBe(true);
+      expect.soft(showsShare(m.received == null ? [] : [parseInt(m.received, 10)], share.last),
+        `the mini player's [data-bind="received"] shows the last view's share, ${receivedOf(share.last)}%: it shows ${m.received}`).toBe(true);
 
       // the format is the copy that plays (the peer's), as the bar has it, not the catalogue's
       const bar = await page.evaluate(() => { const c = document.querySelector('#pbar .q-chip'); return c ? c.textContent.trim() : null; });
@@ -202,22 +203,127 @@ test.describe('with main hidden', () => {
   });
 });
 
-// The system pausing the output (another app takes the audio, headphones out) is a pause: the listener's intent follows
-// the output, so the bar shows Play, and the mini player, Connect and the tray hear a pause.
-test('a pause the system makes shows as a pause', async ({ page }) => {
-  const song = L.savedIds[0];
-  await mainAt(page, 'lull', `/album/${L.tracks[song].albumId}`);
-  await page.evaluate((id) => App.player.playList([id], 0), song);
-  await playing(page);
-  const paused = await page.evaluate(() => {
-    const deck = [...window.__played].find((el) => !el.paused && /\/api\/(library\/)?stream\//.test(el.src));
-    if (deck) deck.pause();
-    return !!deck;
+// The listener's intent follows the output's own word (ADR-0041): a pause or a play the system made (another app takes
+// the audio, headphones out, a headset's keys) is the output's `system` event, and the bar shows it. It is never guessed
+// from a `time` with playing false: both outputs report one at a song's end (the browser's element pauses there; the
+// fake native output ends as Android's Engine.kt does, lib.mjs fakeOutput), and a guessed pause nothing undid stopped
+// repeat-one, a song ending into the next and a crossfade. Each where both outputs differ: the browser's <audio> decks
+// and the app's native player.
+const outputs = ['browser', 'native'];
+const album = L.tracks[L.savedIds[0]].albumId, saved = L.albums[album].trackIds;
+async function outputAt(page, output) {
+  if (output === 'native') {
+    await page.context().setExtraHTTPHeaders({ 'x-fixture-client': fixtureClient() });
+    await page.addInitScript(fakeOutput);
+    await openScreen(page, `/album/${album}`, { clock: false });
+  } else await mainAt(page, 'lull', `/album/${album}`);
+}
+/* every change of the player from here on, with the listener's intent as it stood */
+const watchIntent = (page) => page.evaluate(() => { window.__intents = []; App.on('player', () => window.__intents.push(App.player.state.playing)); });
+const intentDropped = (page) => page.evaluate(() => window.__intents.filter((p) => !p).length);
+const playKey = (page) => page.evaluate(() => { const b = document.querySelector('#pbar [data-bind="play"]');
+  return { label: b.getAttribute('aria-label'), loading: b.classList.contains('is-buffering') }; });
+/* the song to `left` seconds from its end, as the output would get there */
+const nearEnd = (page, output, left) => page.evaluate(([native, left]) => {
+  const at = App.player.duration() - left;
+  if (native) window.__out.at(at); else App.player.seek(at);
+}, [output === 'native', left]);
+/* the deck the browser's engine plays */
+const deck = (page, act) => page.evaluate((act) => {
+  const el = [...window.__played].find((e) => /\/api\/(library\/)?stream\//.test(e.src) && (act === 'play' ? e.paused : !e.paused));
+  if (el) el[act]();
+  return !!el;
+}, act);
+
+test.describe('the listener\'s intent', () => {
+  for (const output of outputs) {
+    test(`stays on as repeat one plays the song again / ${output}`, async ({ page }) => {
+      await outputAt(page, output);
+      await page.evaluate((id) => App.player.playList([id], 0), saved[0]);
+      await playing(page);
+      await page.evaluate(() => { while (App.player.state.repeat !== 'one') App.player.cycleRepeat(); });
+      await watchIntent(page);
+      await nearEnd(page, output, 1.5);
+      await page.waitForFunction(() => App.player.state.pos > App.player.duration() - 3);
+      await page.waitForFunction(() => App.player.state.pos > 0.3 && App.player.state.pos < 5, null, { timeout: 15_000 });
+      expect(await page.evaluate(() => App.player.current().id), 'the same song').toBe(saved[0]);
+      expect.soft(await page.evaluate(() => App.player.state.playing), 'the intent').toBe(true);
+      expect.soft(await intentDropped(page), 'changes with the intent off').toBe(0);
+      expect.soft((await playKey(page)).label, 'the play key').toBe('Pause');
+    });
+
+    test(`stays on as a song ends into the next / ${output}`, async ({ page }) => {
+      await outputAt(page, output);
+      await page.evaluate((ids) => App.player.playList(ids, 0), saved.slice(0, 2));
+      await playing(page);
+      await watchIntent(page);
+      await nearEnd(page, output, 1.5);
+      await page.waitForFunction((id) => App.player.current().id === id && App.player.state.pos > 0.5, saved[1], { timeout: 15_000 });
+      expect.soft(await page.evaluate(() => App.player.state.playing), 'the intent').toBe(true);
+      expect.soft(await intentDropped(page), 'changes with the intent off').toBe(0);
+      expect.soft((await playKey(page)).label, 'the play key').toBe('Pause');
+    });
+
+    test(`follows a pause and a play the system makes / ${output}`, async ({ page }) => {
+      await outputAt(page, output);
+      await page.evaluate((id) => App.player.playList([id], 0), saved[2]);
+      await playing(page);
+      if (output === 'native') await page.evaluate(() => window.__out.system(false));
+      else expect(await deck(page, 'pause'), 'found the deck the engine plays').toBe(true);
+      await expect.soft.poll(() => page.evaluate(() => App.player.state.playing), { message: 'the intent after the system paused' }).toBe(false);
+      await expect.soft.poll(async () => (await playKey(page)).label, { message: 'the play key' }).toBe('Play');
+      if (output === 'native') await page.evaluate(() => window.__out.system(true));
+      else expect(await deck(page, 'play'), 'found the paused deck').toBe(true);
+      await expect.soft.poll(() => page.evaluate(() => App.player.state.playing), { message: 'the intent after the system played' }).toBe(true);
+      await expect.soft.poll(async () => (await playKey(page)).label, { message: 'the play key' }).toBe('Pause');
+    });
+
+    // a saved song resumed: no status changes, so only the view says the sound came back (ADR-0041: parts showing the
+    // activity repaint on view)
+    test(`a play key pressed again stops showing loading once the song sounds / ${output}`, async ({ page }) => {
+      await outputAt(page, output);
+      await page.evaluate((id) => App.player.playList([id], 0), saved[3]);
+      await playing(page);
+      await page.evaluate(() => App.player.pause());
+      await page.waitForTimeout(400);
+      await page.evaluate(() => App.player.play());
+      await page.waitForFunction(() => App.player.state.pos > 0 && App.player.heard(), null, { timeout: 10_000 });
+      await expect.poll(() => playKey(page), { message: 'the play key once the song sounds' }).toEqual({ label: 'Pause', loading: false });
+      await page.waitForTimeout(1000);
+      expect(await playKey(page), 'and a second on').toEqual({ label: 'Pause', loading: false });
+    });
+  }
+
+  test('stays on through a crossfade into the next song / browser', async ({ page }) => {
+    await outputAt(page, 'browser');
+    await page.evaluate(() => App.setPlayback({ crossfade: 3 }));
+    await page.evaluate((ids) => App.player.playList(ids, 0), saved.slice(4, 6));
+    await playing(page);
+    await page.evaluate(() => App.setPlayback({ crossfade: 3 }));   // after the hub's settings arrived, too
+    await watchIntent(page);
+    await page.evaluate(() => App.on('player', () => { if (App.player.state.crossfade) window.__faded = true; }));
+    await nearEnd(page, 'browser', 6);
+    await page.waitForFunction((id) => App.player.current().id === id && App.player.state.pos > 0.5, saved[5], { timeout: 20_000 });
+    expect.soft(await page.evaluate(() => !!window.__faded), 'the songs crossfaded').toBe(true);
+    expect.soft(await page.evaluate(() => App.player.state.playing), 'the intent').toBe(true);
+    expect.soft(await intentDropped(page), 'changes with the intent off').toBe(0);
+    expect.soft((await playKey(page)).label, 'the play key').toBe('Pause');
   });
-  expect(paused, 'found the deck the engine plays').toBe(true);
-  await expect.poll(() => page.evaluate(() => App.player.state.playing), { message: 'the player\'s intent' }).toBe(false);
-  await expect.poll(() => page.evaluate(() => document.querySelector('#pbar [data-bind="play"]').getAttribute('aria-label')),
-    { message: 'the bar\'s play key' }).toBe('Play');
+
+  // Connect's `playing` is the intent (ADR-0041): a device taking over plays on what the listener wanted, loading or not
+  test('is what Connect reports for a song still loading', async ({ page }) => {
+    const song = songsOf(unsaved[6])[0];
+    await mainAt(page, 'lull', `/album/${unsaved[6]}`);
+    const reports = [];
+    page.on('request', (r) => { if (r.method() === 'POST' && r.url().endsWith('/api/devices/me/state')) reports.push(r.postDataJSON()); });
+    await trickle(page, song.id, 200);
+    await page.evaluate((id) => App.player.playList([id], 0), song.id);
+    await page.waitForFunction(() => App.player.state.playing && /^(finding|queued|buffering|stalled)$/.test(App.player.state.status), null, { timeout: 15_000 });
+    await page.waitForTimeout(1500);
+    const mine = reports.filter((b) => b.trackId === song.id);
+    expect(mine.length, 'reports of the song').toBeGreaterThan(0);
+    expect(mine.at(-1).playing, 'the last report\'s playing').toBe(true);
+  });
 });
 
 /* main playing a saved song, and a mini player that has its views */
