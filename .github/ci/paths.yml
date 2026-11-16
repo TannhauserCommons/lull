@@ -44,6 +44,21 @@ gates:
   - 'scripts/queue.sh'
   - 'mise.toml'
   - 'mise.lock'
+# What can change the answer of `mise run budgets`: the web files and their build, the check's own files, the fixture hub
+# that serves them, and the Playwright version its browser is.
+budgets:
+  - 'web/**'
+  - 'scripts/web-dist/**'
+  - 'scripts/budgets/**'
+  - 'tests/ui/fixture-hub/**'
+  - 'tests/ui/package.json'
+  - 'tests/ui/package-lock.json'
+  - 'tests/ui/setup.sh'
+  - 'tests/web/budgets.test.mjs'
+  - '.github/**'
+  - 'scripts/queue.sh'
+  - 'mise.toml'
+  - 'mise.lock'
 
 # App and contract jobs. Each list mirrors a `want` line of `checks()` in
 # scripts/queue.sh (the queue's regexes), and adds `.github/**` and
