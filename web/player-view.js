@@ -36,7 +36,7 @@
       track: t ? { id: t.id, title: t.title, artist: t.artist, album: t.album } : null,
       copy: c ? { where: c.where, format: c.format, lossless: !!c.lossless, peer: c.peer || null, received: c.received } : null,
       clock: { pos: i.pos, at: i.now, rate: activity === 'playing' ? 1 : 0, duration: i.duration, known: !!i.durationKnown },
-      transfer: { received: i.received, front: i.front, parts: i.parts, buffered: i.buffered || 0,
+      transfer: { received: i.received, front: i.front, parts: i.parts, buffered: i.buffered && i.buffered.length ? i.buffered[i.buffered.length - 1][1] : 0,
         transferring: i.received < 1 && (i.status === 'streaming' || i.status === 'buffering') },
       seekWait: i.seekWait ? i.seekWait.fraction : null,
       liked: !!i.liked, saved: !!i.saved, shuffle: !!i.shuffle, repeat: i.repeat, volume: i.volume, muted: !!i.muted,

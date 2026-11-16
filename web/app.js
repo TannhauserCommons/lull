@@ -2116,7 +2116,7 @@
       track: t, status: ps.status, intent: ps.playing, sound: sound, words: t ? P.stateWords() : '',
       copy: copy && Object.assign({ lossless: !!(M.formats[copy.format] || {}).lossless }, copy),
       pos: ps.pos, duration: P.duration(), durationKnown: ps.durationKnown, received: ps.received, front: bar.front, parts: bar.parts,
-      buffered: ps.buffered.length ? ps.buffered[ps.buffered.length - 1][1] : 0,
+      buffered: ps.buffered,
       seekWait: ps.seekWait, liked: !!t && App.isLiked(t.id), saved: !!t && App.isSaved(t.id), shuffle: ps.shuffle, repeat: ps.repeat,
       volume: ps.volume, muted: ps.muted, crossfading: ps.crossfade, now: Date.now()
     });
