@@ -109,10 +109,21 @@ app took the audio focus, headphones out, the lock screen's or a headset's keys)
 `system` event, `{ key, playing }`. The engine sets `ps.playing` to it, as any player shows a pause the system made.
 The engine never guesses one from a `time` with `playing: false`: an output reports that at a song's end, when it is
 cleared and on a seek after the end too, and a guessed pause nothing ever undid broke repeat-one, peer fallbacks and
-skipping a failed song. The browser output sends `system` for an element `pause` or `play` that its own `pause()` or
-`play()` didn't ask for (and not for the pause an element makes at its end). The Android output sends the media
-session's play and pause to the page as the `remote` commands next and previous already are, so they set the intent
-through `P.play`/`P.pause`, and sends `system` for a play-when-ready change for audio focus or noise.
+skipping a failed song. - **The browser output** keeps, per element, whether it wants that element playing. It sets this
+  wherever it plays, pauses or loads one. An element `pause` while it is wanted playing (and not at its end), or a
+  `play` while it is wanted paused, is the system's: the output sends `system` and takes the system's side as what it
+  wants. A state, not a count of asks: loading an element drops the events it had queued, so counted asks leaked
+  and later swallowed a real system pause.
+- **The Android output** applies a pause from the media session (notification, lock screen, headset,
+  car) itself, and sends `system { playing: false }`. lull's page may be gone (swiped from recents while the service
+  plays on), and a pause must always work. A play from the session goes to the page as `remote` play, as next and
+  previous do, because the page decides what play means (a retry, the queue's start). With no page listening, the
+  output plays itself. A play-when-ready change for audio focus or noise, and a transient loss of focus (a call, a
+  navigation prompt: Media3 holds the sound with a suppression reason and keeps play-when-ready), send `system` as
+  they start and as they end. So a call shows as a pause that resumes after it, as the browser output shows it on
+  the same phone.
+- **The engine** runs a `system` pause the way `P.pause` runs, so a crossfade or a better-copy switch in
+  progress is abandoned, not finished while silent.
 
 **Every slot field stays current.** A slot's `{{fields}}` are drawn when it draws. A slot is drawn again when a value
 of its pace changes (docs/themes.md section 14: a song-pace field on a new song, next song or status), on every
