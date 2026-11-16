@@ -2890,18 +2890,15 @@
     if (isCur(d.key)) onOutputError(cur, d.message);
   });
   out.on('crossfade', function (d) { if (isCur(d.key)) { ps.crossfade = !!d.next; changed('status'); } });
-  /* the lock screen's, a headset's or a notification's keys: the output applies none of them itself, the intent does */
-  out.on('remote', function (d) {
-    if (d.action === 'next') P.next(); else if (d.action === 'prev') P.prev();
-    else if (d.action === 'play') P.play(); else if (d.action === 'pause') P.pause();
-  });
+  out.on('remote', function (d) { if (d.action === 'next') P.next(); else if (d.action === 'prev') P.prev(); });
   /* the system paused or resumed the output (another app took the audio, headphones out): the intent follows, as any
-     player shows a pause the system made. Only an output says so; it is never guessed from a `time` (a song's end, a
-     clear and a seek after the end report playing: false too, and nothing would undo it) */
+     player shows a pause the system made, and that is all. The output has already stopped its own work, and pausing it
+     in answer would tell the platform the listener paused (iOS then doesn't resume after a call). A pause applies
+     whatever song it names (the intent is the player's, not a song's); a play only the song that plays. It is never
+     guessed from a `time` (a song's end, a clear and a seek after the end report playing: false too) */
   out.on('system', function (d) {
-    if (!isCur(d.key)) return;
-    if (!d.playing) out.pause();   // as P.pause: a crossfade or a better-copy switch in progress is abandoned, not finished silent
-    if (ps.playing !== d.playing) { ps.playing = d.playing; changed('play'); }
+    if ((d.playing && !isCur(d.key)) || ps.playing === d.playing) return;
+    ps.playing = d.playing; changed('play');
   });
 
   /* the equaliser: this device's (web/eq.js), followed live, also when Classic's Webamp or another window changes it.
@@ -2976,7 +2973,13 @@
     function onEl(d, type) {
       var el = d.el, system = false;
       if (type === 'pause') { system = !!el._wants && el.paused && !el.ended; if (system) el._wants = false; }   // not the pause at a song's end
-      else if (type === 'play') { system = !el._wants && !el.paused; if (system) el._wants = true; }
+      else if (type === 'play' && !el._wants && !el.paused) {
+        /* the system resumes the playing deck; any other element it resumes (the incoming deck of a fade the system's pause
+           abandoned) is not the output's to play: it is stopped, or the next song would start under this one */
+        if (d === a && d.item) { system = true; el._wants = true; } else { halt(el); return; }
+      }
+      /* a system pause stops this output's own crossfade or better-copy switch too, so nothing finishes while silent */
+      if (type === 'pause' && system && (fading || switching)) { abandonSwitch(); abandonFade(); }
       if (!d.item) return;
       if (type === 'waiting') d.waiting = true;
       else if (type === 'playing') d.waiting = false;

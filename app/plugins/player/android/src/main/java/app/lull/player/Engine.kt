@@ -70,15 +70,6 @@ object Engine {
     /** Where events go: the plugin's `trigger`. */
     var emit: (String, JSObject) -> Unit = { _, _ -> }
 
-    /**
-     * Whether lull's page is there to hear `remote` and decide: its activity lives and it listens (the plugin sets it).
-     * Swiped from recents, the service plays on with no page, and the session's keys must still work.
-     */
-    var pageListening: () -> Boolean = { false }
-
-    /** The active deck is held by a transient loss of audio focus (a call): it resumes by itself when the focus is back. */
-    private var suppressed = false
-
     private val decks = arrayOfNulls<ExoPlayer>(2)
     private var active = 0
     private var current: Item? = null
@@ -148,40 +139,12 @@ object Engine {
     }
 
     fun play() {
-        suppressed = false
         activeDeck().play()
     }
 
-    /**
-     * The page's pause. While a call holds the deck, the page pauses in answer to the `system` pause it was sent: that
-     * one only abandons a fade and leaves the deck to resume after the call, which then reports `system` playing.
-     */
     fun pause() {
-        if (suppressed) {
-            suppressed = false
-            abandonFade()
-            return
-        }
-        pauseNow()
-    }
-
-    private fun pauseNow() {
         abandonFade()
         activeDeck().pause()
-    }
-
-    /**
-     * A pause from the media session (notification, lock screen, headset, car) is applied here and reported to the page:
-     * the page may be gone while the service plays on, and a pause must always work.
-     */
-    fun sessionPause() {
-        pauseNow()
-        current?.let { emit("system", JSObject().put("key", it.key).put("playing", false)) }
-    }
-
-    /** A play from the session goes to the page, which decides what play means (a retry, the queue's start); with no page, here. */
-    fun sessionPlay() {
-        if (pageListening()) remote("play") else play()
     }
 
     fun seek(seconds: Double) {
@@ -205,10 +168,7 @@ object Engine {
         if (fade == null) arrangeNext()
     }
 
-    /**
-     * Lock screen, notification, Bluetooth or headset keys: the web UI owns the queue and the listener's intent, so
-     * next, prev, play and pause go to it (`remote`) and come back through `load`, `play` and `pause`.
-     */
+    /** Lock screen, notification, Bluetooth or headset next/prev: the web UI owns the queue. */
     fun remote(action: String) {
         emit("remote", JSObject().put("action", action))
     }
@@ -375,7 +335,7 @@ object Engine {
                 .put("key", item.key)
                 .put("position", deck.currentPosition / 1000.0)
                 .put("duration", duration?.let { it / 1000.0 } ?: JSONObject.NULL)
-                .put("playing", deck.playWhenReady && !ended && deck.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE)
+                .put("playing", deck.playWhenReady && !ended)
                 .put("waiting", deck.playWhenReady && deck.playbackState == Player.STATE_BUFFERING),
         )
     }
@@ -399,28 +359,7 @@ object Engine {
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-            if (!isActive) return
-            sendTime()
-            // Another app took the audio focus or gave it back, or headphones came out: the system's pause or
-            // resume. The web UI's intent follows it (`system`); a change the engine itself made is its own.
-            val system = reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS ||
-                reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
-            val item = current ?: return
-            if (system) emit("system", JSObject().put("key", item.key).put("playing", playWhenReady))
-        }
-
-        /**
-         * A transient loss of audio focus (a call, a navigation prompt) holds the sound and keeps play-when-ready, so no
-         * play-when-ready change says it. The page's intent follows it both ways, as it does a pause for focus or noise.
-         */
-        override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) {
-            if (!isActive) return
-            suppressed = playbackSuppressionReason != Player.PLAYBACK_SUPPRESSION_REASON_NONE
-            sendTime()
-            val item = current ?: return
-            if (deck.playWhenReady) {
-                emit("system", JSObject().put("key", item.key).put("playing", !suppressed))
-            }
+            if (isActive) sendTime()
         }
 
         override fun onPlaybackStateChanged(state: Int) {
@@ -475,8 +414,8 @@ object Engine {
     }
 
     /**
-     * What the MediaSession sees: the active deck, except that next/prev go to the web UI (it owns the queue), play goes
-     * to it too while it listens (it owns the intent), and a pause is applied here and reported (see [sessionPause]).
+     * What the MediaSession sees: the active deck, except that next/prev go to the web UI (it owns
+     * the queue) and play/pause go through the engine (so a fade stops with them).
      */
     private class SessionPlayer(player: Player) : androidx.media3.common.ForwardingPlayer(player) {
         private val extra = intArrayOf(
@@ -498,8 +437,8 @@ object Engine {
         override fun seekToNextMediaItem() = remote("next")
         override fun seekToPrevious() = remote("prev")
         override fun seekToPreviousMediaItem() = remote("prev")
-        override fun play() = sessionPlay()
-        override fun pause() = sessionPause()
-        override fun setPlayWhenReady(playWhenReady: Boolean) = if (playWhenReady) sessionPlay() else sessionPause()
+        override fun play() = Engine.play()
+        override fun pause() = Engine.pause()
+        override fun setPlayWhenReady(playWhenReady: Boolean) = if (playWhenReady) Engine.play() else Engine.pause()
     }
 }

@@ -98,21 +98,13 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
     private lateinit var downloads: Downloads
     private var controller: ListenableFuture<MediaController>? = null
     private var multicast: WifiManager.MulticastLock? = null
-    private var pageAlive = false
 
     override fun load(webView: WebView) {
         Engine.init(activity)
         Engine.emit = { event, payload -> trigger(event, payload) }
-        // Listeners outlive the WebView they came from, so a listener alone doesn't say a page is there to answer.
-        pageAlive = true
-        Engine.pageListening = { pageAlive && hasListener("remote") }
         downloads = Downloads(activity) { event, payload -> trigger(event, payload) }
         SoundQuiet.init(activity)
         SoundQuiet.emit = { quiet -> trigger("sound-quiet", JSObject().put("quiet", quiet)) }
-    }
-
-    override fun onDestroy() {
-        pageAlive = false
     }
 
     /** From Rust before the web UI loads: the hub's token for streams, downloads and the WebView. */
