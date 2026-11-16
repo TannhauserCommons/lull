@@ -227,6 +227,114 @@ test('the buffering loop plays on while a found peer\'s first bytes are awaited 
   });
 });
 
+// The loop's three edges from the round-3 review (ADR-0041). A song that sounded, then fell back to another peer whose
+// bytes are still to come, is a wait for a source once its sound stops, however many of the output's `time` events
+// came between the hub's words (R1). A song that already sounded, paused early and resumed from what it holds, is the
+// output starting a song it holds, whatever the hub said while it was paused (R2); and so is a gapless handover into a
+// song the hub was still fetching while it was next (R3).
+const soundsAt = (page) => page.evaluate(() => ({ heard: window.__heard.length, sounds: window.__sounds.length }));
+const loopsSince = (page, n) => page.evaluate((n) => window.__sounds.slice(n).filter((s) => s.loop).length, n);
+const streamSays = (request, id, job) => (status, more = {}) => request.post('/__fixture/emit', { data: { topic: 'stream', data: {
+  trackId: id, jobId: job + '-' + id, attempt: 0, received: 0, size: 4000000, peersFound: 3, peer: 'mira', failedPeers: [], status, ...more } } });
+/* a song's stream: it comes once `go()` is called (at once with `now`), and never again once `held` is set */
+async function holdable(page, id, { now = true } = {}) {
+  let go; const s = { held: false, came: new Promise((r) => { go = r; }) };
+  s.go = go; if (now) go();
+  await page.route((url) => url.pathname === `/api/stream/${id}`, async (route) => { if (s.held) return; await s.came; if (!s.held) await route.continue(); });
+  return s;
+}
+/* the sounds loaded and the listener's first tap: sounds may play from here */
+async function ready(page, route) {
+  await openScreen(page, route, { clock: false });
+  await page.evaluate(() => App.needSounds().then(() => App.sounds.load()));
+  await page.mouse.click(5, 5);
+}
+const sounding = (page, id) => page.waitForFunction((id) => App.player.current().id === id && App.player.heard() && App.player.state.pos > 0.3, id, { timeout: 20000 });
+
+test('the buffering loop comes in as a song that sounded falls silent on a fallback\'s new peer, time events between', async ({ page, request }) => {
+  const song = L.albums[L.albumIds[142]].trackIds[0];
+  await listen(page);
+  const stream = await holdable(page, song);
+  await ready(page, `/album/${L.tracks[song].albumId}`);
+  const say = streamSays(request, song, 'fell');
+  await page.evaluate((id) => App.player.playList([id], 0), song);
+  await say('streaming', { attempt: 1, received: 400000 });
+  await sounding(page, song);
+  // the peer stalls and the hub falls back while what arrived still plays: the output's time events come between
+  await say('stalled', { attempt: 1, received: 400000 });
+  await page.waitForTimeout(800);
+  await say('fallback', { attempt: 1, received: 400000, failedPeers: ['mira'] });
+  await page.waitForTimeout(800);
+  expect(await page.evaluate(() => App.player.heard()), 'the song still sounds through the fallback').toBe(true);
+  // the new peer's attempt: the page reopens the song on it, and its bytes never come
+  stream.held = true;
+  const at = await soundsAt(page);
+  await say('queued', { attempt: 2, peer: 'nova', failedPeers: ['mira'] });
+  await page.waitForFunction((n) => window.__heard.slice(n).some((h) => !h.v), at.heard, { timeout: 10000 });
+  await page.waitForTimeout(2500);
+  const r = await page.evaluate((at) => {
+    const silent = window.__heard.slice(at.heard).find((h) => !h.v).at, loop = window.__sounds.slice(at.sounds).find((s) => s.loop);
+    return { after: loop ? loop.at - silent : null, heard: App.player.heard(), status: App.player.state.status };
+  }, at);
+  expect(r.heard, 'the song is silent on the new peer').toBe(false);
+  expect(r.after, `the loop starts after the sound stops (ms; status ${r.status})`).not.toBeNull();
+  expect(r.after).toBeGreaterThan(-1);
+  expect(r.after, 'and within a moment of it (ms)').toBeLessThan(1500);
+});
+
+test('a Soulseek song paused in its first bytes and resumed from what it holds makes no loop, whatever the hub said meanwhile', async ({ page, request }) => {
+  const song = L.albums[L.albumIds[142]].trackIds[1];
+  await listen(page);
+  const stream = await holdable(page, song, { now: false });
+  await ready(page, `/album/${L.tracks[song].albumId}`);
+  const say = streamSays(request, song, 'early');
+  await page.evaluate((id) => App.player.playList([id], 0), song);
+  await say('buffering');
+  await expect.poll(() => loopsSince(page, 0), { message: 'the loop, while the found peer\'s first bytes come', timeout: 15000 }).toBeGreaterThan(0);
+  stream.go();                   // its first bytes: the song sounds
+  await sounding(page, song);
+  await page.evaluate(() => App.player.pause());
+  // the transfer is still within its first 256 KB: the hub says `buffering` while the song is paused
+  await say('buffering', { received: 200000 });
+  await page.waitForFunction(() => App.player.state.status === 'buffering', null, { timeout: 10000 });
+  stream.held = true;            // nothing more comes: the song resumes from what the output holds
+  const at = await soundsAt(page);
+  await page.evaluate(() => App.player.play());
+  await sounding(page, song);
+  await page.waitForTimeout(800);
+  expect(await loopsSince(page, at.sounds), 'loops started as the paused song resumed').toBe(0);
+});
+
+for (const status of ['buffering', 'fallback']) {
+  test(`a gapless handover into a song the hub said was ${status} while it was next makes no loop`, async ({ page, request }) => {
+    const album = L.tracks[L.savedIds[0]].albumId, a = L.albums[album].trackIds[0];
+    const [wait, b] = L.albums[L.albumIds[143]].trackIds.slice(status === 'buffering' ? 0 : 2);
+    let asked = 0;
+    await listen(page);
+    await page.route((url) => url.pathname === `/api/stream/${wait}`, () => {});
+    await page.route((url) => url.pathname === `/api/stream/${b}`, (route) => { asked++; route.continue(); });
+    await ready(page, `/album/${L.tracks[wait].albumId}`);
+    // a wait for a source first: the loop is loaded and plays
+    await page.evaluate((id) => App.player.playList([id], 0), wait);
+    await streamSays(request, wait, 'wait')('finding');
+    await expect.poll(() => loopsSince(page, 0), { message: 'the loop, while a source is found', timeout: 15000 }).toBeGreaterThan(0);
+    await page.evaluate((id) => { location.hash = '#/album/' + id; }, album);
+    await page.waitForSelector('#view .trow[data-track-id]');
+
+    await page.evaluate((ids) => App.player.playList(ids, 0), [a, b]);
+    await sounding(page, a);
+    await page.evaluate(() => App.player.seek(App.player.duration() - 8));
+    await expect.poll(() => asked, { message: 'the next song is made ready', timeout: 10000 }).toBeGreaterThan(0);
+    await streamSays(request, b, 'next')(status, { attempt: 1, received: 100000, ...(status === 'fallback' ? { peer: 'nova', failedPeers: ['mira'] } : {}) });
+    await page.waitForTimeout(500);
+    const at = await soundsAt(page);
+    await page.evaluate(() => App.player.seek(App.player.duration() - 1.5));
+    await sounding(page, b);
+    await page.waitForTimeout(800);
+    expect(await loopsSince(page, at.sounds), `loops started at the gapless handover (the hub's word: ${status})`).toBe(0);
+  });
+}
+
 test('nothing sounds while the page is hidden', async ({ page }) => {
   await listen(page);
   await openScreen(page, '/home', { clock: false });

@@ -515,6 +515,111 @@ test('a live host drawn while the song is paused has the song\'s place at once: 
   await ctx.close();
 });
 
+/* every element with the player's hooks (PlayerView.HOOKS) the page puts in its document, judged at the end of the task
+   that put it there (the microtasks after it, no later): what PlayerView.paint would write on it then is on it already.
+   Whatever drew it, not a list of the paths that draw. Judged from `window.__judge` on, by painting the whole document
+   with a plain query (the page's own may keep what it found before) and comparing each new element's markup before
+   and after: anything the paint changed was missing. window.__unpainted lists those, window.__drawn counts the judged */
+function watchDraws() {
+  window.__unpainted = []; window.__drawn = 0; window.__judge = false; window.__step = '';
+  addEventListener('DOMContentLoaded', () => {
+    let fresh = new Set(), due = false;
+    const judged = new WeakSet();                        // judged once: a part moved again is no new draw
+    const atTaskEnd = (fn, n = 20) => (n ? queueMicrotask(() => atTaskEnd(fn, n - 1)) : fn());
+    const describe = (el) => {
+      const name = (n) => n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + [...n.classList].map((c) => '.' + c).join('')
+        + ['data-bind', 'data-dk', 'data-seek', 'data-now'].filter((a) => n.hasAttribute(a)).map((a) => `[${a}="${n.getAttribute(a)}"]`).join('');
+      const up = []; for (let p = el.parentElement; p && up.length < 2; p = p.parentElement) up.push(name(p));
+      return name(el) + ' in ' + up.join(' < ');
+    };
+    const firstChange = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return { was: a.slice(Math.max(0, i - 30), i + 50), painted: b.slice(Math.max(0, i - 30), i + 50) }; };
+    const mo = new MutationObserver((records) => {
+      for (const r of records) for (const n of r.addedNodes) {
+        if (n.nodeType !== 1 || !window.PlayerView || !PlayerView.HOOKS) continue;
+        if (n.matches(PlayerView.HOOKS)) fresh.add(n);
+        n.querySelectorAll(PlayerView.HOOKS).forEach((h) => fresh.add(h));
+      }
+      if (fresh.size && !due) { due = true; atTaskEnd(judge); }
+    });
+    mo.observe(document, { childList: true, subtree: true });
+    function judge() {
+      due = false;
+      const els = [...fresh].filter((el) => el.isConnected && !judged.has(el)); fresh = new Set();
+      if (!window.__judge || !els.length || !window.App || !App.player || !App.player.view) return;
+      const before = els.map((el) => el.outerHTML), named = els.map(describe), find = PlayerView.find;
+      PlayerView.find = (scope, sel) => [...scope.querySelectorAll(sel)];
+      try { PlayerView.paint(document, App.player.view(), Date.now()); } finally { PlayerView.find = find; }
+      mo.takeRecords();                                  // the judge's own paint is no draw
+      els.forEach((el, i) => {
+        judged.add(el); window.__drawn++;
+        const after = el.outerHTML;
+        if (after !== before[i]) window.__unpainted.push({ step: window.__step, el: named[i], ...firstChange(before[i], after) });
+      });
+    }
+  });
+}
+
+// Whatever draws a part with the player's hooks, it paints it in the task it draws it (ADR-0041): a session with motion
+// on, playing and paused, through a screen, Now Playing's track change (its screen slides the new song in a moment
+// later), a part redrawn, a piece of another screen redrawn and a tab of the side panel. Nothing judged is left for a
+// tick or a player event to come and paint.
+test('whatever draws a part with the player\'s hooks paints it by the end of the task that drew it, all session long', async ({ browser }) => {
+  const ctx = await context(browser), page = await ctx.newPage();
+  await page.addInitScript(watchDraws);
+  await openScreen(page, `/album/${ids.album}`, { design: 'painted' });
+  expect(await page.evaluate(() => App.reducedMotion()), 'motion is on').toBe(false);
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id'));
+    App.player.playTrack(rows[0], rows);
+  });
+  await page.waitForFunction(() => App.player.view().activity === 'playing', null, { timeout: 20_000 });
+  await settle(page);
+  await page.evaluate(() => { window.__judge = true; });
+  const drawn = {};
+  async function step(name, act) {
+    const n = await page.evaluate((name) => { window.__step = name; return window.__drawn; }, name);
+    await act();
+    await page.waitForTimeout(800);                      // the slide's swap comes 120 ms later; the screens settle
+    drawn[name] = await page.evaluate((n) => window.__drawn - n, n);
+  }
+  await step('Now Playing drawn', async () => {
+    await page.evaluate(() => { location.hash = '#/now'; });
+    await page.waitForSelector('.now [data-now="screen"], .now [data-now="c-screen"]', { state: 'attached' });   // the device, or its compact row
+  });
+  await step('a track change while playing: the screen slides', () => page.evaluate(() => App.player.next()));
+  await page.waitForFunction(() => App.player.view().activity === 'playing', null, { timeout: 20_000 });
+  await page.evaluate(() => App.player.pause());
+  await page.evaluate(() => App.player.seekFraction(0.4));
+  await page.waitForFunction(() => App.player.view().activity === 'paused', null, { timeout: 10_000 });
+  await step('a track change while paused: the screen slides', () => page.evaluate(() => App.player.next()));
+  await step('Home drawn', async () => {
+    await page.evaluate(() => { location.hash = '#/home'; });
+    await page.waitForSelector('#view .disc-lead', { state: 'attached' });
+  });
+  await step('a part redrawn', () => page.evaluate(() => {
+    document.querySelector('.pz lull-part[name="list"] .lull-list')?.remove();
+    App.parts.redraw('like');
+  }));
+  await step('a piece of a screen redrawn', () => page.evaluate(() => {
+    document.querySelector('.pz-lead .disc-lead')?.remove();
+    App.parts.redraw('read:/api/feed');
+  }));
+  await step('a tab of the side panel', () => page.evaluate(() => {
+    App.panel('gate-draw', { label: 'Gate', render: () => '<p class="gate-tab"><i class="gate-live" data-live></i><b data-bind="song.title"></b></p>' });
+    App.openPanel('gate-draw');
+  }));
+  await step('an album drawn', async () => {
+    await page.evaluate((id) => { location.hash = '#/album/' + id; }, ids.album);
+    await page.waitForSelector('#view .trow[data-track-id]');
+  });
+  const unpainted = await page.evaluate(() => window.__unpainted);
+  for (const name of ['Now Playing drawn', 'a track change while playing: the screen slides', 'a track change while paused: the screen slides', 'a part redrawn', 'a piece of a screen redrawn', 'a tab of the side panel']) {
+    expect.soft(drawn[name], `parts with the player's hooks drawn: ${name}`).toBeGreaterThan(0);
+  }
+  expect(unpainted, 'parts left unpainted at the end of the task that drew them').toEqual([]);
+  await ctx.close();
+});
+
 // A hero copied from lull's own markup of before the one view keeps working: its shuffle and repeat pills carry only
 // data-act, as lull's did, and still say whether they are on (aria-pressed) as shuffle and repeat change.
 test('Now Playing pills that carry only data-act say whether shuffle and repeat are on', async ({ browser }) => {

@@ -8,7 +8,7 @@ import { expect, test } from '@playwright/test';
 import * as L from '../fixture-hub/library.mjs';
 import { contrast } from '../checks.mjs';
 import { designs, openScreen } from './lib.mjs';
-import { fireView, openMain, openMini } from './player-windows.mjs';
+import { fireView, got, openMain, openMini } from './player-windows.mjs';
 
 const fixtureClient = () => `${test.info().testId}:${test.info().repeatEachIndex}`;
 /* the default markup: Glasshouse has no miniPlayer slot of its own, and the strip is the default in every design */
@@ -436,6 +436,52 @@ test('a song waiting for a source publishes no view for each second it waits / p
   expect.soft(typeof seen.view.since === 'number' && seen.view.since <= began, `since: when the wait began (${seen.view.since})`).toBe(true);
   expect.soft(seen.late, 'views published from the wait\'s sixth second on').toEqual([]);
 });
+
+// A save is no player event, and the view says whether the song is saved (ADR-0041): after the current song is saved,
+// the view main sends the mini player says so in the task the page learned it, with no tick to come and send it again
+// (none comes with no song loaded: a queue restored after a reload). Both ends of a save: the hub already holds the
+// song (its answer's `skipped`), and the song's job runs to done (`save` events).
+for (const loaded of [true, false]) for (const how of ['held', 'job']) {
+  const what = `${how === 'held' ? 'the hub already holds it' : 'its job runs to done'}, ${loaded ? 'a song loaded' : 'no song loaded'}`;
+  test(`saving the current song says saved in the view at once: ${what} / mini`, async ({ page, request }) => {
+    const song = unsaved, headers = { 'x-fixture-client': fixtureClient() };
+    await page.context().setExtraHTTPHeaders(headers);
+    await page.route((url) => url.pathname === '/api/library/duplicates', (route) => route.fulfill({ json: { items: [] } }));
+    await page.route((url) => url.pathname === '/api/saves', (route) => (route.request().method() !== 'POST' ? route.continue()
+      : route.fulfill({ json: how === 'held' ? { jobs: [], skipped: [song.id] } : { jobs: ['job-' + song.id], skipped: [] } })));
+    const relay = await openMain(page, { design: 'lull', route: `/album/${song.albumId}` });
+    await page.evaluate((id) => App.player.playList([id], 0), song.id);
+    await page.waitForFunction(() => App.player.view().activity === 'playing', null, { timeout: 20_000 });
+    await page.evaluate(() => App.player.pause());
+    if (!loaded) {
+      await page.waitForTimeout(1200);                   // the queue kept (app.js persistSoon)
+      await page.reload();
+      await page.waitForFunction(() => window.App && App.server && App.server.checked);
+      await page.waitForFunction((id) => App.player.current() && App.player.current().id === id && App.player.view().activity === 'paused', song.id);
+    }
+    const mini = await openMini(relay, { design: 'lull' });
+    const lastSent = async () => { const g = await got(mini); return g.length ? g.at(-1).payload.saved : null; };
+    await expect.poll(lastSent, { message: 'the mini player has the view: not saved' }).toBe(false);
+    // at the end of each task with a `save` (the microtasks after it, no later): the last view published, and the page's word
+    await page.evaluate(() => {
+      window.__atSave = []; let sent = false;
+      App.on('view', (v) => { sent = v.saved; });
+      const atTaskEnd = (fn, n = 20) => (n ? queueMicrotask(() => atTaskEnd(fn, n - 1)) : fn());
+      App.on('save', () => atTaskEnd(() => window.__atSave.push({ sent, saved: App.isSaved(App.player.currentId()) })));
+    });
+    await page.evaluate((id) => App.saves.start([id]), song.id);
+    if (how === 'job') {
+      await page.waitForFunction((id) => App.saves.get(id) && App.saves.get(id).jobId, song.id);
+      await request.post('/__fixture/emit', { headers, data: { topic: 'save', data: { jobId: 'job-' + song.id, trackId: song.id, step: 5, status: 'done', pct: 1 } } });
+    }
+    await page.waitForFunction((id) => App.isSaved(id), song.id, { timeout: 10_000 });
+    await page.waitForTimeout(1500);                     // ticks, where a song is loaded, would have sent it again by now
+    const atSave = await page.evaluate(() => window.__atSave);
+    expect(atSave.length, 'save events').toBeGreaterThan(0);
+    expect.soft(atSave.filter((r) => r.sent !== r.saved), 'tasks with a save whose last view sent says otherwise than the page').toEqual([]);
+    expect.soft(await lastSent(), 'the mini player\'s view, a moment later').toBe(true);
+  });
+}
 
 // A key's accessible name is what it does, as it says it; its shortcut is aria-keyshortcuts, not words in its name
 // ("Shuffle", not "Shuffle (S)"): every key on Now Playing and the player bar, in every design (lull's markup and each
