@@ -68,7 +68,7 @@ async function withoutStatus(mini, sels) {
 }
 
 const PARTS = {
-  mini: { player: '[data-dk-player]', title: '.device__title', artist: '.device__artist', facts: '.device__facts' },
+  mini: { player: '[data-dk-player]', title: '.device__title', artist: '.device__artist', facts: '.device__facts', wave: '[data-dk-player] .wave', times: '[data-dk-player] .wave-times' },
   strip: { player: '[data-dk-player]', title: '.dk-strip__title', artist: '.dk-strip__artist' },
 };
 
@@ -120,7 +120,7 @@ for (const [design, style] of [...designs.map((d) => [d, 'mini']), [DEFAULT, 'st
 }
 
 // The status line is a line: in every design the wave keeps its height whether the line is there or not, and the line is
-// no taller than its words.
+// no taller than one line of its words (their glyphs, or the line height its design gives them).
 for (const design of designs) {
   test(`the status line is one line of words and leaves the wave its height / ${design}`, async ({ page }) => {
     const mini = await alone(page, design, 'mini');
@@ -132,10 +132,11 @@ for (const design of designs) {
       const el = document.querySelector('[data-dk-player] [data-dk-status]'), range = document.createRange();
       range.selectNodeContents(el);
       const rects = [...range.getClientRects()];
-      return { box: el.getBoundingClientRect().height, text: rects.length ? Math.max(...rects.map((r) => r.bottom)) - Math.min(...rects.map((r) => r.top)) : 0 };
+      const lh = parseFloat(getComputedStyle(el).lineHeight);   // NaN for normal: the glyphs' height is the line's
+      return { box: el.getBoundingClientRect().height, text: rects.length ? Math.max(...rects.map((r) => r.bottom)) - Math.min(...rects.map((r) => r.top)) : 0, lh: lh || 0 };
     });
     expect.soft(line.text, 'the status line has words').toBeGreaterThan(0);
-    expect.soft(line.box, `the status line's height against its words' (${line.text})`).toBeLessThanOrEqual(line.text + 0.5);
+    expect.soft(line.box, `the status line's height against one line of its words (glyphs ${line.text}, line height ${line.lh})`).toBeLessThanOrEqual(Math.max(line.text, line.lh) + 0.5);
   });
 }
 
@@ -197,6 +198,7 @@ test.describe('a theme\'s own parts', () => {
     await page.evaluate(() => App.player.pause());
     await page.waitForFunction(() => document.querySelector('#pbar').getAttribute('data-playing') === 'false');
     const keys = await page.evaluate(() => [...document.querySelectorAll('[data-gate="own-keys"] button')].map((b) => ({ key: b.getAttribute('data-bind'), html: b.innerHTML })));
+    expect(keys.length, 'the theme\'s keys, still in the page').toBe(2);
     for (const k of keys) expect.soft(k.html, `the theme's empty ${k.key} key`).toBe('');
   });
 

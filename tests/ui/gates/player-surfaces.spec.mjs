@@ -518,6 +518,23 @@ test('the view\'s buffered share is what the output holds, not what arrived / na
   expect(await page.evaluate(() => App.player.view().transfer.received), 'what arrived: all of it').toBe(1);
 });
 
+// A hidden main still publishes its view (ADR-0041): a change of what the output holds changes nothing else, so only the
+// player's clock publishes it, and that clock must not skip the page while nobody sees it.
+test('a hidden main publishes what the output holds / native', async ({ page }) => {
+  const a = saved[5];
+  await page.context().setExtraHTTPHeaders({ 'x-fixture-client': fixtureClient() });
+  await page.addInitScript(fakeOutput);
+  await openMain(page, { route: `/album/${album}` });
+  await page.evaluate(() => { window.__seen = []; App.on('view', (v) => window.__seen.push(v)); });
+  await page.evaluate((id) => App.player.playList([id], 0), a);
+  await playing(page);
+  const dur = await page.evaluate(() => App.player.duration());
+  await hide(page);
+  await page.evaluate((s) => window.__out.buffered([[0, s]]), dur / 3);
+  await expect.poll(() => page.evaluate(() => window.__seen.some((v) => Math.abs(v.transfer.buffered - 1 / 3) < 0.01)),
+    { message: 'a view with the output\'s third, published while main was hidden', timeout: 3000 }).toBe(true);
+});
+
 // Connect hears every change of what the player is doing, not only a play or a pause (ADR-0041): a song that fails while
 // it plays clears the intent, and the other devices learn it at once, not at the next heartbeat.
 test('Connect reports a song that fails while it plays / native', async ({ page }) => {
