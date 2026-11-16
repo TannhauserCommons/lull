@@ -45,9 +45,10 @@ gates:
   - 'mise.toml'
   - 'mise.lock'
 # What can change the answer of `mise run budgets`: the web files and their build, the check's own files, the fixture hub
-# that serves them, and the Playwright version its browser is.
+# that serves them, the Playwright version its browser is, and web.rs, whose encoding order the sizing copies.
 budgets:
   - 'web/**'
+  - 'crates/server/src/web.rs'
   - 'scripts/web-dist/**'
   - 'scripts/budgets/**'
   - 'tests/ui/fixture-hub/**'
