@@ -14,7 +14,7 @@
 //   sound          what the output last reported ({ playing, waiting }, as its `time` events say), or null before it
 //                  has reported anything for this song (the output hasn't started)
 //   words          P.stateWords(), without a wait's running count ("Finding a source", not "..., 7 s")
-//   since          when that wait began (ms), or null: a surface that shows the count draws it from here
+//   since          when the status began (ms): a surface that shows a wait's count draws it from here
 //   copy           P.playingCopy() (LullRules.playingCopy: { where, name, library, peer, saved, received, format }) or null
 //   pos            ps.pos, seconds
 //   duration       P.duration(), seconds
@@ -41,7 +41,7 @@ const copy = { where: 'soulseek', name: 'quietcanal', library: 'folder', peer: {
 const input = (over) => ({
   track: song, status: 'streaming', intent: true, sound: { playing: true, waiting: false }, words: 'Streaming from quietcanal',
   copy, pos: 20, duration: 200, durationKnown: true, received: 0.4, front: 0.4, parts: [[0, 0.4]], buffered: [[0.05, 0.3]], seekWait: null,
-  liked: false, saved: false, shuffle: false, repeat: 'off', volume: 0.7, muted: false, crossfading: false, now: NOW, since: null,
+  liked: false, saved: false, shuffle: false, repeat: 'off', volume: 0.7, muted: false, crossfading: false, now: NOW, since: NOW - 3000,
   ...over,
 });
 const activity = (over) => V.derive(input(over)).activity;
@@ -146,8 +146,8 @@ test('the view carries the song as the surfaces name it, the copy that plays, th
   assert.equal(v.status, 'streaming');
   assert.equal(v.words, 'Streaming from quietcanal');
   assert.equal(v.intent, true, 'the listener\'s intent');
-  assert.equal(v.since, null, 'no wait');
-  assert.equal(V.derive(input({ status: 'finding', sound: null, words: 'Finding a source', since: NOW - 7000 })).since, NOW - 7000, 'when the wait began');
+  assert.equal(v.since, NOW - 3000, 'when the status began, whatever the status');
+  assert.equal(V.derive(input({ status: 'finding', sound: null, words: 'Finding a source', since: NOW - 7000 })).since, NOW - 7000, 'when finding began');
   assert.deepEqual(v.track, { id: 't-1', title: 'Velvet Hour', artist: 'Quiet Canal', album: 'Low Tide' });
   assert.equal(v.copy.format, 'MP3 320', 'the copy that plays, not the catalogue\'s FLAC');
   assert.equal(v.copy.where, 'soulseek');
@@ -201,7 +201,7 @@ test('a view\'s key ignores where its clock says the song is, and changes with a
 });
 
 // A wait's running count ("Finding a source, 7 s") is no part of the view: its words say the state, `since` when the
-// wait began, and a surface that shows the count draws it from there. A second more is not a new view, or main would
+// status began, and a surface that shows the count draws it from there. A second more is not a new view, or main would
 // publish one, and send it to every mini player window, each second a song waits.
 test('a view\'s key stays the same through a wait, second by second', () => {
   const began = NOW - 6000;

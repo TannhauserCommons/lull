@@ -416,7 +416,7 @@ test('a paused song waiting for a copy to be picked shows as not playing / page 
   await expect.poll(seen, { message: 'waiting for a pick, paused: not playing on any surface' }).toEqual({ root: 'false', bar: 'false', mini: 'false' });
 });
 
-// A wait's running count is no part of the view (ADR-0041): its words say the state and `since` when the wait began, so
+// A wait's running count is no part of the view (ADR-0041): its words say the state and `since` when the status began, so
 // a song finding a source for seconds publishes no new view each second (each one crosses to every mini player window).
 test('a song waiting for a source publishes no view for each second it waits / page', async ({ page, request }) => {
   const song = unsaved;
@@ -433,7 +433,7 @@ test('a song waiting for a source publishes no view for each second it waits / p
   const seen = await page.evaluate((from) => ({ view: App.player.view(), late: window.__views.filter((e) => e.at >= from).map((e) => e.v.words) }), began + 5500);
   expect.soft(seen.view.activity, 'still waiting').toBe('loading');
   expect.soft(seen.view.words, 'the view\'s words: the state, without a running count').not.toMatch(/\d+ s$/);
-  expect.soft(typeof seen.view.since === 'number' && seen.view.since <= began, `since: when the wait began (${seen.view.since})`).toBe(true);
+  expect.soft(typeof seen.view.since === 'number' && seen.view.since <= began, `since: when the status began (${seen.view.since})`).toBe(true);
   expect.soft(seen.late, 'views published from the wait\'s sixth second on').toEqual([]);
 });
 
