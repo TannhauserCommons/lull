@@ -122,8 +122,17 @@ skipping a failed song. - **The browser output** keeps, per element, whether it 
   navigation prompt: Media3 holds the sound with a suppression reason and keeps play-when-ready), send `system` as
   they start and as they end. So a call shows as a pause that resumes after it, as the browser output shows it on
   the same phone.
-- **The engine** runs a `system` pause the way `P.pause` runs, so a crossfade or a better-copy switch in
-  progress is abandoned, not finished while silent.
+- **An output that reports a `system` pause has already stopped what it was doing:** it abandons
+  its own crossfade or better-copy switch, so nothing finishes while silent. A `play` the system makes on an
+  element the output isn't playing (the incoming deck of an abandoned fade) is halted, not taken as the system's.
+- **The engine only records it:** `ps.playing` follows a `system` event and nothing more. It never
+  pauses the output in answer: that would tell the platform the listener paused, and iOS then doesn't resume after a
+  call, while a token to tell the two apart on Android went stale. A `system` pause applies whatever song it names
+  (the intent is the player's, not a song's); a `system` play only for the song that plays.
+- **The Android half lands on its own,** after it is tried on a phone (nothing here builds or runs it):
+  the web half needs nothing from it, and without it Android behaves as before (its session pause bypasses the
+  page, as it does today). Its page is known to listen from the page's own first call to the plugin, not from
+  the plugin's load, which Tauri runs once per process.
 
 **Every slot field stays current.** A slot's `{{fields}}` are drawn when it draws. A slot is drawn again when a value
 of its pace changes (docs/themes.md section 14: a song-pace field on a new song, next song or status), on every
