@@ -591,7 +591,9 @@ test('a system play on a failed song\'s element is stopped again, and nothing so
     const el = [...window.__played].find((e) => e.src.includes(`/api/stream/${encodeURIComponent(id)}`));
     if (!el) return null;
     const paused = el.paused;
+    const played = new Promise((r) => { el.addEventListener('play', r, { once: true }); setTimeout(r, 1000); });
     el.play().catch(() => {});                   // the system resumes the element (a media key, a headset)
+    await played;                                // the output hears of it as the element's play event
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     const soon = el.paused, at = el.currentTime;
     await new Promise((r) => setTimeout(r, 800));
