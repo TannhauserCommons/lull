@@ -168,6 +168,15 @@ object Engine {
         if (fade == null) arrangeNext()
     }
 
+    /**
+     * The system's play or pause, or the media session's (lock screen, notification, headset, car): applied by the caller
+     * and reported, so the web UI's intent follows what the output did (docs/context/web.md, output interface: `system`).
+     */
+    private fun system(playing: Boolean) {
+        val item = current ?: return
+        emit("system", JSObject().put("key", item.key).put("playing", playing))
+    }
+
     /** Lock screen, notification, Bluetooth or headset next/prev: the web UI owns the queue. */
     fun remote(action: String) {
         emit("remote", JSObject().put("action", action))
@@ -359,7 +368,12 @@ object Engine {
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-            if (isActive) sendTime()
+            if (!isActive) return
+            sendTime()
+            // Another app took the audio focus or gave it back, or headphones came out: the system's pause or resume
+            if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS ||
+                reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
+            ) system(playWhenReady)
         }
 
         override fun onPlaybackStateChanged(state: Int) {
@@ -415,7 +429,7 @@ object Engine {
 
     /**
      * What the MediaSession sees: the active deck, except that next/prev go to the web UI (it owns
-     * the queue) and play/pause go through the engine (so a fade stops with them).
+     * the queue) and play/pause go through the engine (so a fade stops with them) and are reported as `system`.
      */
     private class SessionPlayer(player: Player) : androidx.media3.common.ForwardingPlayer(player) {
         private val extra = intArrayOf(
@@ -437,8 +451,14 @@ object Engine {
         override fun seekToNextMediaItem() = remote("next")
         override fun seekToPrevious() = remote("prev")
         override fun seekToPreviousMediaItem() = remote("prev")
-        override fun play() = Engine.play()
-        override fun pause() = Engine.pause()
-        override fun setPlayWhenReady(playWhenReady: Boolean) = if (playWhenReady) Engine.play() else Engine.pause()
+        override fun play() = session(true)
+        override fun pause() = session(false)
+        override fun setPlayWhenReady(playWhenReady: Boolean) = session(playWhenReady)
+
+        /** Played or paused through the engine (so a fade stops with it), then reported to the web UI. */
+        private fun session(playing: Boolean) {
+            if (playing) Engine.play() else Engine.pause()
+            system(playing)
+        }
     }
 }
