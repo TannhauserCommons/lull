@@ -22,7 +22,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry};
 
 /// This many deaths of one window's content within `LOOP_WINDOW` is a loop: reloading won't help.
 const LOOP_COUNT: usize = 3;
@@ -149,6 +149,9 @@ pub fn failed(app: &AppHandle, label: &str, failure: Failure) {
     if label == main_window::LABEL && !matches!(failure.process, Process::Helper(_)) {
         graphics::page_lost(app);
     }
+    if label == main_window::LABEL && matches!(failure.process, Process::Renderer | Process::Unresponsive) {
+        main_is_gone(app);
+    }
     let recovery = app.state::<Recovery>();
     let action = match &failure.process {
         // A renderer this app ended because it hung: the hang counted, and decided what comes next.
@@ -189,6 +192,16 @@ pub fn failed(app: &AppHandle, label: &str, failure: Failure) {
             done,
         ),
     );
+}
+
+/// `main`'s page is dead and can't say bye itself: an open mini player stops its clock and shows that
+/// lull's window is away, until `main` comes back and says hello (docs/context/desktop.md, Crashes).
+fn main_is_gone(app: &AppHandle) {
+    if let Some(mini) = mini::window(app)
+        && let Err(e) = mini.emit("main-bye", serde_json::json!({}))
+    {
+        log(app, &format!("can't tell the mini player that main is gone: {e}"));
+    }
 }
 
 /// Records one death; true once they come too often for a reload to help.

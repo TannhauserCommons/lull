@@ -19,6 +19,7 @@ const STAGED: &[&str] = &[
     "base.css",
     "components.css",
     "icons.js",
+    "player-view.js",
     "fonts",
     "designs",
     "desktop",

@@ -48,7 +48,6 @@
   function $$(sel, el) { return Array.prototype.slice.call((el || doc).querySelectorAll(sel)); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
   function ic(name, cls) { return window.icon(name, null, cls); }
-  function fmt(sec) { sec = Math.max(0, Math.round(sec)); return Math.floor(sec / 60) + ':' + ('0' + sec % 60).slice(-2); }
   function announce(text) {
     var el = $('#dk-announcer');
     if (!el) { el = doc.createElement('div'); el.id = 'dk-announcer'; el.className = 'vh'; el.setAttribute('aria-live', 'polite'); doc.body.appendChild(el); }
@@ -524,55 +523,67 @@
   };
 
   /* =====================================================================
-     4. Mini player: mirrors the main window's player. `main` sends a snapshot (section 8, snapshot())
-        as the 'player' event; the buttons go back to it as 'mini' events and it runs them as its own actions.
+     4. Mini player: shows `main`'s player view (web/player-view.js, ADR-0041). `main` sends the view itself (section 8) as
+        the 'player' event and the cover on its own ('player-art'); the song is placed with PlayerView.posAt, so this
+        window's clock runs between views. PlayerView.paint writes every hook that changes during a song, as it does
+        in the web UI: the markup below draws the song alone. The buttons go back to `main` as 'mini' events and it runs
+        them as its own actions.
+        The link has a version and two ends that each say hello: `hello` carries PlayerView.VERSION, and main answers
+        every hello with its view; main says `main-hello` when its page starts (this window then says hello again) and
+        `main-bye` when it goes (its page hides, or the app sees its renderer die). data-link on [data-dk-player]:
+        ok, away (after main-bye, until a view comes), update-app (main's view is newer than this app) or
+        update-hub (older, or from before the version): the clock stops and the window says which side to update.
      ===================================================================== */
-  var S = { track: null, art: null, playing: false, liked: false, pos: 0, duration: 0, durationKnown: true,
-    buffered: [], front: 1, received: 1, shuffle: false, repeat: 'off', volume: 1, status: 'idle', statusText: '' };
+  var V = window.PlayerView;
   var FALLBACK_ART = '../assets/fallback-art-256.png';
   var BARS = 40;
+  var coverArt = null;                // the cover comes on its own ('player-art'): once per song, never inside the view
+  var latest = null;               // the last view main sent that this window can draw (the placeholder until the first)
+  var link = 'ok', liveValues;   // data-link, and the live model's values main sent with the view
+  var LINK_WORDS = { away: 'lull’s window is away', 'update-app': 'Update the lull app', 'update-hub': 'Update your hub' };
+  var LINK_ERROR = {
+    'update-app': 'lull mini player: main’s view is newer than this app understands. Update the lull app.',
+    'update-hub': 'lull mini player: main’s view is older than this app, or from before the view had a version. Update your hub.'
+  };
+  /* what the window shows before main's first view: nothing playing, built the way main builds a view */
+  function idleView() {
+    return V.derive({ track: null, status: 'idle', intent: false, sound: null, words: '', copy: null, pos: 0, duration: 0, durationKnown: true,
+      received: 1, front: 1, parts: [], buffered: [], seekWait: null, liked: false, saved: false, shuffle: false, repeat: 'off',
+      volume: 1, muted: false, crossfading: false, now: Date.now() });
+  }
+  /* what the window draws: the view, and while the link isn't ok, why in the status line's place */
+  function shown() {
+    return link === 'ok' ? latest : Object.assign({}, latest, { words: LINK_WORDS[link], activity: latest.activity === 'idle' ? 'paused' : latest.activity });
+  }
   function barHeight(i) { return (0.32 + 0.6 * Math.abs(Math.sin(i * 1.7) * Math.cos(i * .43))).toFixed(2); }
-  function chip(t) { return t.format ? '<span class="q-chip ' + (t.lossless ? 'q-chip--ll' : 'q-chip--ly') + ' q-chip--solid" title="' + (t.lossless ? 'Lossless, ' : '') + esc(t.format) + '">' + esc(t.format) + '</span>' : ''; }
+  function chip(copy) {
+    return copy && copy.format ? '<span class="q-chip ' + (copy.lossless ? 'q-chip--ll' : 'q-chip--ly') + ' q-chip--solid" title="' + (copy.lossless ? 'Lossless, ' : '') + esc(copy.format) + '">' + esc(copy.format) + '</span>' : '';
+  }
   function cover(size) {
-    return '<span class="cover dk-art' + (size <= 64 ? ' cover--thumb' : '') + '" style="--cover-size-base:' + size + 'px" aria-hidden="true"><img alt="" src="' + esc(S.art || FALLBACK_ART) + '"></span>';
+    return '<span class="cover dk-art' + (size <= 64 ? ' cover--thumb' : '') + '" style="--cover-size-base:' + size + 'px" aria-hidden="true"><img alt="" src="' + esc(coverArt || FALLBACK_ART) + '"></span>';
   }
-  function frac() { return S.duration ? Math.min(1, S.pos / S.duration) : 0; }
-  function bufferedAt(x) { return S.buffered.some(function (r) { return x >= r[0] && x <= r[1]; }); }
-  function bufferPart() {          // the arrived part the playhead is in (a seek ahead may leave a gap before it)
-    var f = frac();
-    return S.buffered.filter(function (r) { return f >= r[0] && f <= r[1]; })[0] || [0, 0];
-  }
-  function bufferEnd() { return bufferPart()[1]; }
-  function waveText() { return fmt(S.pos) + ' of ' + (S.durationKnown ? '' : 'about ') + fmt(S.duration) + ', downloaded to ' + fmt(bufferEnd() * S.duration); }
   function waveMarkup() {
     var b = ''; for (var i = 0; i < BARS; i++) b += '<i class="wave__bar" style="--h:' + barHeight(i) + '"></i>';
     return '<div class="wave" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" data-dk="seek">' + b +
       '<div class="wave__rail"><div class="wave__head"></div></div></div>';
   }
+  /* the song: its cover, title, artist, and the copy that plays (the bar's format; the peer's share while it arrives) */
   function nowMarkup() {
-    var t = S.track;
+    var t = latest.track;
     if (!t) return '<div class="dk-mini__now">' + cover(84) + '<div><div class="device__title">Nothing playing</div><div class="device__artist">Pick something in lull</div></div></div>';
     return '<div class="dk-mini__now">' + cover(84) + '<div><div class="device__title">' + esc(t.title) + '</div>' +
-      '<div class="device__artist">' + esc(t.artist) + '</div><div class="device__facts">' + chip(t) +
-      (S.received < 1 ? '<span class="device__fact">peer ' + Math.round(S.received * 100) + '%</span>' : '') + '</div></div></div>';
+      '<div class="device__artist">' + esc(t.artist) + '</div><div class="device__facts">' + chip(latest.copy) +
+      (latest.transfer.received < 1 ? '<span class="device__fact">peer <span data-bind="received"></span></span>' : '') + '</div></div></div>';
   }
-  function playIcon() { return S.playing ? ic('pause') : ic('play', 'ic-play'); }
-  function likeIcon() { return ic(S.liked ? 'heart-fill' : 'heart'); }
-  /* a key's icon follows the player, as the page's data-bind keys do: lull's icon in it is pointed at the new one; a key
-     with no icon and no words of its own gets lull's; a theme's own words (with or without an icon) are never touched */
-  function keyIcon(b, name, cls) {
-    var u = $('use', b), svg = $('svg.ic', b);
-    if (u) { if (u.getAttribute('href') !== '#i-' + name) u.setAttribute('href', '#i-' + name); if (svg) svg.classList.toggle('ic-play', cls === 'ic-play'); }
-    else if (!b.textContent.trim() && !b.firstElementChild) b.innerHTML = ic(name, cls);
-  }
-  function volText() { return 'vol ' + Math.round(S.volume * 100) + '%'; }
 
   /* miniPlayer slot: a design.js may replace the window content. ctx = { style: 'device'|'strip', opaque,
      track { title, artist, format, lossless } | null, playing, liked, parts { device(), strip(), cover(size), wave() } }.
      Keep data-dk-player and the data-dk="..." buttons / data-dk-* fields in an override: section 5 drives those. */
   var miniOpts = {};
   function miniPlayer(style) {
-    var ctx = { style: style, opaque: !!miniOpts.opaque, playing: S.playing, liked: S.liked, track: S.track,
+    var t = latest.track, copy = latest.copy;
+    var ctx = { style: style, opaque: !!miniOpts.opaque, playing: V.pressed(latest), liked: latest.liked,
+      track: t ? { title: t.title, artist: t.artist, format: copy && copy.format || '', lossless: !!(copy && copy.lossless) } : null,
       parts: { device: deviceMarkup, strip: stripMarkup, cover: cover, wave: waveMarkup } };
     var dflt = function (c) { return c.style === 'strip' ? stripMarkup() : deviceMarkup(); };
     return window.Designs ? String(Designs.slot('miniPlayer', ctx, dflt)) : dflt(ctx);
@@ -581,14 +592,14 @@
   D.miniStrip = function () { return miniPlayer('strip'); };
   function deviceMarkup() {
     var grill = ''; for (var g = 0; g < 9; g++) grill += '<i></i>';
-    return '<div class="dk-mini' + (miniOpts.opaque ? ' dk-mini--opaque' : '') + '" data-dk-player="device">' +
+    return '<div class="dk-mini' + (miniOpts.opaque ? ' dk-mini--opaque' : '') + '" data-dk-player="device" data-link="ok">' +
       '<section class="device" aria-label="lull mini player" data-tauri-drag-region>' +
       '<div class="dk-mini__head" data-tauri-drag-region><span class="dk-mini__led" aria-hidden="true"><i></i>on</span><span class="spacer" data-tauri-drag-region></span>' +
       '<button class="dk-mini__win" data-dk="full" aria-label="Open full window" data-tip="Open full window">' + ic('expand') + '</button>' +
       '<button class="dk-mini__win" data-dk="mini-close" aria-label="Close mini player" data-tip="Close mini player">' + ic('close') + '</button></div>' +
       '<div class="device__bezel" data-tauri-drag-region><div class="device__screen s-screen">' +
-      '<div class="device__page"><div class="device__page-head"><span>now playing</span><span data-dk-vol>' + volText() + '</span></div>' +
-      '<div data-dk-now aria-live="polite">' + nowMarkup() + '</div>' + waveMarkup() +
+      '<div class="device__page"><div class="device__page-head"><span>now playing</span><span data-dk-vol></span></div>' +
+      '<div data-dk-now aria-live="polite">' + nowMarkup() + '</div><div class="device__state" data-dk-status></div>' + waveMarkup() +
       '<div class="wave-times"><b data-dk-pos></b><span data-dk-dur></span></div></div>' +
       '<div class="dk-mini__note" aria-hidden="true"></div></div>' +
       '<div class="device__brand">' + wordmark() + '</div></div>' +
@@ -598,79 +609,38 @@
       '<span class="dpad__hub"></span>' +
       '<button class="dpad__btn dpad__btn--right" data-dk="next" aria-label="Next" data-tip="Next">' + ic('next') + '</button>' +
       '<button class="dpad__btn dpad__btn--down" data-dk="vol-down" aria-label="Volume down" data-tip="Volume down">' + ic('minus') + '</button></div>' +
-      '<div class="device__ab"><span class="device__key device__key--b"><button class="btn-gloss btn-gloss--48" data-dk="like" aria-label="Like" data-tip="Like">' + likeIcon() + '</button>like</span>' +
-      '<span class="device__key device__key--a"><button class="btn-gloss" data-dk="play-pause" aria-label="Play" data-tip="Play">' + playIcon() + '</button><span data-dk-play-label></span></span></div></div>' +
+      '<div class="device__ab"><span class="device__key device__key--b"><button class="btn-gloss btn-gloss--48" data-dk="like" aria-label="Like" data-tip="Like">' + ic('heart') + '</button>like</span>' +
+      '<span class="device__key device__key--a"><button class="btn-gloss" data-dk="play-pause" aria-label="Play" data-tip="Play">' + ic('play', 'ic-play') + '</button><span data-dk-play-label></span></span></div></div>' +
       '<div class="device__pills"><button class="device__pill device__pill--shuffle" data-dk="shuffle" aria-pressed="false"><i></i>shuffle</button>' +
       '<button class="device__pill device__pill--repeat" data-dk="repeat" aria-pressed="false"><i></i>repeat</button></div>' +
       '<div class="device__grill" aria-hidden="true">' + grill + '</div></section></div>';
   }
   function stripMarkup() {
-    var t = S.track;
-    return '<div class="dk-strip-wrap" data-dk-player="strip"><section class="dk-strip s-panel" aria-label="lull mini player" data-tauri-drag-region>' +
-      '<div class="seek seek--line" aria-hidden="true"><div class="seek__track"><div class="seek__xfer"></div><div class="seek__bufs"><div class="seek__buf" data-dk-buf></div></div><div class="seek__played"></div></div></div>' +
+    var t = latest.track;
+    return '<div class="dk-strip-wrap" data-dk-player="strip" data-link="ok"><section class="dk-strip s-panel" aria-label="lull mini player" data-tauri-drag-region>' +
+      '<div class="seek seek--line" aria-hidden="true"><div class="seek__track"><div class="seek__xfer"></div><div class="seek__bufs"></div><div class="seek__played"></div></div></div>' +
       '<button class="bezel-thumb" data-dk="full" aria-label="Open full window" data-tip="Open full window" data-dk-thumb>' + cover(40) + '</button>' +
-      '<div class="dk-strip__text" data-tauri-drag-region aria-live="polite"><div class="dk-strip__title" data-dk-title>' + esc(t ? t.title : 'Nothing playing') + '</div><div class="dk-strip__artist" data-dk-artist>' + esc(t ? t.artist : '') + '</div></div>' +
+      '<div class="dk-strip__text" data-tauri-drag-region aria-live="polite"><div class="dk-strip__title" data-dk-title>' + esc(t ? t.title : 'Nothing playing') + '</div><div class="dk-strip__sub"><span class="dk-strip__artist" data-dk-artist>' + esc(t ? t.artist : '') + '</span><span class="dk-strip__state" data-dk-status></span></div></div>' +
       '<div class="dk-strip__keys">' +
       '<button class="btn-icon btn-icon--bare" data-dk="previous" aria-label="Previous" data-tip="Previous">' + ic('prev') + '</button>' +
-      '<button class="btn-gloss btn-gloss--40" data-dk="play-pause" aria-label="Play" data-tip="Play">' + playIcon() + '</button>' +
+      '<button class="btn-gloss btn-gloss--40" data-dk="play-pause" aria-label="Play" data-tip="Play">' + ic('play', 'ic-play') + '</button>' +
       '<button class="btn-icon btn-icon--bare" data-dk="next" aria-label="Next" data-tip="Next">' + ic('next') + '</button>' +
-      '<button class="btn-icon btn-icon--bare btn-icon--sm" data-dk="like" aria-label="Like" data-tip="Like">' + likeIcon() + '</button>' +
+      '<button class="btn-icon btn-icon--bare btn-icon--sm" data-dk="like" aria-label="Like" data-tip="Like">' + ic('heart') + '</button>' +
       '<span class="dk-sep" aria-hidden="true"></span>' +
       '<button class="btn-icon btn-icon--bare btn-icon--sm" data-dk="full" aria-label="Open full window" data-tip="Open full window">' + ic('expand') + '</button>' +
       '<button class="btn-icon btn-icon--bare btn-icon--sm" data-dk="mini-close" aria-label="Close mini player" data-tip="Close mini player">' + ic('close') + '</button>' +
       '</div></section></div>';
   }
 
-  function paintPlayer(scope) {
-    var f = frac();
-    $$('[data-dk-player]', scope).forEach(function (el) {
-      /* the player's state and its words, as the web UI's bar has them (docs/themes.md: data-status-text, --status-text) */
-      var status = S.status || 'idle', words = S.statusText || '';
-      if (el.getAttribute('data-status') !== status) el.setAttribute('data-status', status);
-      /* play state and the song's place in hundredths, as the web UI gives them (docs/themes.md: data-playing, --song-pos) */
-      if (el.getAttribute('data-playing') !== String(!!S.playing)) el.setAttribute('data-playing', String(!!S.playing));
-      var step = String(Math.floor(f * 100) / 100);
-      if (el.style.getPropertyValue('--song-pos') !== step) el.style.setProperty('--song-pos', step);
-      if (el.getAttribute('data-status-text') !== words) {
-        el.setAttribute('data-status-text', words);
-        el.style.setProperty('--status-text', '"' + words.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\A ') + '"');
-      }
-      $$('.wave', el).forEach(function (w) {
-        w.style.setProperty('--pos', f.toFixed(4));
-        w.classList.toggle('is-playing', S.playing);
-        $$('.wave__bar', w).forEach(function (b, i) {
-          var x = (i + .5) / BARS;
-          b.className = 'wave__bar' + (x <= f ? ' is-played' : bufferedAt(x) ? ' is-buf' : x <= S.front ? ' is-xfer' : '');
-        });
-        w.setAttribute('aria-valuenow', Math.round(f * 100)); w.setAttribute('aria-valuetext', waveText());
-      });
-      $$('[data-dk-pos]', el).forEach(function (n) { n.textContent = fmt(S.pos); });
-      $$('[data-dk-dur]', el).forEach(function (n) { n.textContent = (S.durationKnown ? '' : '~') + fmt(S.duration); });
-      $$('[data-dk-vol]', el).forEach(function (n) { n.textContent = volText(); });
-      $$('.seek--line', el).forEach(function (s) {
-        s.style.setProperty('--pos', f.toFixed(4)); s.style.setProperty('--xfer', S.front);
-        var buf = $('[data-dk-buf]', s), part = bufferPart();
-        buf.style.left = (part[0] * 100) + '%'; buf.style.width = ((part[1] - part[0]) * 100) + '%';
-      });
-      $$('[data-dk="play-pause"]', el).forEach(function (b) {
-        var label = S.playing ? 'Pause' : 'Play';
-        keyIcon(b, S.playing ? 'pause' : 'play', S.playing ? '' : 'ic-play'); b.setAttribute('aria-label', label); b.setAttribute('data-tip', label);
-      });
-      $$('[data-dk-play-label]', el).forEach(function (n) { n.textContent = S.playing ? 'pause' : 'play'; });
-      $$('[data-dk="like"]', el).forEach(function (b) {
-        keyIcon(b, S.liked ? 'heart-fill' : 'heart'); b.setAttribute('aria-pressed', String(S.liked)); b.classList.toggle('is-liked', S.liked);
-        b.setAttribute('data-tip', S.liked ? 'Liked' : 'Like');
-      });
-      $$('[data-dk="save"]', el).forEach(function (b) {
-        b.setAttribute('aria-pressed', String(!!S.saved)); b.classList.toggle('is-saved', !!S.saved);
-        b.setAttribute('data-tip', S.saved ? 'In your library' : 'Save to library');
-      });
-      $$('[data-dk="shuffle"]', el).forEach(function (b) { b.setAttribute('aria-pressed', String(S.shuffle)); });
-      $$('[data-dk="repeat"]', el).forEach(function (b) { b.setAttribute('aria-pressed', String(S.repeat !== 'off')); });
-    });
+  /* the window's hooks, from the view at `now`; the link's state beside them */
+  function paint(scope) {
+    $$('[data-dk-player]', scope).forEach(function (el) { if (el.getAttribute('data-link') !== link) el.setAttribute('data-link', link); });
+    V.paint(scope, shown(), Date.now());
   }
-  function paintTrack(scope) {
-    var t = S.track;
+  /* the song's own parts: drawn again when the song or its copy changes, or the share starts or stops arriving */
+  var songKey = function (v) { return JSON.stringify([v.track, v.copy && [v.copy.format, v.copy.lossless], v.transfer.received < 1]); };
+  function paintSong(scope) {
+    var t = latest.track;
     $$('[data-dk-now]', scope).forEach(function (n) { n.innerHTML = nowMarkup(); });
     $$('[data-dk-thumb]', scope).forEach(function (n) { n.innerHTML = cover(40); });
     $$('[data-dk-title]', scope).forEach(function (n) { n.textContent = t ? t.title : 'Nothing playing'; });
@@ -683,33 +653,54 @@
     });
     announce(text);
   }
-  /* a new snapshot from main: repaint, and say what the last button press changed. Until main's first snapshot, S is
-     the placeholder above: that first one is the player as it already was, not a change to say. */
+
+  /* the live model's values the theme names: main's, with the song's place worked out here from the view's clock (the
+     place moves with the song, so main sends none of it) */
+  var hundredths = function (f) { return Math.floor(Math.max(0, Math.min(1, f || 0)) * 100) / 100; };
+  function feedLive() {
+    if (!window.Live) return;
+    var c = latest.clock, pos = V.posAt(latest, Date.now());
+    Live.feed(Object.assign({}, liveValues, {
+      'song.pos': latest.track && c.duration ? hundredths(pos / c.duration) : 0, 'song.elapsed': latest.track ? V.time(pos) : '',
+      'song.buffered': hundredths(latest.transfer.buffered), 'song.received': latest.track ? hundredths(latest.transfer.received) : 0
+    }));
+  }
+  /* the clock stops where it is: the window is away, or main's view isn't one it can draw */
+  function stopClock() {
+    var now = Date.now();
+    latest = Object.assign({}, latest, { clock: Object.assign({}, latest.clock, { pos: V.posAt(latest, now), at: now, rate: 0 }) });
+  }
+  /* which side a view's version says to update; null while it is this window's own */
+  function staleSide(v) {
+    if (!v || typeof v.v !== 'number' || v.v < V.VERSION) return 'update-hub';
+    return v.v > V.VERSION ? 'update-app' : null;
+  }
   var REPEAT_TEXT = { off: 'repeat off', all: 'repeat all', one: 'repeat one' };
   var heardMain = false;
-  /* where main said the song was, and when we heard it. Main sends a snapshot when something changed or the position
-     strayed (a seek), not as the song plays: while it plays, the position moves on from here (advance, below) */
-  var anchor = { pos: 0, at: 0 };
-  function runs(s) { return !!(s.playing && s.duration && (s.status === 'streaming' || s.status === 'library')); }
-  function advance() {
-    if (!runs(S)) return;
-    var p = Math.min(S.duration, anchor.pos + (Date.now() - anchor.at) / 1000), w = Math.floor(p);
-    if (w === S.pos) return;
-    S.pos = w; paintPlayer(doc);
-    if (window.Live) Live.feed({ 'song.pos': Math.floor(p / S.duration * 100) / 100, 'song.elapsed': fmt(w) });
-  }
-  function receive(scope, next, first) {
-    var prev = S; S = Object.assign({}, next, { art: prev.art });   // the cover comes on its own ('player-art')
-    anchor = { pos: next.pos, at: Date.now() }; S.pos = Math.floor(next.pos);
-    var key = function (s) { return JSON.stringify([s.track, s.received < 1]); };
-    if (first || key(prev) !== key(next)) paintTrack(scope);
-    paintPlayer(scope);
-    if (window.Live && next.live) Live.feed(next.live);   // the theme's live values, as the main window read them
-    if (first) return;
+  /* a view from main: draw it, and say what the last button press changed. Until main's first view the window shows the
+     placeholder: that first one is the player as it already was, not a change to say. */
+  function receive(scope, next) {
+    var side = staleSide(next);
+    if (side) {
+      if (link !== side) { console.error(LINK_ERROR[side]); note(scope, LINK_WORDS[side], 8000); }
+      stopClock(); link = side; paint(scope); feedLive(); return;
+    }
+    var prev = latest;
+    latest = next; liveValues = next.live;
+    if (songKey(prev) !== songKey(next)) paintSong(scope);
+    link = 'ok'; paint(scope); feedLive();
     if (!heardMain) { heardMain = true; return; }
-    if (prev.volume !== next.volume) note(scope, 'volume ' + Math.round(next.volume * 100) + '%');
+    var was = prev.muted ? 0 : prev.volume, now = next.muted ? 0 : next.volume;
+    if (was !== now) note(scope, 'volume ' + Math.round(now * 100) + '%');
     if (prev.shuffle !== next.shuffle) note(scope, next.shuffle ? 'shuffle on' : 'shuffle off');
     if (prev.repeat !== next.repeat) note(scope, REPEAT_TEXT[next.repeat] || 'repeat');
+  }
+  /* main's page is gone (hidden, reloading, its renderer dead) until it says hello again with a view */
+  function mainAway(scope) { stopClock(); link = 'away'; paint(scope); feedLive(); }
+  /* the song moves on between views: this window's clock, while main's view says the song runs */
+  function tickClock() {
+    if (link !== 'ok' || latest.clock.rate !== 1) return;
+    paint(doc); feedLive();
   }
   function toMain(action, detail) {
     T.event.emitTo('main', 'mini', Object.assign({ action: action }, detail || {})).catch(logFailure('mini ' + action));
@@ -760,15 +751,19 @@
     pair(card);
   });
   /* the wave scrubs like the main window's: the playhead follows the pointer while the button is down (painted here
-     at once, main seeks once a frame), not only where the button comes up. Main's next snapshot has the truth (a
+     at once, main seeks once a frame), not only where the button comes up. Main's next view has the truth (a
      Soulseek song can't seek past what has arrived) */
   doc.addEventListener('pointerdown', function (e) {
-    var w = e.target.closest && e.target.closest('.wave[data-dk="seek"]'); if (!w || e.button !== 0 || !S.duration) return;
+    var w = e.target.closest && e.target.closest('.wave[data-dk="seek"]'); if (!w || e.button !== 0 || !latest.clock.duration) return;
     e.preventDefault(); w.focus({ preventScroll: true });
     try { w.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events */ }
     var f = 0, frame = 0;
     function at(ev) { var r = w.getBoundingClientRect(); return Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)); }
-    function show() { frame = 0; S.pos = f * S.duration; anchor = { pos: S.pos, at: Date.now() }; paintPlayer(doc); seekTo(f); }
+    function show() {
+      frame = 0;
+      latest = Object.assign({}, latest, { clock: Object.assign({}, latest.clock, { pos: f * latest.clock.duration, at: Date.now() }) });
+      paint(doc); seekTo(f);
+    }
     function move(ev) { f = at(ev); if (!frame) frame = requestAnimationFrame(show); }
     function end(ev) {
       w.removeEventListener('pointermove', move); w.removeEventListener('pointerup', end); w.removeEventListener('pointercancel', end);
@@ -779,10 +774,10 @@
     w.addEventListener('pointermove', move); w.addEventListener('pointerup', end); w.addEventListener('pointercancel', end);
   });
   doc.addEventListener('keydown', function (e) {
-    var w = e.target.closest && e.target.closest('.wave[data-dk="seek"]'); if (!w || !S.duration) return;
+    var w = e.target.closest && e.target.closest('.wave[data-dk="seek"]'); if (!w || !latest.clock.duration) return;
     var step = e.key === 'ArrowRight' ? 5 : e.key === 'ArrowLeft' ? -5 : e.key === 'Home' ? -1e9 : e.key === 'End' ? 1e9 : 0;
     if (!step) return;
-    e.preventDefault(); seekTo((S.pos + step) / S.duration);
+    e.preventDefault(); seekTo((V.posAt(latest, Date.now()) + step) / latest.clock.duration);
   });
   /* typing an address unpicks the hub chip that filled it */
   doc.addEventListener('input', function (e) {
@@ -838,14 +833,15 @@
     } else if (view === 'mini' || view === 'strip') {
       doc.title = 'lull mini player';
       miniOpts = { opaque: !!q.get('opaque') };
+      latest = idleView();
       var render = function () {
         host.innerHTML = view === 'strip' ? D.miniStrip() : D.miniDevice();
-        receive(doc, S, true);
+        paintSong(doc); paint(doc); feedLive();
         fitWindow($('[data-dk-player]', host));
       };
       Designs.ready(render);
-      T.event.listen('player', function (e) { receive(doc, e.payload, false); });
-      T.event.listen('player-art', function (e) { if (S.art !== e.payload.art) { S = Object.assign({}, S, { art: e.payload.art }); paintTrack(doc); } });
+      T.event.listen('player', function (e) { receive(doc, e.payload); });
+      T.event.listen('player-art', function (e) { if (coverArt !== e.payload.art) { coverArt = e.payload.art; paintSong(doc); } });
       /* DESKTOP.md 6.1: follow the web UI live. A listener's theme comes from main (theme-package, once main has
          loaded it, and again whenever it changes on the hub); until then the design it extends shows. */
       var want = { design: q.get('design'), base: q.get('base') };
@@ -865,9 +861,11 @@
           if (inUse) render(); else if (id === want.design) show();
         }, logFailure('theme ' + id));
       });
-      setInterval(advance, 250);
-      toMain('hello');                                     // main answers with a snapshot
-      window.addEventListener('pagehide', function () { toMain('bye'); });   // main stops sending snapshots
+      setInterval(tickClock, 250);
+      T.event.listen('main-hello', function () { toMain('hello', { v: V.VERSION }); }).catch(logFailure('main hello'));   // main reloaded: it learns this window is open
+      T.event.listen('main-bye', function () { mainAway(doc); }).catch(logFailure('main bye'));
+      toMain('hello', { v: V.VERSION });                   // main answers with its view
+      window.addEventListener('pagehide', function () { toMain('bye'); });   // main stops sending views
       if (q.get('wayland')) setTimeout(function () {
         note(doc, 'Your desktop decides what stays on top: use the window menu (Alt+Space) > Always on Top.', 8000);
       }, 400);
@@ -896,7 +894,7 @@
   /* =====================================================================
      8. Bridge in the web UI (wrapper only; DESKTOP.md 4 and 6.1). Tray items and mini-player buttons run
         the web UI's own actions; set_now_playing keeps the tray, the taskbar buttons and Discord current;
-        'player' snapshots feed the mini player; 'appearance' tells the wrapper which design and theme its own
+        'player' views feed the mini player; 'appearance' tells the wrapper which design and theme its own
         pages should use. While Classic mode's window plays, what it reports is what's playing.
      ===================================================================== */
   if (window.App && App.player && D.inWrapper) {
@@ -926,7 +924,13 @@
       }
     };
     T.event.listen('tray', function (e) { run(e.payload.action, e.payload); });
-    T.event.listen('mini', function (e) { run(e.payload.action, e.payload); });
+    /* the mini player's hello carries its version, and main answers every one with its view: the mini player judges it.
+       Main says hello itself as its page starts, once it listens, so a mini player left open over a reload (a crash,
+       the unreachable page, a reconnect) says hello again; and bye as it goes (the app says it too when main's
+       renderer dies, app/src/desktop/recovery.rs) */
+    T.event.listen('mini', function (e) { run(e.payload.action, e.payload); })
+      .then(function () { return T.event.emit('main-hello', {}); }).catch(logFailure('main hello'));
+    window.addEventListener('pagehide', function () { T.event.emit('main-bye', {}).catch(logFailure('main bye')); });
     T.event.listen('ask-close', function () { D.askClose(); });
     T.event.listen('classic', function (e) {
       var m = e.payload || {};
@@ -977,21 +981,18 @@
       }).catch(logFailure('cover art'));
       return null;
     };
-    var snapshot = function () {
-      var t = P.current(), ps = P.state, id = t ? t.id : null, bar = P.transferBar();
-      return { track: t ? { title: t.title, artist: t.artist, format: t.format || '', lossless: !!t.lossless } : null,
-        playing: !!ps.playing, liked: !!(id && App.isLiked(id)), saved: !!(id && App.isSaved(id)),
-        pos: Math.round((ps.pos || 0) * 10) / 10, duration: P.duration() || 0, durationKnown: ps.durationKnown !== false,
-        buffered: bar.parts, front: Math.floor(bar.front * 100) / 100,
-        received: ps.received == null ? 1 : Math.floor(ps.received * 100) / 100,
-        shuffle: !!ps.shuffle, repeat: ps.repeat || 'off', volume: ps.muted ? 0 : ps.volume,
-        status: t ? ps.status || 'idle' : 'idle', statusText: t && ps.status !== 'idle' ? P.stateWords() : '',
-        /* the live model's values the theme names (designs/live.js, ADR-0101), as this page read them: the mini player
-           windows publish them as the page does. None for a design that names none */
-        live: window.Live ? Live.values() : undefined };
+    /* what the mini player is sent: the player's view as it is (web/player-view.js, ADR-0041), with the live model's values
+       the theme names (designs/live.js, ADR-0101), as this page read them. The song's place is no part of them: the mini
+       player works it out from the view's clock, as every surface does. None for a design that names none */
+    var PLACE = ['song.pos', 'song.elapsed', 'song.buffered', 'song.received'];
+    var liveNow = function () {
+      if (!window.Live) return undefined;
+      var o = Object.assign({}, Live.values());
+      PLACE.forEach(function (k) { delete o[k]; });
+      return o;
     };
-    /* the cover goes on its own, once per song: inside the snapshot, a 100 KB data URL crossed to the mini player with
-       every position update (four a second), and the page's memory grew by tens of MB a minute */
+    /* the cover goes on its own, once per song: inside the view, a 100 KB data URL crossed to the mini player with
+       every change, and the page's memory grew by tens of MB a minute */
     var sentArt;
     var sendArt = function (force) {
       if (!miniOpen) return;
@@ -1000,30 +1001,19 @@
       if (!force && data === sentArt) return; sentArt = data;
       T.event.emit('player-art', { art: data }).catch(logFailure('cover art'));
     };
-    /* snapshots feed only the mini player: none while it's closed ('hello' when it opens, 'bye' when it goes). While the
-       song plays the mini player moves the position on by itself (advance), so the position is no part of what must
-       change: a snapshot goes when something else did (received in whole percent, as it shows them), or when the
-       position is not where the mini player's clock has it (a seek, a stall, a drifting clock: a second off). The
-       'tick' that carries this is not emitted while this window is hidden (minimised, in the tray: the mini player is
-       what the listener is using then), so a clock of its own checks every second too. */
-    var lastPlayer = '', lastSnap = null, lastAt = 0, miniOpen = false;
-    var liveMoving = { 'song.pos': 1, 'song.elapsed': 1 };      // the mini player works these out as it advances
-    var stable = function (snap) {
-      var o = Object.assign({}, snap, { pos: 0 });
-      if (o.live) { o.live = Object.assign({}, o.live); Object.keys(liveMoving).forEach(function (k) { delete o.live[k]; }); }
-      return JSON.stringify(o);
-    };
-    var strayed = function (snap, now) {
-      if (!lastSnap) return true;
-      return runs(lastSnap) ? Math.abs(snap.pos - Math.min(lastSnap.duration, lastSnap.pos + (now - lastAt) / 1000)) >= 1 : snap.pos !== lastSnap.pos;
-    };
+    /* views feed only the mini player: none while it's closed ('hello' when it opens, 'bye' when it goes). One goes when
+       its key changed, or when the position is not where the mini player's clock has it (a seek, a stall, a drifting
+       clock: a second off, PlayerView.strayed), so while the song plays none is needed for the position. The page
+       publishes its view while hidden too (the player's own clock, app.js), and a clock of this one checks every second
+       for what changes without a player event (the live model's values). */
+    var lastKey = '', lastView = null, miniOpen = false;
     var sendPlayer = function (force) {
       if (!miniOpen) return;
       sendArt(force);
-      var snap = snapshot(), key = stable(snap), now = Date.now();
-      if (!force && key === lastPlayer && !strayed(snap, now)) return;
-      lastPlayer = key; lastSnap = snap; lastAt = now;
-      T.event.emit('player', snap).catch(logFailure('player snapshot'));
+      var view = P.view(), live = liveNow(), key = JSON.stringify([PlayerView.key(view), live]);
+      if (!force && key === lastKey && !PlayerView.strayed(lastView, view, view.clock.at)) return;
+      lastKey = key; lastView = view;
+      T.event.emit('player', live ? Object.assign({}, view, { live: live }) : view).catch(logFailure('player view'));
     };
     setInterval(function () { sendPlayer(false); }, 1000);
     var sendAppearance = function () {
@@ -1057,7 +1047,7 @@
     askGlass();
 
     ['player', 'like', 'save', 'ready'].forEach(function (ev) { App.on(ev, sendNow); });
-    ['player', 'tick', 'like', 'save'].forEach(function (ev) { App.on(ev, function () { sendPlayer(false); }); });
+    ['player', 'view', 'like', 'save'].forEach(function (ev) { App.on(ev, function () { sendPlayer(false); }); });
     ['design', 'prefs'].forEach(function (ev) { App.on(ev, sendAppearance); });
     App.on('design', sendPackage);
     App.on('ready', reattach); App.on('design', reattach); App.on('route', markDragRegions);
