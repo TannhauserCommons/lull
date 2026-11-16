@@ -8,8 +8,11 @@
 //     file holds the limits of every route it knows, so a change cannot loosen what judges it;
 //   - each tree is built and listed by a real browser against its own build and its own fixture hub, so a change that
 //     makes a route load a new file is charged for it in the same change, and one that stops loading a file is credited;
-//   - the routes measured are the ones each side's budgets file names: a route the merge-base budgets and the change's
-//     file drops fails, and one the merge-base doesn't know is judged by the change's own entry and printed as new;
+//   - the routes measured are the ones each side's budgets file names, and the change is also asked about the routes the
+//     merge-base budgets that its file drops: a screen that is gone lists as removed, one that still exists fails; a
+//     route the merge-base doesn't know is judged by the change's own entry and printed as new;
+//   - when nothing grew on a route both sides measured, the change's own budgets file judges (the owner's changes to the
+//     limits themselves, over a main already red, or removing a route), and the table says so;
 //   - a merge-base with no harness at all is judged by the change's own, but only for the change that adds the harness.
 // The entry script itself runs from the change's tree, so the check's own files are protected paths: a change to them is
 // the owner's to look at (quality.md).
@@ -80,8 +83,11 @@ async function main() {
     if (whose === 'base') console.log(`budgets: the change against ${rev.slice(0, 12)}, judged by that commit's harness and limits`);
     else console.log(`budgets: ${rev.slice(0, 12)} has no budgets harness: this change adds it, so both trees are measured, and judged, by this change's own`);
     const chromium = await loadChromium(root);
-    const base = await measureTree(baseTree, Object.keys(model.routes), chromium);
-    const change = await measureTree(root, Object.keys(own.routes), chromium);
+    const budgeted = Object.keys(model.routes), listed = Object.keys(own.routes);
+    const base = await measureTree(baseTree, budgeted, chromium);
+    // The routes the merge-base budgets are listed in the change too, to see whether their screens are still there.
+    const dropped = budgeted.filter((route) => !listed.includes(route));
+    const change = await measureTree(root, [...listed, ...dropped], chromium, { mayBeGone: dropped });
     const { ok, lines } = report(decide({ base, change, limits: model, ownLimits: own }), FILE);
     console.log(lines.join('\n'));
     process.exitCode = ok ? 0 : 1;
