@@ -1562,6 +1562,9 @@
 :root[data-design="starlight"] .sl-mini .device__facts { display: flex; gap: 6px; margin-top: 8px; }
 :root[data-design="starlight"] .sl-mini .device__fact { display: none; }
 :root[data-design="starlight"] .sl-mini__times { display: flex; justify-content: space-between; margin: 2px 0 -6px; font: 400 .8125rem/1 var(--f-px); color: var(--fg-2); }
+/* what the player is doing, in words (data-dk-status): a line of the card's pixel type */
+:root[data-design="starlight"] .sl-mini__state { contain: inline-size; margin: 4px 0 -4px; min-height: 1.1em; font: 400 .8125rem/1.1 var(--f-px); color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-design="starlight"] [data-dk-player][data-status="failed"] .sl-mini__state { color: var(--fg); }
 :root[data-design="starlight"] .sl-mini__times b { font-weight: 400; color: var(--fg); }
 /* the waveform drawn as the ticket's star-chart line: flat 3 px segments, a 4-point star for the head */
 :root[data-design="starlight"] .sl-mini .wave { height: 22px; gap: 0; align-items: center; --wave-head: 18px; }

@@ -1553,10 +1553,9 @@
 :root[data-design="lull"] .lull-hand .device__title { font: 900 1rem/1.2 var(--f-ui); color: var(--v-lcd-ink); text-shadow: var(--v-lcd-glow); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 :root[data-design="lull"] .lull-hand .device__artist { font: 800 .8125rem/1.2 var(--f-ui); color: var(--v-lcd-ink-2); }
 :root[data-design="lull"] .lull-hand .device__facts { position: static; margin-top: 5px; }
-/* the state's own words on the readout when the song stopped or waits */
-:root[data-design="lull"] [data-dk-player]:is([data-status="failed"], [data-status="buffering"], [data-status="finding"], [data-status="stalled"]) .lull-hand .dk-mini__now > div::after { content: var(--status-text); display: block; margin-top: 4px; font: 900 .75rem/1.2 var(--f-ui); color: var(--heart); }
-:root[data-design="lull"] [data-dk-player]:is([data-status="failed"], [data-status="buffering"], [data-status="finding"], [data-status="stalled"]) .lull-hand .device__facts { display: none; }
-:root[data-design="lull"] [data-dk-player]:not([data-status="failed"]) .lull-hand .dk-mini__now > div::after { color: var(--v-lcd-ink-2); }
+/* what the player is doing, in words (data-dk-status): one readout line under the screen, red when the song failed */
+:root[data-design="lull"] .lull-hand .lull-hand__state { contain: inline-size; margin: 0 6px; min-height: 1.2em; font: 900 .75rem/1.2 var(--f-ui); text-align: center; color: var(--v-lcd-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-design="lull"] [data-dk-player][data-status="failed"] .lull-hand__state { color: var(--heart); }
 :root[data-design="lull"] .lull-hand .wave { height: 34px; padding: 0 4px; }
 :root[data-design="lull"] .lull-hand .wave__bar { background: rgba(255,255,255,.4); }
 :root[data-design="lull"] .lull-hand .wave__bar.is-played { background: #fff; }

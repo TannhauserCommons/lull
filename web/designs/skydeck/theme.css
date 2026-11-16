@@ -1053,6 +1053,9 @@
 :root[data-design="skydeck"] .sd-mini .device__facts { display: flex; gap: 6px; justify-content: center; margin-top: 4px; }
 :root[data-design="skydeck"] .sd-mini .device__fact { font: var(--sd-caps); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); }
 :root[data-design="skydeck"] .sd-mini__times { justify-self: stretch; display: flex; justify-content: space-between; margin: 0; font: 900 .75rem/1 var(--f-ui); letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+/* what the player is doing, in words (data-dk-status): a printed caps line under the times */
+:root[data-design="skydeck"] .sd-mini__state { contain: inline-size; justify-self: stretch; margin: 0; min-height: 1.2em; font: var(--sd-caps); letter-spacing: .1em; text-transform: uppercase; text-align: center; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-design="skydeck"] [data-dk-player][data-status="failed"] .sd-mini__state { color: var(--ink); }
 :root[data-design="skydeck"] .sd-mini__times span { color: var(--ink-2); }
 /* the seek is the printed scale, as in the player: the waveform's bars are its ticks, inked where it has played */
 :root[data-design="skydeck"] .sd-mini .wave { justify-self: stretch; height: 18px; gap: 2px; align-items: flex-end; --wave-head: 16px; border-bottom: 1.5px solid var(--sd-ink); }
