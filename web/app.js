@@ -49,10 +49,7 @@
     return kept[sel] || (kept[sel] = $$(sel));
   }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-  function fmtTime(sec, estimated) {
-    sec = Math.max(0, Math.round(sec || 0));
-    return (estimated ? '~' : '') + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
-  }
+  var fmtTime = PlayerView.time;   // the player's times, as its painter writes them
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   /* an ISO date as precise as known ("2026", "2026-10", "2026-10-29") or unix seconds -> "Oct 29, 2026" */
   function fmtDate(when, withYear) {
@@ -3496,19 +3493,13 @@
      9. Live bindings: seek bars, waveforms, data-bind text, rows (playing / liked / saved)
      ===================================================================== */
   function bufKey(r) { return r.map(function (x) { return x[0].toFixed(3) + '-' + x[1].toFixed(3); }).join('|'); }
-  /* writes that skip an unchanged value: the clock runs four times a second, and rewriting the same text, attribute or
-     custom property still costs a style recalculation (and for text, a layout) of what it touches. Text changes the
-     existing text node's data: replacing the node (textContent =) counts as inserting one, which makes the designs'
-     page-wide :has() rules restyle the whole page each second */
-  function setText(el, v) {
-    var n = el.firstChild;
-    if (n && n.nodeType === 3 && !n.nextSibling) { if (n.data !== v) n.data = v; }
-    else if (el.textContent !== v) el.textContent = v;
-  }
+  /* writes that skip an unchanged value (the player's painter makes its own, PlayerView.paint): the clock runs four times a
+     second, and rewriting the same text, attribute or custom property still costs a style recalculation of what it touches */
+  var setText = PlayerView.setText;
   function setAttr(el, name, v) { v = String(v); if (el.getAttribute(name) !== v) el.setAttribute(name, v); }
   function setVar(el, name, v) { v = String(v); if (el.style.getPropertyValue(name) !== v) el.style.setProperty(name, v); }
   /* text as a CSS string, for content: (a custom property holding words) */
-  App.cssString = function (text) { return '"' + String(text).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\A ') + '"'; };
+  App.cssString = PlayerView.cssString;
   /* the parts drawn as arrived (.seek__buf): what the output holds and what the hub has, merged; the part from the start
      is the transfer's solid part (--xfer) too, and parts further on come from a seek ahead */
   function shownParts() {
@@ -3522,68 +3513,15 @@
   }
   /* what a transfer bar draws (0-1): the solid part from the start, and the parts drawn as arrived */
   P.transferBar = function () { return { front: arrivedFront(), parts: shownParts() }; };
-  /* the song's place, 0 to 1 in hundredths, for a design to draw with (docs/themes.md: --song-pos). Written only when it
-     moves a hundredth, and only on the few parts a design draws it on. It isn't inherited (components.css): a value
-     every element inherits restyles all of them at each step, a long playlist's thousands or a hero's hundreds */
-  var SONG_POS_AT = '#pbar, #mini, .sky-specks, .now__dev, .now__devc, .disc-lead, [data-live]', songStep = null, songAt = null;
-  function paintSongPos(f) {
-    var step = Math.floor(f * 100) / 100, at = $$kept(SONG_POS_AT);
-    if (step === songStep && at === songAt) return;   // the same step on the same parts: nothing to write
-    songStep = step; songAt = at;
-    at.forEach(function (el) { setVar(el, '--song-pos', step); });
-  }
-  function updateSeeks() {
-    var view = P.view(), dur = P.duration() || 1, f = clamp(ps.pos / dur, 0, 1), parts = shownParts(), bk = bufKey(parts), front = arrivedFront();
-    var bufTo = ps.buffered.length ? ps.buffered[ps.buffered.length - 1][1] * dur : 0;
-    var valText = fmtTime(ps.pos) + ' of ' + (ps.durationKnown ? '' : 'about ') + fmtTime(dur) + (ps.received < 1 ? ', downloaded to ' + fmtTime(bufTo) : '')
-      + (ps.seekWait ? ', waiting for ' + fmtTime(ps.seekWait.fraction * dur) : '');
-    var transferring = view.transfer.transferring;
-    // player bar + mini: play state and the received percentage (an integer, usable as counter(rx) in CSS)
-    ['pbar', 'mini'].forEach(function (s) { var el = document.getElementById(s); if (!el) return; setAttr(el, 'data-playing', !!ps.playing); setVar(el, '--rx', Math.round(ps.received * 100)); });
-    setAttr(document.documentElement, 'data-playing', !!ps.playing);
-    paintSongPos(f);
-    var going = ps.seekWait ? ps.seekWait.fraction : null;
-    $$kept('.seek[data-seek="player"]').forEach(function (el) {
-      setVar(el, '--pos', f.toFixed(4));
-      // a seek on its way: a notch where it lands
-      if (el.classList.contains('is-going') !== (going != null)) el.classList.toggle('is-going', going != null);
-      if (going != null) setVar(el, '--target', going.toFixed(4));
-      setVar(el, '--xfer', front.toFixed(4));
-      if (el.classList.contains('is-transferring') !== transferring) el.classList.toggle('is-transferring', transferring);
-      if (el._bk !== bk) {
-        el._bk = bk;
-        var host = $('.seek__bufs', el);
-        if (host) host.innerHTML = parts.map(function (r) { return '<i class="seek__buf" style="left:' + (r[0] * 100).toFixed(2) + '%;width:' + ((r[1] - r[0]) * 100).toFixed(2) + '%"></i>'; }).join('');
-      }
-      setAttr(el, 'aria-valuenow', Math.round(f * 100));
-      setAttr(el, 'aria-valuetext', valText);
-    });
-    $$kept('.wave[data-seek="player"]').forEach(function (el) {
-      var bars = $$('.wave__bar', el), n = bars.length;
-      setVar(el, '--pos', f.toFixed(4));
-      waveMoves(el, view);
-      bars.forEach(function (b, i) {
-        var x = (i + .5) / n, inBuf = parts.some(function (r) { return x >= r[0] && x <= r[1]; });
-        var c = x <= f ? 'is-played' : inBuf ? 'is-buf' : x <= front ? 'is-xfer' : '';
-        if (b._c !== c) { if (b._c) b.classList.remove(b._c); if (c) b.classList.add(c); b._c = c; }
-      });
-      setAttr(el, 'aria-valuenow', Math.round(f * 100));
-      setAttr(el, 'aria-valuetext', valText);
-    });
-    $$kept('.seek-row').forEach(function (el) { setVar(el, '--time-ch', fmtTime(dur, !ps.durationKnown).length); });
-    $$kept('[data-bind="pos"]').forEach(function (el) { setText(el, fmtTime(ps.pos)); });
-    $$kept('[data-bind="dur"]').forEach(function (el) { setText(el, fmtTime(dur, !ps.durationKnown)); });
-    $$kept('[data-bind="buffered-to"]').forEach(function (el) { setText(el, fmtTime(bufTo)); });
-    $$kept('[data-bind="received"]').forEach(function (el) { setText(el, Math.round(ps.received * 100) + '%'); });
-    var vol = ps.muted ? 0 : ps.volume;
-    $$kept('.seek[data-seek="volume"]').forEach(function (el) {
-      setVar(el, '--pos', vol.toFixed(3)); setVar(el, '--xfer', 0);
-      setAttr(el, 'aria-valuenow', Math.round(vol * 100)); setAttr(el, 'aria-valuetext', ps.muted ? 'Muted' : Math.round(vol * 100) + '%');
-    });
-  }
+  /* every player hook that changes during a song is written by PlayerView.paint (web/player-view.js, ADR-0041), here on
+     the player's view and on the visible clock between views. The page asks for its parts through $$kept: a long
+     playlist's thousands of elements make every query cost. */
+  PlayerView.find = function (scope, sel) { return scope === document ? $$kept(sel) : $$(sel, scope); };
+  function paintNow() { PlayerView.paint(document, P.view(), Date.now()); }
   App.setText = setText;
-  App.on('tick', updateSeeks);
-  App.on('player', updateSeeks);
+  App.on('tick', paintNow);
+  App.on('player', paintNow);
+  App.on('view', function (view) { PlayerView.paint(document, view, Date.now()); });
 
   /* rows and buttons that show per-track state: playing row, like buttons, Saved/Soulseek badges, save buttons */
   App.syncRows = function () {
@@ -3594,22 +3532,15 @@
       r.classList.toggle('is-playing-now', on && ps.playing);
     });
     App.syncPlaces();
-    /* the playing song's liked and saved state on the player and on Now Playing's hero, for a design to react to
-       (docs/themes.md: data-liked, data-saved): it changes with a like, a save or the song, and is written only then */
-    var liked = !!cur && App.isLiked(cur), saved = !!cur && App.isSaved(cur);
-    $$kept('#pbar, #mini, .now__dev, .now__devc').forEach(function (el) { setAttr(el, 'data-liked', liked); setAttr(el, 'data-saved', saved); });
+    /* the playing song's liked and saved state (data-liked, data-saved, the player's Like and Save keys) changes with a
+       like, a save or the song, and none of those is a player event: the painter writes it here too */
+    paintNow();
     $$('[data-like]').forEach(function (b) {
       var id = b.getAttribute('data-like'), on = App.isLiked(id);
       if (b.getAttribute('aria-pressed') === String(on)) return;
       b.setAttribute('aria-pressed', String(on)); b.classList.toggle('is-liked', on);
       b.setAttribute('data-tip', on ? 'Liked' : 'Like');
       var u = $('use', b); if (u) u.setAttribute('href', '#i-' + (on ? 'heart-fill' : 'heart'));
-    });
-    /* Like for whatever plays (a slot's like-button part, a theme's own data-bind="like" button): its song and whether
-       it is liked; its words are the button's own */
-    $$kept('[data-bind="like"]').forEach(function (b) {
-      setAttr(b, 'data-id', cur || ''); setAttr(b, 'aria-pressed', String(liked)); b.classList.toggle('is-liked', liked);
-      var u = $('use', b); if (u) setAttr(u, 'href', '#i-' + (liked ? 'heart-fill' : 'heart'));
     });
     $$('[data-src-badge]').forEach(function (el) {
       var want = App.isSaved(el.getAttribute('data-src-badge')) ? 'saved' : 'slsk';
@@ -4029,40 +3960,12 @@
   App.on('layout:switch', function () { layoutCtx(); followSplit(); });
 
   /* ---------- player bar + mini-player ---------- */
-  /* what the view's activity shows: the play keys (Pause, the waiting spinner) and the wave's motion. A song goes from
-     loading to playing with no other player event, so these repaint on every view, not only with the bar */
-  function paintActivity(view) {
-    var pressed = PlayerView.pressed(view), waitingForSound = view.activity === 'loading';
-    $$kept('[data-bind="play"]').forEach(function (b) {
-      b.setAttribute('aria-label', pressed ? 'Pause' : 'Play'); b.setAttribute('data-tip', pressed ? 'Pause (Space)' : 'Play (Space)');
-      /* a theme's own key (words, no icon) keeps its words: only lull's icon follows */
-      var u = $('use', b), svg = $('svg', b);
-      if (u) u.setAttribute('href', '#i-' + (pressed ? 'pause' : 'play'));
-      if (svg) svg.classList.toggle('ic-play', !pressed);
-      b.classList.toggle('is-buffering', waitingForSound);
-    });
-    $$kept('.wave[data-seek="player"]').forEach(function (el) { waveMoves(el, view); });
-  }
-  function waveMoves(el, view) {
-    var moving = view.activity === 'playing';
-    if (el.classList.contains('is-playing') !== moving) el.classList.toggle('is-playing', moving);
-  }
-  App.on('view', paintActivity);
   function renderBar() {
     var t = P.current(), bar = $('#pbar'), mini = $('#mini');
-    var view = P.view(), st = ps.status, idle = !t || st === 'idle';
-    bar.setAttribute('data-status', idle ? 'idle' : st);
-    mini.setAttribute('data-status', idle ? 'idle' : st);
-    /* the same state on the page's root, for a design to draw from anywhere (docs/themes.md: data-player): it changes
-       a few times a song, and a rule that reads it restyles only what it selects */
-    setAttr(document.documentElement, 'data-player', idle ? 'idle' : st);
+    var st = ps.status, idle = !t || st === 'idle';
+    /* the state's hooks (data-status, data-playing, the words) are the painter's, at the end */
     var better = !idle && !!P.switchedCopy();
     setAttr(bar, 'data-better-copy', better); setAttr(mini, 'data-better-copy', better);
-    /* the state's own words, for a theme to show (docs/themes.md: data-status-text, and --status-text, which every
-       element inside inherits): what the state tab says, the hub's reason for a failure among them, so a theme never
-       has to word a reason of its own and get it wrong for the others */
-    var words = idle ? '' : P.stateWords();
-    [bar, mini].forEach(function (el) { setAttr(el, 'data-status-text', words); setVar(el, '--status-text', App.cssString(words)); });
     var now = $('#pbar-now');
     /* private listening shows with the track, wherever the design puts it: the bar's tools are laid out per design */
     var priv = state.privateListening ? html`<a class="pbar__private" href="#/settings/privacy" aria-label="Private listening is on. Open its setting" data-tip="Private listening: nothing you play here is recorded or scrobbled" data-fit="4">${icon('eye-off')}<span class="pbar__private-label">Private</span></a>` : '';
@@ -4102,23 +4005,14 @@
       patch(stEl, html`${icon(ic)}<span class="pbar__state-line" data-tip="${line}" data-tip-cut ${raw(waiting ? 'aria-hidden="true"' : err ? 'tabindex="0"' : '')}>${line}</span>${acts}`);
       stEl.classList.toggle('is-error', err); stEl.classList.toggle('is-seek-wait', !!waiting); stEl.hidden = false;
     } else { stEl.hidden = true; stEl.innerHTML = ''; }
-    /* transport: every key and word bound to the player (data-bind: play, shuffle, repeat, save, mute, xfade), wherever it
-       is: the player bar's, Now Playing's, a slot's part (designs/parts.js), a theme's own button */
-    paintActivity(view);
-    $$kept('[data-bind="shuffle"]').forEach(function (b) { b.setAttribute('aria-pressed', String(ps.shuffle)); });
-    $$kept('[data-bind="repeat"]').forEach(function (b) {
-      b.setAttribute('aria-pressed', String(ps.repeat !== 'off'));
-      var label = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' }[ps.repeat];
-      b.setAttribute('aria-label', label); b.setAttribute('data-tip', label + ' (R)');
-      var u = $('use', b); if (u) u.setAttribute('href', '#i-' + (ps.repeat === 'one' ? 'repeat-one' : 'repeat'));
-    });
-    /* the song's Save button (beside it, in the bar's song side): as its saving stands, between renders */
+    /* transport: the keys and words bound to the player (data-bind) are the painter's (play, like, save's pressed state,
+       shuffle, repeat), wherever they are: the player bar's, Now Playing's, a slot's part (designs/parts.js), a theme's
+       own button. What is left here is the song's Save as its saving stands (steps, failure), mute and crossfade */
     $$kept('[data-bind="save"]').forEach(function (b) {
-      if (!t) { b.disabled = true; return; } b.disabled = false;
+      if (!t) return;
       var look = saveLook(t), stp = $('.pbar__save-step', b);
       b.setAttribute('aria-label', look.label); b.setAttribute('data-tip', look.label); b.setAttribute('data-id', t.id);
       var u = $('use', b); if (u) u.setAttribute('href', '#i-' + look.icon);
-      b.setAttribute('aria-pressed', String(look.saved));
       if (look.step) { if (!stp) { stp = document.createElement('span'); stp.className = 'pbar__save-step'; stp.setAttribute('aria-hidden', 'true'); b.appendChild(stp); } stp.textContent = look.step; }
       else if (stp) stp.remove();
     });
@@ -4141,8 +4035,7 @@
     patch(miniSub, idle ? 'Search or pick something from Home' : miniLine ? esc(line)
       : html`<span class="mini__artist">${t.artist}</span>${miniFrom ? html`<span class="mini__from">${App.placeName(miniFrom)}</span>` : ''}`);
     var mt = $('#mini-thumb'); patch(mt, idle ? '<span></span>' : ui.cover(t, 40, { hero: true })); mt.classList.toggle('bezel-thumb--empty', idle);
-    App.syncRows();
-    updateSeeks();
+    App.syncRows();   // which also paints the player's hooks (PlayerView.paint)
     updateMediaSession();
   }
   App.on('player', renderBar);

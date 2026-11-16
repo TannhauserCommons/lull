@@ -26,7 +26,8 @@ player-rules.js  window.LullRules: the player's rules (what the queue moves to, 
              player bar, Now Playing and source details all read it, so they can't disagree (`App.player.playingCopy()`)
 player-view.js  window.PlayerView (ADR-0041): the one player view. `derive(input)` turns the player's plain state into what every
              surface shows (`activity`, the clock, the transfer, the copy that plays, the listener's settings); `posAt`, `key` and
-             `strayed` are the clock's readers; `VERSION` is raised on any change to the view's shape. Pure, tested by
+             `strayed` are the clock's readers; `paint(scope, view, now)` is the one writer of every player hook that changes during a
+             song, in the page and in the mini player windows; `VERSION` is raised on any change to the view's shape. Tested by
              tests/web/player-view.test.mjs
 align.js     window.LullAlign: how far apart two recordings of one moment are (switching to a better copy); pure,
              tested by tests/web/align.test.mjs (`node --test`, part of `mise run check`)
@@ -227,6 +228,16 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   loading to playing with no other player event, so what shows the activity repaints on `view`: the play keys and their
   spinner, the wave, Now Playing's light. The live model's `song.pos`, `song.elapsed`, `song.buffered` and
   `song.received` are read from it too.
+- **One painter** (`PlayerView.paint(scope, view, now)`) writes every hook whose value changes during a song: the hosts'
+  (`#pbar`, `#mini`, the mini player windows' `[data-dk-player]`) `data-playing`, `data-status`, `data-status-text`,
+  `--status-text`, `--song-pos`, `--rx`, `data-liked`, `data-saved` (and `data-playing`, `data-player` on the root); the seek
+  and wave sliders with their classes and aria; `[data-bind]` `pos`, `dur`, `buffered-to`, `received`; `[data-dk-pos]`,
+  `[data-dk-dur]`, `[data-dk-vol]`, `[data-dk-status]`; the play, like, save (pressed and enabled: the steps and failure of a
+  save in progress stay the save renderer's), shuffle and repeat keys, `[data-bind]` and `[data-dk]` alike; the volume slider.
+  Positions come from `posAt(view, now)`. The page calls it on `view`, on `player`, on the visible clock (`tick`, with a
+  fresh view) and from `App.syncRows` (a like or a save is no player event); its parts are found through `$kept`
+  (`PlayerView.find`). A write that wouldn't change a value is skipped. Markup builders (`renderBar`, Now Playing, the
+  mini player's `nowMarkup`) draw the song alone, and `data-playing` is `PlayerView.pressed(view)`.
 - **The intent follows the output.** `ps.playing` is what the listener asked for. An output that pauses or resumes for a
   reason of the system's (another app took the audio, headphones out, a key the page doesn't handle) says so with the
   `system` event, and the engine sets `ps.playing` to it and does nothing else (the output has already stopped its own work). It is never guessed from a `time` with `playing: false`: an
