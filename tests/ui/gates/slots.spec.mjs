@@ -591,7 +591,8 @@ test('whatever draws a part with the player\'s hooks paints it by the end of the
   await page.evaluate(() => App.player.pause());
   await page.evaluate(() => App.player.seekFraction(0.4));
   await page.waitForFunction(() => App.player.view().activity === 'paused', null, { timeout: 10_000 });
-  await step('a track change while paused: the screen slides', () => page.evaluate(() => App.player.next()));
+  await step('a track change while paused: the screen slides', () => page.evaluate(() => { App.player.next(); App.player.pause(); }));
+  expect(await page.evaluate(() => App.player.view().activity), 'the song after it, paused').toBe('paused');
   await step('Home drawn', async () => {
     await page.evaluate(() => { location.hash = '#/home'; });
     await page.waitForSelector('#view .disc-lead', { state: 'attached' });
