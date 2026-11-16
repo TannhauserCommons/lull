@@ -505,6 +505,37 @@ test.describe('a system pause during a crossfade', () => {
   });
 });
 
+// What the view says has arrived to play is what the output holds (ADR-0041: transfer.buffered is the output's ranges,
+// cut to what arrived), not the transfer: a saved song has all arrived, while the output may hold only its first seconds.
+test('the view\'s buffered share is what the output holds, not what arrived / native', async ({ page }) => {
+  const a = saved[3];
+  await outputAt(page, 'native');
+  await page.evaluate((id) => App.player.playList([id], 0), a);
+  await playing(page);
+  const dur = await page.evaluate(() => App.player.duration());
+  await page.evaluate((s) => window.__out.buffered([[0, s]]), dur / 4);
+  await expect.poll(() => page.evaluate(() => App.player.view().transfer.buffered), { message: 'the view\'s transfer.buffered' }).toBeCloseTo(0.25, 2);
+  expect(await page.evaluate(() => App.player.view().transfer.received), 'what arrived: all of it').toBe(1);
+});
+
+// Connect hears every change of what the player is doing, not only a play or a pause (ADR-0041): a song that fails while
+// it plays clears the intent, and the other devices learn it at once, not at the next heartbeat.
+test('Connect reports a song that fails while it plays / native', async ({ page }) => {
+  const a = saved[4];
+  await outputAt(page, 'native');
+  const reports = [];
+  page.on('request', (r) => { if (r.method() === 'POST' && r.url().endsWith('/api/devices/me/state')) reports.push({ at: Date.now(), ...r.postDataJSON() }); });
+  await page.evaluate((id) => App.player.playList([id], 0), a);
+  await playing(page);
+  await expect.poll(() => reports.some((b) => b.trackId === a && b.playing), { message: 'a report of the song playing' }).toBe(true);
+  await page.waitForTimeout(1500);      // past the second a report may wait, so what comes next answers the failure
+  const failedAt = Date.now();
+  await page.evaluate(() => window.__out.fail('This file can\'t be played here'));
+  await expect.poll(() => page.evaluate(() => App.player.view().activity), { message: 'the song failed' }).toBe('error');
+  await expect.poll(() => reports.some((b) => b.at >= failedAt && b.trackId === a && b.playing === false),
+    { message: 'a report of the song, not playing, within 3 s of it failing', timeout: 3000 }).toBe(true);
+});
+
 // A system pause applies whatever song it names: the intent is the player's, not a song's. A system play applies only
 // to the song that plays (ADR-0041). Here the song a pause or play names has already ended into the next.
 test('a system pause naming the song before stops the intent; a play naming it does not / native', async ({ page }) => {

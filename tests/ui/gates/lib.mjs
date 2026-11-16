@@ -218,8 +218,9 @@ export async function restyleFanOut(browser, page) {
    __out.at(s) moves the song on to s as playing would, __out.end() plays it to its end now, __out.system(playing, key)
    is a pause or play the system made (audio focus, headphones out: the `system` event, ADR-0041), on the song playing
    or the one `key` names; a pause on the song playing abandons a crossfade first, as an output that reports one has
-   (ADR-0041). switchTo commits. __out.switches, __out.seeks and __out.pauses record what it was asked, __out.keys every
-   item it was given */
+   (ADR-0041). __out.buffered(ranges) says what it holds of the song ([[from, to]] in seconds), __out.fail(message)
+   that the song can't play. switchTo commits. __out.switches, __out.seeks and __out.pauses record what it was asked,
+   __out.keys every item it was given */
 export function fakeOutput() {
   const subs = {};
   let cur = null, next = null, pos = 0, playing = false, over = false, xfade = 0, fading = false;
@@ -246,6 +247,8 @@ export function fakeOutput() {
     switches: [], seeks: [], pauses: 0, keys: [],
     at(s) { pos = s; over = false; },
     end() { pos = length(); finish(); },
+    buffered(ranges) { fire('buffered', { key: cur.key, ranges }); },
+    fail(message = null) { fire('error', { key: cur.key, message, status: null }); },
     system(p, key = cur.key) {
       if (key === cur.key) { playing = p; if (!p) abandonFade(); }
       fire('system', { key, playing: p }); time();
