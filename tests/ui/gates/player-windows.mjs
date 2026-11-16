@@ -101,7 +101,8 @@ export function shown() {
 
 /** A view as ADR-0041 shapes it, for a gate that draws one by hand in a mini player's window (page.evaluate(fireView,
     over)): a song playing from the library at 0:20 of 3:20, its clock set as it is sent. `over` replaces fields, and
-    clock's own fields one by one. */
+    clock's own fields one by one; the listener's intent is on for an activity the listener's play stands in (playing,
+    loading, choose) unless `over` says otherwise. */
 export function fireView(over) {
   const base = {
     v: window.PlayerView ? window.PlayerView.VERSION : null, activity: 'playing', status: 'library', words: 'Playing from your library',
@@ -109,7 +110,9 @@ export function fireView(over) {
     copy: { where: 'library', format: 'FLAC', lossless: true, peer: null, received: 1 },
     clock: { pos: 20, at: Date.now(), rate: 1, duration: 200, known: true },
     transfer: { received: 1, front: 1, parts: [[0, 1]], transferring: false }, seekWait: null,
-    liked: false, saved: true, shuffle: false, repeat: 'off', volume: 0.5, muted: false, crossfading: false,
+    liked: false, saved: true, shuffle: false, repeat: 'off', volume: 0.5, muted: false, crossfading: false, since: null,
   };
-  window.__bridge.fire('player', { ...base, ...over, clock: { ...base.clock, ...(over && over.clock) } });
+  const activity = (over && over.activity) || base.activity;
+  const intent = over && 'intent' in over ? over.intent : ['playing', 'loading', 'choose'].includes(activity);
+  window.__bridge.fire('player', { ...base, intent, ...over, clock: { ...base.clock, ...(over && over.clock) } });
 }

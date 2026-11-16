@@ -3,7 +3,8 @@
 // doing" has one answer instead of the seven rules that disagreed (P.heard, the mini's runs, the wave's moving, the play
 // keys' playingNow, the bar's data-playing, Connect's heartbeat). These pin derive's activity table, row by row and in
 // its first-match order (the status says why, the sound says whether: a song heard is playing whatever its source is
-// doing), what the play key shows (pressed), and the clock every surface places the song with. Run: node --test tests/web
+// doing), what the play key shows (pressed: the intent, what its press acts on), and the clock every surface places the
+// song with. Run: node --test tests/web
 //
 // derive(input): the input is plain values the page's player already has (app.js), named as it names them:
 //   track          P.current(): the catalogue's song ({ id, title, artist, album, format, duration, ... }) or null
@@ -12,7 +13,8 @@
 //   intent         ps.playing: what the listener asked for (true: play)
 //   sound          what the output last reported ({ playing, waiting }, as its `time` events say), or null before it
 //                  has reported anything for this song (the output hasn't started)
-//   words          P.stateWords()
+//   words          P.stateWords(), without a wait's running count ("Finding a source", not "..., 7 s")
+//   since          when that wait began (ms), or null: a surface that shows the count draws it from here
 //   copy           P.playingCopy() (LullRules.playingCopy: { where, name, library, peer, saved, received, format }) or null
 //   pos            ps.pos, seconds
 //   duration       P.duration(), seconds
@@ -39,7 +41,7 @@ const copy = { where: 'soulseek', name: 'quietcanal', library: 'folder', peer: {
 const input = (over) => ({
   track: song, status: 'streaming', intent: true, sound: { playing: true, waiting: false }, words: 'Streaming from quietcanal',
   copy, pos: 20, duration: 200, durationKnown: true, received: 0.4, front: 0.4, parts: [[0, 0.4]], buffered: [[0.05, 0.3]], seekWait: null,
-  liked: false, saved: false, shuffle: false, repeat: 'off', volume: 0.7, muted: false, crossfading: false, now: NOW,
+  liked: false, saved: false, shuffle: false, repeat: 'off', volume: 0.7, muted: false, crossfading: false, now: NOW, since: null,
   ...over,
 });
 const activity = (over) => V.derive(input(over)).activity;
@@ -98,15 +100,28 @@ test('a song the listener wants but doesn\'t hear yet is loading: no sound yet, 
   }
 });
 
-test('the play key shows Pause for playing, loading and choose, and Play for paused, idle, an end and an error', () => {
+// The play key shows Pause while the listener's play stands, and its press acts on that intent, so it always does what
+// it shows: a song waiting for a copy to be picked, which the listener paused, shows Play. The engine clears the intent
+// at every end and failure, so those show Play through the intent too.
+test('the play key shows the intent, whatever the player is doing', () => {
   const cases = {
     playing: {}, loading: { status: 'buffering', sound: null }, choose: { status: 'choose' },
-    paused: { intent: false }, idle: { track: null }, ended: { status: 'ended', intent: false }, error: { status: 'failed', intent: false },
+    paused: { intent: false }, idle: { track: null, intent: false }, ended: { status: 'ended', intent: false }, error: { status: 'failed', intent: false },
   };
   for (const [name, over] of Object.entries(cases)) {
     const v = V.derive(input(over));
     assert.equal(v.activity, name);
     assert.equal(V.pressed(v), ['playing', 'loading', 'choose'].includes(name), name);
+  }
+  assert.equal(V.pressed(V.derive(input({ status: 'choose', intent: false }))), false, 'choose, the listener paused');
+  assert.equal(V.pressed(V.derive(input({ status: 'choose', intent: true }))), true, 'choose, the listener wants it');
+  const statuses = ['idle', 'finding', 'choose', 'queued', 'buffering', 'streaming', 'stalled', 'failed', 'library', 'ended', 'jellyfin-error'];
+  for (const status of statuses) {
+    for (const intent of [true, false]) {
+      const v = V.derive(input({ status, intent }));
+      assert.equal(v.intent, intent, `${status}: the view's intent`);
+      assert.equal(V.pressed(v), intent, `${status}, intent ${intent}`);
+    }
   }
 });
 
@@ -130,6 +145,9 @@ test('the view carries the song as the surfaces name it, the copy that plays, th
     seekWait: { fraction: 0.6 }, received: 0.55, front: 0.5, parts: [[0, 0.5], [0.7, 0.8]], buffered: [[0, 0.2], [0.45, 0.62]] }));
   assert.equal(v.status, 'streaming');
   assert.equal(v.words, 'Streaming from quietcanal');
+  assert.equal(v.intent, true, 'the listener\'s intent');
+  assert.equal(v.since, null, 'no wait');
+  assert.equal(V.derive(input({ status: 'finding', sound: null, words: 'Finding a source', since: NOW - 7000 })).since, NOW - 7000, 'when the wait began');
   assert.deepEqual(v.track, { id: 't-1', title: 'Velvet Hour', artist: 'Quiet Canal', album: 'Low Tide' });
   assert.equal(v.copy.format, 'MP3 320', 'the copy that plays, not the catalogue\'s FLAC');
   assert.equal(v.copy.where, 'soulseek');
@@ -172,7 +190,7 @@ test('a view\'s key ignores where its clock says the song is, and changes with a
     v: base.v + 1, activity: 'paused', status: 'library', words: 'Playing from your library',
     track: { ...base.track, title: 'Another Song' }, copy: { ...base.copy, format: 'FLAC 24/96' },
     clock: { ...base.clock, rate: 0 }, transfer: { ...base.transfer, received: 0.9 }, seekWait: 0.3,
-    liked: true, saved: true, shuffle: true, repeat: 'all', volume: 0.2, muted: true, crossfading: true,
+    liked: true, saved: true, shuffle: true, repeat: 'all', volume: 0.2, muted: true, crossfading: true, intent: false, since: NOW - 5000,
   };
   for (const [field, value] of Object.entries(other)) {
     assert.notDeepEqual(V.key({ ...base, [field]: value }), V.key(base), field);
@@ -182,12 +200,15 @@ test('a view\'s key ignores where its clock says the song is, and changes with a
   assert.notDeepEqual(V.key({ ...base, transfer: { ...base.transfer, buffered: 0.9 } }), V.key(base), 'transfer.buffered');
 });
 
-// The words count up how long a song has waited ("Finding a source, 6 s", app.js waited()): a second more is not a new
-// view, or main would publish one, and send it to every mini player window, each second a song waits.
-test('a view\'s key ignores the seconds its words count up while the song waits', () => {
+// A wait's running count ("Finding a source, 7 s") is no part of the view: its words say the state, `since` when the
+// wait began, and a surface that shows the count draws it from there. A second more is not a new view, or main would
+// publish one, and send it to every mini player window, each second a song waits.
+test('a view\'s key stays the same through a wait, second by second', () => {
+  const began = NOW - 6000;
   for (const [status, words] of [['finding', 'Finding a source'], ['finding', 'Finding a source, 4 peers answered'], ['queued', 'Queued at peer mira, position 3']]) {
-    const at = (sec) => V.derive(input({ status, sound: null, words: `${words}, ${sec} s` }));
-    assert.deepEqual(V.key(at(7)), V.key(at(6)), `${words}: 6 s, then 7 s`);
+    const at = (ms) => V.derive(input({ status, sound: null, words, since: began, now: began + ms, pos: 0 }));
+    assert.deepEqual(V.key(at(7000)), V.key(at(6000)), `${words}: 6 s, then 7 s`);
+    assert.equal(at(7000).since, began, `${words}: since`);
   }
 });
 

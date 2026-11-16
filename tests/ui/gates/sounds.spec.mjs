@@ -3,6 +3,7 @@
 // and nothing sounds while the page is hidden. Every sound the page starts is read from Web Audio itself (each buffer
 // source started or stopped), named by the page's `sound` event.
 import { expect, test as base } from '@playwright/test';
+import * as L from '../fixture-hub/library.mjs';
 import { openScreen, ownHub } from './lib.mjs';
 
 // a fixture hub of its own: a slow transfer is per song on a hub, and another gate's (fit.spec) must not reset this one's
@@ -107,6 +108,48 @@ test('the buffering loop plays only in silence and is gone the moment the song s
   expect(r.stopAfter).toBeLessThan(100);
   expect(r.within, 'and fades out at once (s)').toBeLessThan(0.08);
   expect(r.startedOverMusic, 'a loop started while music played').toBe(false);
+});
+
+// The buffering loop follows a wait for a source (finding, queued; ADR-0041), not an output starting a song it already
+// holds: a song started, a paused song resumed and a gapless handover each make none. Before, the loop played for the
+// moment of silence at every one of them.
+test('the buffering loop sounds while a source is found, and not as the output starts a song it holds', async ({ page, request }) => {
+  const wait = L.albums[L.albumIds[141]].trackIds[0];             // a Soulseek song: no peer answers for it here
+  const album = L.tracks[L.savedIds[0]].albumId, [a, b] = L.albums[album].trackIds;
+  await listen(page);
+  await page.route((url) => url.pathname === `/api/stream/${wait}`, () => {});
+  await openScreen(page, `/album/${L.tracks[wait].albumId}`, { clock: false });
+  await page.evaluate(() => App.needSounds().then(() => App.sounds.load()));
+  await page.mouse.click(5, 5);                  // the listener's first tap: sounds may play from here
+  await page.evaluate((id) => App.player.playList([id], 0), wait);
+  await request.post('/__fixture/emit', { data: { topic: 'stream', data: {
+    trackId: wait, jobId: 'wait-' + wait, status: 'finding', attempt: 0, received: 0, size: 0, peersFound: 0, failedPeers: [] } } });
+  await page.waitForFunction(() => window.__sounds.some((s) => s.loop), null, { timeout: 15000 });   // a wait for a source still does
+  await page.evaluate((id) => { location.hash = '#/album/' + id; }, album);
+  await page.waitForSelector('#view .trow[data-track-id]');
+
+  const mark = () => page.evaluate(() => window.__sounds.length);
+  const loopsSince = (n) => page.evaluate((n) => window.__sounds.slice(n).filter((s) => s.loop).length, n);
+  const sounds = async (id) => {
+    await page.waitForFunction((id) => App.player.current().id === id && App.player.heard() && App.player.state.pos > 0.3, id, { timeout: 20000 });
+    await page.waitForTimeout(800);
+  };
+  let n = await mark();
+  await page.evaluate((ids) => App.player.playList(ids, 0), [a, b]);
+  await sounds(a);
+  expect.soft(await loopsSince(n), 'loops started as a saved song started').toBe(0);
+
+  await page.evaluate(() => App.player.pause());
+  await page.waitForTimeout(800);
+  n = await mark();
+  await page.evaluate(() => App.player.play());
+  await sounds(a);
+  expect.soft(await loopsSince(n), 'loops started as the paused song resumed').toBe(0);
+
+  n = await mark();
+  await page.evaluate(() => App.player.seek(App.player.duration() - 2));
+  await sounds(b);
+  expect.soft(await loopsSince(n), 'loops started at the gapless handover into the next song').toBe(0);
 });
 
 test('nothing sounds while the page is hidden', async ({ page }) => {

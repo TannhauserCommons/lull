@@ -37,6 +37,7 @@ const STATE = {
   paused: { activity: 'paused', clock: { rate: 0 } },
   loading: { activity: 'loading', status: 'buffering', words: 'Buffering from mira', copy: peerCopy, transfer: halfway, clock: { rate: 0 } },
   failed: { activity: 'error', status: 'failed', words: 'No Soulseek peer shares this song right now', clock: { rate: 0 } },
+  choose: { activity: 'choose', status: 'choose', words: 'No copy meets your streaming minimum: pick one or skip', copy: null, clock: { rate: 0 } },
 };
 /* the mini player in `state`: away is a playing song whose main said bye */
 async function inState(mini, state, over = {}) {
@@ -72,9 +73,10 @@ const PARTS = {
   strip: { player: '[data-dk-player]', title: '.dk-strip__title', artist: '.dk-strip__artist' },
 };
 
-// The words say what the player is doing when that isn't simply the song playing: they stand in for the song's facts
-// (the device) or its artist (the strip) while the song loads, failed or main is away, in the same room, and take no
-// room while it plays or is paused. A long artist never squeezes them out.
+// The default markup, which listener themes without a mini slot use, looks as before while a song plays or pauses
+// (ADR-0041): the words say what the player is doing only when there is news (loading, choose, an error, the link not
+// ok), in place of the song's facts (the device) or its artist (the strip), in the same room. A long artist never
+// squeezes them out.
 for (const style of ['mini', 'strip']) {
   test(`the status words take the place of the song's facts, only when there is something to say / ${style}`, async ({ page }) => {
     const mini = await alone(page, DEFAULT, style);
@@ -87,7 +89,7 @@ for (const style of ['mini', 'strip']) {
       expect.soft(await mini.evaluate(showsWords, '[data-dk-status]'), `${state}: no status line shows`).toBe(false);
       expect.soft(sameBoxes(shown, await withoutStatus(mini, sels)), `${state}: the player, the title, the artist and the facts sit as they would with no status line`).toBe(true);
     }
-    for (const state of ['loading', 'failed', 'away']) {
+    for (const state of ['loading', 'choose', 'failed', 'away']) {
       await inState(mini, 'playing');
       await inState(mini, state);
       expect.soft(await mini.evaluate(showsWords, '[data-dk-status]'), `${state}: the status words show`).toBe(true);
@@ -273,6 +275,27 @@ test('a paused song waiting for a copy to be picked shows as not playing / page 
   await expect.poll(seen, { message: 'waiting for a pick, wanted: playing on every surface' }).toEqual({ root: 'true', bar: 'true', mini: 'true' });
   await page.evaluate(() => App.player.pause());
   await expect.poll(seen, { message: 'waiting for a pick, paused: not playing on any surface' }).toEqual({ root: 'false', bar: 'false', mini: 'false' });
+});
+
+// A wait's running count is no part of the view (ADR-0041): its words say the state and `since` when the wait began, so
+// a song finding a source for seconds publishes no new view each second (each one crosses to every mini player window).
+test('a song waiting for a source publishes no view for each second it waits / page', async ({ page, request }) => {
+  const song = unsaved;
+  await page.context().setExtraHTTPHeaders({ 'x-fixture-client': fixtureClient() });
+  await page.route((url) => url.pathname === `/api/stream/${song.id}`, () => {});   // no peer answers: the wait goes on
+  await openScreen(page, `/album/${song.albumId}`, { clock: false });
+  await page.evaluate(() => { window.__views = []; App.on('view', (v) => window.__views.push({ at: Date.now(), v })); });
+  await page.evaluate((id) => App.player.playList([id], 0), song.id);
+  await request.post('/__fixture/emit', { headers: { 'x-fixture-client': fixtureClient() }, data: { topic: 'stream', data: {
+    trackId: song.id, jobId: 'wait-' + song.id, status: 'finding', attempt: 0, received: 0, size: 0, peersFound: 4, failedPeers: [] } } });
+  await page.waitForFunction(() => App.player.state.status === 'finding' && App.player.state.peersFound === 4, null, { timeout: 10_000 });
+  const began = Date.now();
+  await page.waitForTimeout(7500);   // past the 5 s from which the words used to count
+  const seen = await page.evaluate((from) => ({ view: App.player.view(), late: window.__views.filter((e) => e.at >= from).map((e) => e.v.words) }), began + 5500);
+  expect.soft(seen.view.activity, 'still waiting').toBe('loading');
+  expect.soft(seen.view.words, 'the view\'s words: the state, without a running count').not.toMatch(/\d+ s$/);
+  expect.soft(typeof seen.view.since === 'number' && seen.view.since <= began, `since: when the wait began (${seen.view.since})`).toBe(true);
+  expect.soft(seen.late, 'views published from the wait\'s sixth second on').toEqual([]);
 });
 
 // A key's accessible name is what it does, as it says it; its shortcut is aria-keyshortcuts, not words in its name. The

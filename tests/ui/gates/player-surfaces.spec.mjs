@@ -535,6 +535,83 @@ test('a hidden main publishes what the output holds / native', async ({ page }) 
     { message: 'a view with the output\'s third, published while main was hidden', timeout: 3000 }).toBe(true);
 });
 
+// A system play applies only while the song can play (ADR-0041): after a failure or the queue's end the intent stays
+// cleared, so the key still shows Play, and its one press retries the song or starts the queue again.
+test.describe('a system play after the song stopped for good', () => {
+  const keyPress = (page) => page.locator('#pbar [data-act="play"]').first().click();
+  async function ignored(page) {
+    await page.evaluate(() => window.__out.system(true));
+    await page.waitForTimeout(600);
+    expect.soft(await page.evaluate(() => App.player.state.playing), 'the intent after the system play').toBe(false);
+    expect.soft((await playKey(page)).label, 'the play key').toBe('Play');
+  }
+  test('after a failure / native', async ({ page }) => {
+    const a = saved[6];
+    await outputAt(page, 'native');
+    await page.evaluate((id) => App.player.playList([id], 0), a);
+    await playing(page);
+    await page.evaluate(() => window.__out.fail('This file can\'t be played here'));
+    await expect.poll(() => page.evaluate(() => App.player.view().activity), { message: 'the song failed' }).toBe('error');
+    await ignored(page);
+    const keys = await page.evaluate(() => window.__out.keys.length);
+    await keyPress(page);
+    await expect.poll(() => page.evaluate(() => App.player.state.playing), { message: 'one press: the intent' }).toBe(true);
+    await expect.poll(() => page.evaluate((id) => App.player.current().id === id && App.player.view().activity === 'playing', a),
+      { message: 'one press: the song plays again', timeout: 10_000 }).toBe(true);
+    expect.soft(await page.evaluate((n) => window.__out.keys.length > n, keys), 'the song was loaded again: a retry').toBe(true);
+  });
+  test('after the queue\'s end / native', async ({ page }) => {
+    const a = saved[7];
+    await outputAt(page, 'native');
+    await page.evaluate((id) => App.player.playList([id], 0), a);
+    await playing(page);
+    await page.evaluate(() => window.__out.end());
+    await expect.poll(() => page.evaluate(() => App.player.view().activity), { message: 'the queue ended' }).toBe('ended');
+    await ignored(page);
+    await keyPress(page);
+    await expect.poll(() => page.evaluate((id) => App.player.current().id === id && App.player.view().activity === 'playing'
+      && App.player.state.pos < 30, a), { message: 'one press: the queue plays from its start', timeout: 10_000 }).toBe(true);
+  });
+});
+
+// A system pause during a better copy's handover fade reaches the intent, whichever deck the system pauses (ADR-0041):
+// here the outgoing deck, then the incoming one. The fade lasts a fraction of a second, so the pauses come at its very
+// start: the moment the copy's gain curve is set, which is right after the song's.
+test('a system pause during a better copy\'s handover fade, the outgoing deck then the incoming / browser', async ({ page, request }) => {
+  const a = copied.id;
+  await page.addInitScript(() => {
+    const curve = AudioParam.prototype.setValueCurveAtTime;
+    AudioParam.prototype.setValueCurveAtTime = function (...args) {
+      const r = curve.apply(this, args);
+      if (window.__onFade && ++window.__curves === 2) { const go = window.__onFade; window.__onFade = null; queueMicrotask(go); }
+      return r;
+    };
+  });
+  await mainWith(page, 'lull', [copied]);
+  await request.post('/__fixture/noise', { data: { id: a } });   // sound to line the copies up by
+  await page.evaluate((id) => App.player.playList([id], 0), a);
+  await playing(page);
+  await page.evaluate(() => {
+    window.__curves = 0;
+    window.__onFade = () => {
+      const decks = [...window.__played].filter((e) => /\/api\/stream\//.test(e.src) && !e.paused);
+      const out = decks.find((e) => !/\/copy\b/.test(e.src)), inc = decks.find((e) => /\/copy\b/.test(e.src));
+      window.__handover = { out: !!out, inc: !!inc };
+      if (out) out.pause();
+      if (inc) inc.pause();
+    };
+  });
+  const size = 3_000_000;
+  await request.post('/__fixture/emit', { headers: { 'x-fixture-client': fixtureClient() }, data: { topic: 'stream', data: {
+    trackId: a, jobId: 'fade-job', status: 'streaming', attempt: 1, peer: 'slowpeer', format: 'MP3 128', youtube: false,
+    received: size, size, ranges: [[0, 1]], speed: 0, failedPeers: [], peersFound: 1, belowMinimum: false, unverified: false,
+    upgrade: { peer: 'quietcanal', path: 'Music\\Artist\\Album\\02 - Song.flac', format: 'FLAC 16/44.1', status: 'streaming', received: size, size, ready: true } } } });
+  await expect.poll(() => page.evaluate(() => window.__handover || null), { message: 'the handover fade began, both decks playing', timeout: 45_000 })
+    .toEqual({ out: true, inc: true });
+  await expect.soft.poll(() => page.evaluate(() => App.player.state.playing), { message: 'the intent after the system paused both decks' }).toBe(false);
+  await expect.soft.poll(() => page.evaluate(() => App.player.view().activity), { message: 'the activity' }).toBe('paused');
+});
+
 // Connect hears every change of what the player is doing, not only a play or a pause (ADR-0041): a song that fails while
 // it plays clears the intent, and the other devices learn it at once, not at the next heartbeat.
 test('Connect reports a song that fails while it plays / native', async ({ page }) => {

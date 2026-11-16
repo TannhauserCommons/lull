@@ -229,10 +229,10 @@ function inState(view, state) {
   const clock = { ...view.clock, pos: Math.floor((view.clock.duration || 0) / 3), at: Date.now(), rate: 0 };
   const half = { received: 0.4, front: 0.4, parts: [[0, 0.4]], buffered: 0.3, transferring: true };
   return {
-    playing: { ...view, activity: 'playing', clock },
-    paused: { ...view, activity: 'paused', clock },
-    loading: { ...view, activity: 'loading', status: 'buffering', words: 'Buffering from a peer', transfer: { ...view.transfer, ...half }, clock },
-    failed: { ...view, activity: 'error', status: 'failed', words: 'No Soulseek peer shares this song right now.', clock },
+    playing: { ...view, activity: 'playing', intent: true, clock },
+    paused: { ...view, activity: 'paused', intent: false, clock },
+    loading: { ...view, activity: 'loading', intent: true, status: 'buffering', words: 'Buffering from a peer', transfer: { ...view.transfer, ...half }, clock },
+    failed: { ...view, activity: 'error', intent: false, status: 'failed', words: 'No Soulseek peer shares this song right now.', clock },
   }[state];
 }
 
