@@ -174,7 +174,10 @@ real views. `tests/web/player-view.test.mjs` pins `derive`'s table and the clock
 
 **No switch (ADR-0096).** This replaces code paths that already ship, so a switch would keep both paths and
 reintroduce the drift it removes. It lands in steps, each green on its own: the view and its readers first, then the
-painter and the mini player's link. A step moves a golden only where it fixes a stale value, and says so in its
+painter and the mini player's link. Slots that stay current land after them, on their own: redrawing a theme's slot
+in place has to keep what scripts own in it (a cover's loaded state, the wave's played bars, focus, a row's marks)
+and know what each part draws from, and two reviews found that harder than the rest; until then a slot's fields are
+what they were when it was drawn, as on main. A step moves a golden only where it fixes a stale value, and says so in its
 commit.
 
 ## Consequences
