@@ -41,12 +41,13 @@ export function readLimits(tree) {
 
 // Builds `tree`'s web/ into a folder that is removed again, lists every route in a browser and sizes what it fetched:
 // { route: { bytes, files: [{ path, encoding, bytes }] } }. `chromium` is Playwright's, from the tree that runs the check.
-export async function measureTree(tree, routes, chromium) {
+// A route in `mayBeGone` that no screen of this tree answers to is { gone: true }; any other that doesn't fails.
+export async function measureTree(tree, routes, chromium, { mayBeGone = [] } = {}) {
   const dist = mkdtempSync(join(tmpdir(), 'lull-budgets-'));
   try {
     build(tree, dist);
-    const listed = await listRoutes(chromium, tree, dist, routes);
-    return Object.fromEntries(routes.map((route) => [route, sizeOf(dist, listed[route])]));
+    const listed = await listRoutes(chromium, tree, dist, routes, { mayBeGone });
+    return Object.fromEntries(routes.map((route) => [route, listed[route] === null ? { gone: true } : sizeOf(dist, listed[route])]));
   } finally {
     rmSync(dist, { recursive: true, force: true });
   }

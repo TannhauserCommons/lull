@@ -4,11 +4,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { sizeOf, wireFile } from '../../scripts/budgets/measure.mjs';
-import { assertScreen, builtFile } from '../../scripts/budgets/list.mjs';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { assertScreen, BLOCKED_PORTS, builtFile, classicDelay, horizonOf, listening, MIN_HORIZON_MS } from '../../scripts/budgets/list.mjs';
 import { changedFiles, decide, report, validateLimits } from '../../scripts/budgets/decide.mjs';
 import { checked, chooseHarness } from '../../scripts/budgets/run.mjs';
 
@@ -58,6 +61,43 @@ test('a route key that matches no screen, or redirects, fails the listing instea
   assert.throws(() => assertScreen('library', { routed: true, path: '/library/albums' }), /"library" is not a screen.*redirected to \/library\/albums/);
 });
 
+const appJs = readFileSync(fileURLToPath(new URL('../../web/app.js', import.meta.url)), 'utf8');
+const deferred = (ms) => `x();\n  App.on('ready', function () {\n    setTimeout(function () {\n      var go = function () { App.needClassic().then(null, function () {}); };\n      if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 10000 }); else go();\n    }, ${ms});\n  });\ny();`;
+
+test('the start ends a second short of Classic\'s deferred load, read from app.js, and a delay too short for a start fails', () => {
+  assert.equal(classicDelay(deferred(15000)), 15000);
+  assert.equal(classicDelay(appJs), 15000);
+  assert.equal(horizonOf(deferred(15000)), 14000);
+  assert.equal(horizonOf(deferred(MIN_HORIZON_MS + 1000)), MIN_HORIZON_MS);
+  assert.throws(() => horizonOf(deferred(MIN_HORIZON_MS + 999)), /leaves a start of 9999 ms/);
+  assert.throws(() => classicDelay("App.on('ready', function () {\n    other();\n  });"), /no longer loads Classic/);
+  assert.throws(() => classicDelay('nothing here'), /no longer loads Classic/);
+});
+
+test('the fixture hub never gets a port a browser refuses', () => {
+  for (const port of [6665, 6666, 6000, 6697, 10080, 4045]) assert.ok(BLOCKED_PORTS.has(port), String(port));
+  for (const port of [8790, 8080, 5030, 49152]) assert.ok(!BLOCKED_PORTS.has(port), String(port));
+});
+
+const fakeHub = () => Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter() });
+
+test('the fixture hub is ours only when it says so; a port taken in the gap says so, and anything else that stops it is an error', async () => {
+  const up = fakeHub();
+  const result = listening(up, 7001);
+  up.stdout.emit('data', 'fixture hub on http://127.0.0.1:7001\n');
+  assert.equal(await result, 'up');
+  const taken = fakeHub();
+  const retry = listening(taken, 7002);
+  taken.stderr.emit('data', 'Error: listen EADDRINUSE: address already in use 127.0.0.1:7002');
+  taken.emit('exit', 1);
+  assert.equal(await retry, 'in-use');
+  const crashed = fakeHub();
+  const failed = listening(crashed, 7003);
+  crashed.stderr.emit('data', 'SyntaxError: boom');
+  crashed.emit('exit', 1);
+  await assert.rejects(failed, /stopped before it was listening on 7003: SyntaxError: boom/);
+});
+
 const limits = {
   allowance: { bytes: 500, why: 'an ordinary change' },
   routes: {
@@ -66,7 +106,11 @@ const limits = {
   },
 };
 const side = (home, now, extra = {}) => ({ home: { bytes: home, files: [{ path: 'app.js', bytes: home }] }, now: { bytes: now, files: [{ path: 'app.js', bytes: now }] }, ...extra });
-const verdict = (base, change) => decide({ base, change, limits }).filter((r) => r.problems.length).map((r) => [r.route, r.problems.map((p) => p.kind)]);
+const route = (bytes) => ({ bytes, files: [{ path: 'app.js', bytes }] });
+const kinds = (args) => decide({ limits, ...args }).rows.filter((r) => r.problems.length).map((r) => [r.route, r.problems.map((p) => p.kind)]);
+const verdict = (base, change) => kinds({ base, change });
+const withRoutes = (routes, allowance = limits.allowance) => ({ allowance, routes });
+const entry = (bytes) => ({ ceiling: { bytes, why: 'its size now' } });
 
 test('growth within the allowance passes, past it fails, and shrinking never does', () => {
   assert.deepEqual(verdict(side(5000, 5000), side(5500, 5100)), []);
@@ -75,39 +119,78 @@ test('growth within the allowance passes, past it fails, and shrinking never doe
   assert.deepEqual(verdict(side(9000, 5000), side(4000, 5000)), []);
 });
 
-test('the ceiling holds however small the growth, and a route the base lacks is judged by it alone', () => {
+test('the ceiling holds however small the growth', () => {
   assert.deepEqual(verdict(side(9900, 5000), side(10_001, 5000)), [['home', ['ceiling']]]);
   assert.deepEqual(verdict(side(9900, 5000), side(10_450, 5000)), [['home', ['growth', 'ceiling']]]);
-  assert.deepEqual(verdict({ now: side(5000, 5000).now }, side(5000, 5000)), []);
 });
 
-test('a measured route no limits know fails loudly, and so does a limit without a reason or a whole number', () => {
-  assert.throws(() => decide({ base: null, change: side(1, 1, { search: { bytes: 1, files: [] } }), limits }), /search is measured but has no limits/);
+test('every limit is a whole number of bytes with a reason; 0 allows no growth and is never "off"', () => {
+  assert.throws(() => decide({ base: null, change: side(1, 1, { search: route(1) }), limits }), /search is measured but has no limits/);
   assert.throws(() => validateLimits({ ...limits, allowance: { bytes: 500, why: ' ' } }), /reason/);
   assert.throws(() => validateLimits({ ...limits, routes: { home: { ceiling: { bytes: 1.5, why: 'x' } } } }), /whole number/);
+  for (const allowance of [0, false, null, '', NaN, { bytes: NaN, why: 'x' }, { bytes: -1, why: 'x' }, { bytes: '500', why: 'x' }]) {
+    assert.throws(() => validateLimits({ ...limits, routes: { home: { ...entry(10_000), allowance } } }), /home allowance/, String(allowance));
+    assert.throws(() => validateLimits({ ...limits, allowance }), /allowance/, String(allowance));
+  }
+  const none = withRoutes({ home: entry(10_000) }, { bytes: 0, why: 'no growth at all' });
+  const grow = (by) => decide({ base: { home: route(5000) }, change: { home: route(5000 + by) }, limits: none }).rows[0].problems.map((p) => p.kind);
+  assert.deepEqual([grow(0), grow(1)], [[], ['growth']]);
+  assert.throws(() => decide({ base: side(1, 1), change: side(900_000, 1), limits: { ...limits, allowance: { bytes: NaN, why: 'x' } } }), /whole number/);
 });
 
-test('a new route goes green in the change that adds it, by its own ceiling; a route the change drops fails', () => {
-  const own = { ...limits, routes: { ...limits.routes, search: { ceiling: { bytes: 6000, why: 'search ships what home does' } } } };
-  const search = (bytes) => ({ search: { bytes, files: [{ path: 'app.js', bytes }] } });
-  const rows = (change, base = side(5000, 5000)) => decide({ base, change: { ...side(5000, 5000), ...change }, limits, ownLimits: own });
-  const added = rows(search(5900)).find((r) => r.route === 'search');
+test('a route new in the change is judged by its own entry, by its ceiling, and printed as new', () => {
+  const own = withRoutes({ ...limits.routes, search: entry(6000) });
+  const rows = (search) => decide({ base: side(5000, 5000), change: { ...side(5000, 5000), search: route(search) }, limits, ownLimits: own });
+  const added = rows(5900).rows.find((r) => r.route === 'search');
   assert.deepEqual([added.isNew, added.base, added.growth, added.problems], [true, null, 0, []]);
-  assert.deepEqual(rows(search(6001)).find((r) => r.route === 'search').problems.map((p) => p.kind), ['ceiling']);
-  // the merge-base's own entry judges a route it knows, whatever the change's file says of it
-  const loosened = { ...own, routes: { ...own.routes, home: { ceiling: { bytes: 99_999, why: 'loosened' } } } };
-  const home = decide({ base: side(5000, 5000), change: side(10_001, 5000), limits, ownLimits: loosened }).find((r) => r.route === 'home');
-  assert.deepEqual(home.problems.map((p) => p.kind), ['growth', 'ceiling']);
-  const dropped = decide({ base: side(5000, 5000), change: { home: side(5000, 5000).home }, limits });
-  assert.deepEqual(dropped.map((r) => [r.route, !!r.removed, r.problems.map((p) => p.kind)]), [['home', false, []], ['now', true, ['removed']]]);
-  const verdict = report(dropped, 'f');
-  assert.equal(verdict.ok, false);
-  assert.match(verdict.lines.join('\n'), /now .*REMOVED/);
-  assert.match(verdict.lines.join('\n'), /now: budgeted by the merge-base, and no longer in this change's budgets file/);
-  assert.match(verdict.lines.join('\n'), /leaves the budgets only by the owner's own commit/);
-  const { ok, lines } = report(rows(search(5900)), 'f');
+  assert.deepEqual(rows(6001).rows.find((r) => r.route === 'search').problems.map((p) => p.kind), ['ceiling']);
+  const { ok, lines } = report(rows(5900), 'f');
   assert.equal(ok, true);
   assert.match(lines.join('\n'), /search +new +5,900 .* ok \(new\)/);
+});
+
+test('the merge-base\'s entry judges a route it knows: a change that grew cannot loosen its own limit', () => {
+  const loosened = withRoutes({ ...limits.routes, home: entry(99_999) }, { bytes: 99_999, why: 'loosened' });
+  assert.deepEqual(kinds({ base: side(9000, 5000), change: side(10_001, 5000), ownLimits: loosened }), [['home', ['growth', 'ceiling']]]);
+});
+
+test('the owner\'s own limit changes land when nothing grew: a route removed or renamed, a ceiling raised over a red main', () => {
+  const base = side(9900, 5000);
+  // a ceiling raised over a main that already exceeds it: red under the base's limits, green under the change's own
+  const red = side(10_500, 5000);
+  assert.deepEqual(kinds({ base: red, change: red }), [['home', ['ceiling']]]);
+  const raised = { ownLimits: withRoutes({ ...limits.routes, home: entry(10_600) }) };
+  const done = decide({ base: red, change: red, limits, ...raised });
+  assert.deepEqual([done.rows.filter((r) => r.problems.length).length, done.notes], [0, ["limits changed, nothing grew: this change's own budgets file judges it"]]);
+  assert.match(report(done, 'f').lines.join('\n'), /limits changed, nothing grew/);
+  // a route removed together with its screen
+  const gone = decide({ base, change: { home: base.home, now: { gone: true } }, limits, ownLimits: withRoutes({ home: limits.routes.home }) });
+  assert.deepEqual(gone.rows.map((r) => [r.route, !!r.removed, !!r.gone, r.problems.length]), [['home', false, false, 0], ['now', true, true, 0]]);
+  assert.match(report(gone, 'f').lines.join('\n'), /now .*removed \(screen gone\)/);
+  // a route renamed with its screen: the old key's screen is gone, the new key is new
+  const renamed = decide({ base, change: { home: base.home, now: { gone: true }, 'now-playing': route(5000) }, limits,
+    ownLimits: withRoutes({ home: limits.routes.home, 'now-playing': entry(5100) }) });
+  assert.deepEqual(renamed.rows.map((r) => [r.route, !!r.isNew, !!r.gone, r.problems.length]), [['home', false, false, 0], ['now', false, true, 0], ['now-playing', true, false, 0]]);
+  assert.equal(report(renamed, 'f').ok, true);
+});
+
+test('abuse: a route removed while its screen exists, or while it grew, or renamed with the screen still there, fails', () => {
+  const base = side(5000, 5000);
+  const only = (routes) => withRoutes(routes);
+  // removed from the budgets, the screen still answers (and nothing grew): a failure, not a quiet drop
+  const exists = decide({ base, change: base, limits, ownLimits: only({ home: limits.routes.home }) });
+  assert.deepEqual(exists.rows.filter((r) => r.problems.length).map((r) => [r.route, r.problems.map((p) => p.kind)]), [['now', ['removed']]]);
+  assert.equal(report(exists, 'f').ok, false);
+  assert.match(report(exists, 'f').lines.join('\n'), /now .*REMOVED[\s\S]*its screen still exists/);
+  // removed while it grew: the base's limits judge, and it fails twice over
+  const grew = decide({ base, change: side(5000, 5800), limits, ownLimits: only({ home: limits.routes.home }) });
+  assert.deepEqual(grew.notes, []);
+  assert.deepEqual(grew.rows.filter((r) => r.problems.length).map((r) => [r.route, r.problems.map((p) => p.kind)]), [['now', ['removed']]]);
+  // the same key renamed while the screen still exists: the old key is still a screen
+  const renamed = decide({ base, change: { home: base.home, now: base.now, 'now-x': route(5000) }, limits, ownLimits: only({ home: limits.routes.home, 'now-x': entry(5100) }) });
+  assert.deepEqual(renamed.rows.filter((r) => r.problems.length).map((r) => r.route), ['now']);
+  // growth elsewhere with the limits moved in the same change: the base's limits judge
+  assert.deepEqual(kinds({ base, change: side(5600, 5000), ownLimits: only({ home: entry(99_999), now: limits.routes.now }) }), [['home', ['growth']]]);
 });
 
 test('the report says what grew, by how much, against which allowance, and what to do', () => {
@@ -124,7 +207,8 @@ test('the report says what grew, by how much, against which allowance, and what 
   assert.equal(report(decide({ base, change: base, limits }), 'f').ok, true);
   // Routes that grew the same way are one entry in the message.
   const both = { home: change.home, now: { ...change.home } };
-  assert.match(report(decide({ base: { home: base.home, now: base.home }, change: both, limits: { ...limits, routes: { home: limits.routes.home, now: { ceiling: limits.routes.home.ceiling } } } }), 'f').lines.join('\n'), /budgets: home, now: grew 1,000 B/);
+  const twins = { ...limits, routes: { home: limits.routes.home, now: { ceiling: limits.routes.home.ceiling } } };
+  assert.match(report(decide({ base: { home: base.home, now: base.home }, change: both, limits: twins }), 'f').lines.join('\n'), /budgets: home, now: grew 1,000 B/);
 });
 
 test('changedFiles lists additions, growth and removals, biggest growth first', () => {
