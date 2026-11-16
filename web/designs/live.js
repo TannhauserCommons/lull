@@ -53,6 +53,12 @@
   /* the parts a value is drawn on: lull's own hosts (as --song-pos has them), every region, any element a theme marks */
   var HOSTS = '#pbar, #mini, .sky-specks, .now__dev, .now__devc, .disc-lead, [data-dk-player], [data-region], [data-live]';
   L.hosts = HOSTS;
+  /* the hosts a value's custom property is written on: --song-pos is the player painter's on the parts it keeps (PlayerView,
+     ADR-0041), so it has one writer there; the live model writes it on the rest (regions) */
+  function hostsOf(p, hosts) {
+    if (p !== 'song.pos' || !window.PlayerView || !PlayerView.SONG_POS_AT) return hosts;
+    return Array.prototype.filter.call(hosts, function (el) { return !el.matches(PlayerView.SONG_POS_AT); });
+  }
   function dashed(p) { return p.replace(/\./g, '-'); }
   L.cssName = function (p) { return '--' + dashed(p); };
   L.attrName = function (p) { return ['data', dashed(p)].join('-'); };   // only the model's: data-clock-daypart
@@ -184,7 +190,7 @@
     if (p.indexOf('region.') === 0) return;      // each region's own size, written by sizes() on that region alone
     bound(p).forEach(function (el) { if (t !== 'flag' || parse(el.getAttribute('data-bind'))[1].length) bindText(el, p); });
     var css = cssValue(p);
-    if (!mine[p] && css != null) { var name = L.cssName(p); all(HOSTS).forEach(function (el) { setVar(el, name, css); }); }
+    if (!mine[p] && css != null) { var name = L.cssName(p); hostsOf(p, all(HOSTS)).forEach(function (el) { setVar(el, name, css); }); }
     if (open && t !== 'list' && t !== 'date') {   // an open value on :root as it is (copy.where: "soulseek")
       var a0 = L.attrName(p), v0 = vals[p] == null ? '' : String(vals[p]);
       if (!v0) root.removeAttribute(a0); else if (root.getAttribute(a0) !== v0) root.setAttribute(a0, v0);
@@ -440,7 +446,7 @@
       var css = cssValue(p);
       if (mine[p] || css == null) return;
       var name = L.cssName(p);
-      Array.prototype.forEach.call(hosts, function (el) { setVar(el, name, css); });
+      Array.prototype.forEach.call(hostsOf(p, hosts), function (el) { setVar(el, name, css); });
     });
   };
   /* lull's page draws its screens and shell again on these (none in the desktop app's own pages). A theme's live.js

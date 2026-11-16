@@ -1277,7 +1277,7 @@
   /* the player's Save for a song (data-bind="save"): the player bar's, and the catalogue's save-button (designs/parts.js) */
   function saveButton(t) {
     var look = saveLook(t);
-    return html`<button class="btn-icon btn-icon--bare" data-act="save" data-bind="save" data-id="${t.id}" aria-pressed="${String(look.saved)}" aria-label="${look.label}" data-tip="${look.label}">${icon(look.icon)}${look.step ? html`<span class="pbar__save-step" aria-hidden="true">${look.step}</span>` : ''}</button>`;
+    return html`<button class="btn-icon btn-icon--bare" data-act="save" data-bind="save" data-id="${t.id}" aria-pressed="${String(look.saved)}" aria-label="${look.label}" aria-keyshortcuts="Shift+S" data-tip="${look.label}">${icon(look.icon)}${look.step ? html`<span class="pbar__save-step" aria-hidden="true">${look.step}</span>` : ''}</button>`;
   }
   ui.playerSave = saveButton;
 
@@ -2097,7 +2097,14 @@
   P.currentId = function () { var q = ps.queue[ps.index]; return q ? q.trackId : null; };
   P.duration = function () { var t = P.current(); return duration || (t ? t.duration : 0); };
   P.upNext = function (n) { return ps.queue.slice(ps.index + 1, ps.index + 1 + (n || 2)).map(function (q) { return M.track(q.trackId); }).filter(Boolean); };
-  function changed(kind) { App.emit('player', kind || 'state'); noteHeard(); publishView(); persistSoon(); }
+  /* a change paints once: the bar's render (a `player` handler) ends in the painter, so the view it publishes next is
+     already on screen (a view published from the clock or the output's sound, outside a change, is painted on `view`) */
+  var inChange = 0;
+  function changed(kind) {
+    inChange++;
+    try { App.emit('player', kind || 'state'); noteHeard(); publishView(); } finally { inChange--; }
+    persistSoon();
+  }
   /* music is heard: the listener wants it playing and sound is coming out (not waiting for data). P.heard() and the
      `heard` event (true or false, on each change) are what the UI sounds keep quiet for (ADR-0081). */
   var heardWas = false;
@@ -3533,8 +3540,7 @@
   function paintNow() { PlayerView.paint(document, P.view(), Date.now()); }
   App.setText = setText;
   App.on('tick', paintNow);
-  App.on('player', paintNow);
-  App.on('view', function (view) { PlayerView.paint(document, view, Date.now()); });
+  App.on('view', function (view) { if (!inChange) PlayerView.paint(document, view, Date.now()); });
 
   /* rows and buttons that show per-track state: playing row, like buttons, Saved/Soulseek badges, save buttons */
   App.syncRows = function () {
@@ -3574,7 +3580,6 @@
       el.replaceWith(nb); if (focused) nb.focus();
     });
   };
-  App.on('player', function (k) { if (k === 'track' || k === 'play' || k === 'queue') App.syncRows(); });
   App.on('like', function () { App.syncRows(); });
 
   /* pointer + keyboard for every [data-seek] (player seek, waveform, volume) */
@@ -4032,7 +4037,7 @@
     $$kept('[data-bind="mute"]').forEach(function (b) {
       var v = ps.muted ? 0 : ps.volume, u = $('use', b);
       if (u) u.setAttribute('href', '#i-' + (ps.muted ? 'mute' : v === 0 ? 'volume-0' : v < .5 ? 'volume-1' : 'volume-2'));
-      b.setAttribute('aria-label', ps.muted ? 'Unmute (M)' : 'Mute (M)'); b.setAttribute('data-tip', ps.muted ? 'Unmute (M)' : 'Mute (M)');
+      b.setAttribute('aria-label', ps.muted ? 'Unmute' : 'Mute'); b.setAttribute('data-tip', ps.muted ? 'Unmute (M)' : 'Mute (M)');
       b.setAttribute('aria-pressed', String(ps.muted));
     });
     $$kept('[data-bind="xfade"]').forEach(function (el) { el.hidden = !ps.crossfade; });
@@ -5005,7 +5010,7 @@
       $$('[data-act="theme"]').forEach(function (b) {
         var u = $('use', b); if (!u) return;                    // a design's own text button on this action keeps its label
         u.setAttribute('href', '#i-' + (night ? 'moon' : 'sun'));
-        b.setAttribute('aria-label', night ? 'Night theme on. Switch to day (T)' : 'Day theme on. Switch to night (T)');
+        b.setAttribute('aria-label', night ? 'Night theme on. Switch to day' : 'Day theme on. Switch to night'); b.setAttribute('aria-keyshortcuts', 'T');
         b.setAttribute('data-tip', night ? 'Switch to day (T)' : 'Switch to night (T)');
       });
     }

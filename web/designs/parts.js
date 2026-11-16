@@ -124,25 +124,25 @@
     var PLAYER = {
       'play-button': { make: function (a) { var s = +a('size'); return ui.playButton([40, 48, 52, 56, 64].indexOf(s) >= 0 ? s : 56); } },
       /* the player bar's own keys (index.html): shuffle and repeat kept by their data-bind (app.js renderBar) */
-      prev: { make: function () { return html`<button class="btn-icon btn-icon--bare" data-act="prev" aria-label="Previous" data-tip="Previous (P)">${icon('prev')}</button>`; } },
-      next: { make: function () { return html`<button class="btn-icon btn-icon--bare" data-act="next" aria-label="Next" data-tip="Next (N)">${icon('next')}</button>`; } },
+      prev: { make: function () { return html`<button class="btn-icon btn-icon--bare" data-act="prev" aria-label="Previous" aria-keyshortcuts="P" data-tip="Previous (P)">${icon('prev')}</button>`; } },
+      next: { make: function () { return html`<button class="btn-icon btn-icon--bare" data-act="next" aria-label="Next" aria-keyshortcuts="N" data-tip="Next (N)">${icon('next')}</button>`; } },
       shuffle: { make: function () {
-        return html`<button class="btn-icon btn-icon--bare" data-act="shuffle" data-bind="shuffle" aria-pressed="${String(!!ps.shuffle)}" aria-label="Shuffle" data-tip="Shuffle (S)">${icon('shuffle')}</button>`;
+        return html`<button class="btn-icon btn-icon--bare" data-act="shuffle" data-bind="shuffle" aria-pressed="${String(!!ps.shuffle)}" aria-label="Shuffle" aria-keyshortcuts="S" data-tip="Shuffle (S)">${icon('shuffle')}</button>`;
       } },
       repeat: { make: function () {
         var label = REPEAT[ps.repeat];
-        return html`<button class="btn-icon btn-icon--bare" data-act="repeat" data-bind="repeat" aria-pressed="${String(ps.repeat !== 'off')}" aria-label="${label}" data-tip="${label} (R)">${icon(ps.repeat === 'one' ? 'repeat-one' : 'repeat')}</button>`;
+        return html`<button class="btn-icon btn-icon--bare" data-act="repeat" data-bind="repeat" aria-pressed="${String(ps.repeat !== 'off')}" aria-label="${label}" aria-keyshortcuts="R" data-tip="${label} (R)">${icon(ps.repeat === 'one' ? 'repeat-one' : 'repeat')}</button>`;
       } },
       /* Like for whatever plays, as data-bind="like" keeps it (App.syncRows): the song it likes follows the player; with
          nothing playing it does nothing (the action) */
       'like-button': { make: function () {
         var t = P.current(), on = !!t && App.isLiked(t.id);
-        return html`<button class="btn-icon btn-icon--bare ${on ? 'is-liked' : ''}" data-act="like" data-bind="like" data-id="${t ? t.id : ''}" aria-pressed="${on ? 'true' : 'false'}" aria-label="Like" data-tip="Like (L)">${icon(on ? 'heart-fill' : 'heart')}</button>`;
+        return html`<button class="btn-icon btn-icon--bare ${on ? 'is-liked' : ''}" data-act="like" data-bind="like" data-id="${t ? t.id : ''}" aria-pressed="${on ? 'true' : 'false'}" aria-label="Like" aria-keyshortcuts="L" data-tip="Like (L)">${icon(on ? 'heart-fill' : 'heart')}</button>`;
       } },
       /* the player's Save for the playing song (data-bind="save"), disabled until one plays */
       'save-button': { make: function () {
         var t = P.current();
-        return t ? ui.playerSave(t) : html`<button class="btn-icon btn-icon--bare" data-act="save" data-bind="save" aria-pressed="false" aria-label="Save to library (Shift+S)" data-tip="Save to library (Shift+S)" disabled>${icon('save')}</button>`;
+        return t ? ui.playerSave(t) : html`<button class="btn-icon btn-icon--bare" data-act="save" data-bind="save" aria-pressed="false" aria-label="Save to library" aria-keyshortcuts="Shift+S" data-tip="Save to library (Shift+S)" disabled>${icon('save')}</button>`;
       } },
       seek: { make: function (a) { return ui.seekBar({ bind: 'player', label: a('label') || 'Seek', vertical: a('orientation') === 'vertical' }); } },
       volume: { make: function (a) { return ui.volume({ vertical: a('orientation') === 'vertical' }); } },

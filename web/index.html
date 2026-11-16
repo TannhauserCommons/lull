@@ -144,11 +144,11 @@
     <div class="pbar__now" id="pbar-now" data-fit-row></div>
     <div class="pbar__centre">
       <div class="pbar__controls">
-        <button class="btn-icon btn-icon--bare" data-act="shuffle" data-bind="shuffle" aria-pressed="false" aria-label="Shuffle" data-tip="Shuffle (S)"><svg class="ic" aria-hidden="true"><use href="#i-shuffle"/></svg></button>
-        <button class="btn-icon btn-icon--bare" data-act="prev" aria-label="Previous" data-tip="Previous (P)"><svg class="ic" aria-hidden="true"><use href="#i-prev"/></svg></button>
-        <button class="btn-gloss" data-act="play" data-bind="play" aria-label="Play" data-tip="Play (Space)"><i class="btn-gloss__spin" aria-hidden="true"></i><svg class="ic ic-play" aria-hidden="true"><use href="#i-play"/></svg></button>
-        <button class="btn-icon btn-icon--bare" data-act="next" aria-label="Next" data-tip="Next (N)"><svg class="ic" aria-hidden="true"><use href="#i-next"/></svg></button>
-        <button class="btn-icon btn-icon--bare" data-act="repeat" data-bind="repeat" aria-pressed="false" aria-label="Repeat off" data-tip="Repeat (R)"><svg class="ic" aria-hidden="true"><use href="#i-repeat"/></svg></button>
+        <button class="btn-icon btn-icon--bare" data-act="shuffle" data-bind="shuffle" aria-pressed="false" aria-label="Shuffle" aria-keyshortcuts="S" data-tip="Shuffle (S)"><svg class="ic" aria-hidden="true"><use href="#i-shuffle"/></svg></button>
+        <button class="btn-icon btn-icon--bare" data-act="prev" aria-label="Previous" aria-keyshortcuts="P" data-tip="Previous (P)"><svg class="ic" aria-hidden="true"><use href="#i-prev"/></svg></button>
+        <button class="btn-gloss" data-act="play" data-bind="play" aria-label="Play" aria-keyshortcuts="Space" data-tip="Play (Space)"><i class="btn-gloss__spin" aria-hidden="true"></i><svg class="ic ic-play" aria-hidden="true"><use href="#i-play"/></svg></button>
+        <button class="btn-icon btn-icon--bare" data-act="next" aria-label="Next" aria-keyshortcuts="N" data-tip="Next (N)"><svg class="ic" aria-hidden="true"><use href="#i-next"/></svg></button>
+        <button class="btn-icon btn-icon--bare" data-act="repeat" data-bind="repeat" aria-pressed="false" aria-label="Repeat off" aria-keyshortcuts="R" data-tip="Repeat (R)"><svg class="ic" aria-hidden="true"><use href="#i-repeat"/></svg></button>
       </div>
       <div class="pbar__seek seek-row">
         <span class="seek-row__time"><span data-bind="pos">0:00</span><span aria-hidden="true"> / </span><span class="vh"> of </span><span class="seek-row__len" data-bind="dur">0:00</span></span>
@@ -169,7 +169,7 @@
       <button class="btn-icon btn-icon--bare is-wide" data-fit="2" data-act="open-now" aria-label="Device view" data-tip="Device view"><svg class="ic" aria-hidden="true"><use href="#i-device"/></svg></button>
       <button class="btn-icon btn-icon--bare pbar__nowcol" data-act="now-column" aria-pressed="false" aria-label="Now Playing column" data-tip="Now Playing column"><svg class="ic" aria-hidden="true"><use href="#i-sidebar"/></svg></button>
       <div class="vol">
-        <button class="btn-icon btn-icon--bare" data-act="mute" data-bind="mute" aria-pressed="false" aria-label="Mute (M)" data-tip="Mute (M)"><svg class="ic" aria-hidden="true"><use href="#i-volume-2"/></svg></button>
+        <button class="btn-icon btn-icon--bare" data-act="mute" data-bind="mute" aria-pressed="false" aria-label="Mute" aria-keyshortcuts="M" data-tip="Mute (M)"><svg class="ic" aria-hidden="true"><use href="#i-volume-2"/></svg></button>
         <div class="seek" data-fit="1" data-seek="volume" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="70">
           <div class="seek__track"><div class="seek__played"></div></div>
           <div class="seek__rail"><div class="seek__knob"></div></div>

@@ -242,7 +242,13 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   Positions come from `posAt(view, now)`. The page calls it on `view`, on `player`, on the visible clock (`tick`, with a
   fresh view) and from `App.syncRows` (a like or a save is no player event); its parts are found through `$kept`
   (`PlayerView.find`). A write that wouldn't change a value is skipped. Markup builders (`renderBar`, Now Playing, the
-  mini player's `nowMarkup`) draw the song alone, and `data-playing` is `PlayerView.pressed(view)`.
+  mini player's `nowMarkup`) draw the song alone, and `data-playing` is `PlayerView.pressed(view)`. The painter never
+  writes over a theme's markup: it points a `<use>` of lull's sprite (`#i-...`) at the new icon and fills an empty
+  mini player key (`[data-dk]`) with lull's, but leaves a theme's own icon, words and CSS-drawn keys alone; a seek line
+  is the player's only inside `[data-dk-player]`, and every `.wave` there is (a theme may build its own in). A key's
+  shortcut is `aria-keyshortcuts`, never words in its `aria-label`. A change paints once: the bar's render, which ends
+  in the painter, covers the `view` the same change publishes; a `view` from the clock or the output's sound paints
+  on its own. `--song-pos` has one writer on the parts the painter keeps (live.js leaves it to it).
 - **The intent follows the output.** `ps.playing` is what the listener asked for. An output that pauses or resumes for a
   reason of the system's (another app took the audio, headphones out, a key the page doesn't handle) says so with the
   `system` event, and the engine sets `ps.playing` to it and does nothing else (the output has already stopped its own work). It is never guessed from a `time` with `playing: false`: an

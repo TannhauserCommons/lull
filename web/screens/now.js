@@ -145,7 +145,7 @@
   function likeBtn(size) {
     var t = cur(), on = t && App.isLiked(t.id);
     if (!t) return html`<button class="btn-gloss btn-gloss--${size}" data-act="now-nothing" aria-label="Like" data-fk="b-${size}">${icon('heart')}</button>`;
-    return html`<button class="btn-gloss btn-gloss--${size}${on ? ' is-liked' : ''}" data-act="like" data-id="${t.id}" data-like="${t.id}" aria-pressed="${on ? 'true' : 'false'}" aria-label="Like (L)" data-tip="${on ? 'Liked' : 'Like'}" data-fk="b-${size}">${icon(on ? 'heart-fill' : 'heart')}</button>`;
+    return html`<button class="btn-gloss btn-gloss--${size}${on ? ' is-liked' : ''}" data-act="like" data-id="${t.id}" data-like="${t.id}" aria-pressed="${on ? 'true' : 'false'}" aria-label="Like" aria-keyshortcuts="L" data-tip="${on ? 'Liked' : 'Like'}" data-fk="b-${size}">${icon(on ? 'heart-fill' : 'heart')}</button>`;
   }
   function repeatLabel() { return { off: 'repeat', all: 'repeat', one: 'repeat 1' }[ps.repeat]; }
 
@@ -164,11 +164,11 @@
       </div>
       <div class="device__controls">
         <div class="dpad" role="group" aria-label="D-pad">
-          <button class="dpad__btn dpad__btn--up" data-act="now-vol" data-dir="1" aria-label="Volume up (Up arrow)" data-tip="Volume up" data-fk="up">${icon('plus')}</button>
-          <button class="dpad__btn dpad__btn--left" data-act="prev" aria-label="Previous (P)" data-tip="Previous" data-fk="left">${icon('prev')}</button>
+          <button class="dpad__btn dpad__btn--up" data-act="now-vol" data-dir="1" aria-label="Volume up" aria-keyshortcuts="ArrowUp" data-tip="Volume up" data-fk="up">${icon('plus')}</button>
+          <button class="dpad__btn dpad__btn--left" data-act="prev" aria-label="Previous" aria-keyshortcuts="P" data-tip="Previous" data-fk="left">${icon('prev')}</button>
           <span class="dpad__hub" aria-hidden="true"></span>
-          <button class="dpad__btn dpad__btn--right" data-act="next" aria-label="Next (N)" data-tip="Next" data-fk="right">${icon('next')}</button>
-          <button class="dpad__btn dpad__btn--down" data-act="now-vol" data-dir="-1" aria-label="Volume down (Down arrow)" data-tip="Volume down" data-fk="down">${icon('minus')}</button>
+          <button class="dpad__btn dpad__btn--right" data-act="next" aria-label="Next" aria-keyshortcuts="N" data-tip="Next" data-fk="right">${icon('next')}</button>
+          <button class="dpad__btn dpad__btn--down" data-act="now-vol" data-dir="-1" aria-label="Volume down" aria-keyshortcuts="ArrowDown" data-tip="Volume down" data-fk="down">${icon('minus')}</button>
         </div>
         <div class="device__ab">
           <span class="device__key device__key--b"><span data-now="b">${likeBtn(52)}</span><span data-now="b-label" aria-hidden="true">${t && App.isLiked(t.id) ? 'liked' : 'like'}</span></span>
@@ -176,8 +176,8 @@
         </div>
       </div>
       <div class="device__pills">
-        <button class="device__pill device__pill--shuffle" data-act="shuffle" data-bind="shuffle" aria-pressed="${String(ps.shuffle)}" aria-label="Shuffle (S)" data-fk="shuffle"><i></i>shuffle</button>
-        <button class="device__pill device__pill--repeat" data-act="repeat" data-bind="repeat" aria-pressed="${String(ps.repeat !== 'off')}" aria-label="${{ off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' }[ps.repeat]} (R)" data-fk="repeat"><i></i><span data-now="repeat">${repeatLabel()}</span></button>
+        <button class="device__pill device__pill--shuffle" data-act="shuffle" data-bind="shuffle" aria-pressed="${String(ps.shuffle)}" aria-label="Shuffle" aria-keyshortcuts="S" data-tip="Shuffle (S)" data-fk="shuffle"><i></i>shuffle</button>
+        <button class="device__pill device__pill--repeat" data-act="repeat" data-bind="repeat" aria-pressed="${String(ps.repeat !== 'off')}" aria-label="${{ off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' }[ps.repeat]}" aria-keyshortcuts="R" data-fk="repeat"><i></i><span data-now="repeat">${repeatLabel()}</span></button>
       </div>
       <div class="device__grill" aria-hidden="true">${raw(new Array(13).join('<i></i>'))}</div>
     </div>`;
@@ -207,7 +207,7 @@
         <span class="now-devc__art" data-now="c-art">${t ? ui.cover(t, 56) : html`<span class="now-dev__slot" aria-hidden="true"></span>`}</span>
         <div class="device__screen s-screen" data-now="c-screen">${compactSlide(t)}</div>
         <div class="device__keys now-devc__keys">
-          <span class="now-devc__skip"><button class="dpad__btn" data-act="prev" aria-label="Previous (P)" data-tip="Previous" data-fk="c-left">${icon('prev', null, 'ic-16')}</button><button class="dpad__btn" data-act="next" aria-label="Next (N)" data-tip="Next" data-fk="c-right">${icon('next', null, 'ic-16')}</button></span>
+          <span class="now-devc__skip"><button class="dpad__btn" data-act="prev" aria-label="Previous" aria-keyshortcuts="P" data-tip="Previous" data-fk="c-left">${icon('prev', null, 'ic-16')}</button><button class="dpad__btn" data-act="next" aria-label="Next" aria-keyshortcuts="N" data-tip="Next" data-fk="c-right">${icon('next', null, 'ic-16')}</button></span>
           <span data-now="cb">${likeBtn(40)}</span><span data-now="ca">${playBtn(52)}</span>
         </div>
       </div>

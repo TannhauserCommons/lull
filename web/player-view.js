@@ -101,12 +101,15 @@
   V.setText = setText;
   function clamp(x) { return Math.max(0, Math.min(1, x)); }
 
-  /* a key's icon follows the player: lull's icon in it is pointed at the new one, a key with no icon and no words of its
-     own gets lull's, and a theme's own words (with or without an icon) are never touched */
+  /* a key's icon follows the player: an icon lull drew in it (a <use> of lull's sprite, #i-...) is pointed at the new one;
+     an empty mini player key (`[data-dk]`) gets lull's, as docs/themes.md promises. A theme's own markup is never written
+     over: its words, an icon it draws itself, a key it draws with CSS */
+  var LULL_ICON = '#i-';
+  function ownIcon(u) { return (u.getAttribute('href') || '').indexOf(LULL_ICON) !== 0; }
   function keyIcon(b, name, cls) {
     var u = b.querySelector('use'), svg = b.querySelector('svg.ic');
-    if (u) { setAttr(u, 'href', '#i-' + name); if (svg) setClass(svg, 'ic-play', cls === 'ic-play'); }
-    else if (!b.textContent.trim() && !b.firstElementChild) b.innerHTML = window.icon(name, null, cls);
+    if (u) { if (ownIcon(u)) return; setAttr(u, 'href', LULL_ICON + name); if (svg) setClass(svg, 'ic-play', cls === 'ic-play'); }
+    else if (b.hasAttribute('data-dk') && !b.textContent.trim() && !b.firstElementChild) b.innerHTML = window.icon(name, null, cls);
   }
 
   /* the parts that carry the player's state: the player bar, the mini player and a mini player window */
@@ -114,8 +117,12 @@
   /* the parts a design draws the song's place on (docs/themes.md: --song-pos). It isn't inherited (components.css): a value
      every element inherits restyles all of them at each step, a long playlist's thousands or a hero's hundreds */
   var SONG_POS_AT = HOSTS + ', .sky-specks, .now__dev, .now__devc, .disc-lead, [data-live]';
+  V.SONG_POS_AT = SONG_POS_AT;   // live.js leaves --song-pos on these to the painter: one writer
   var LIKED_AT = HOSTS + ', .now__dev, .now__devc';
-  var SEEKS = '.seek[data-seek="player"], .seek--line', WAVES = '.wave[data-seek="player"], .wave[data-dk="seek"]';
+  /* the player's seek parts: the page's sliders, and inside the mini player the seek line and every wave (a theme may build
+     its own into its mini player). A seek line or wave outside the player is the theme's own, never moved with the song */
+  var SEEKS = '.seek[data-seek="player"], [data-dk-player] .seek--line', WAVES = '.wave[data-seek="player"], [data-dk-player] .wave';
+  var KEYSHORTCUT = { play: 'Space', shuffle: 'S', repeat: 'R', like: 'L', save: 'Shift+S' };
   var REPEAT_LABEL = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' };
 
   V.paint = function (scope, view, now) {
@@ -143,7 +150,12 @@
       setVar(el, '--pos', f.toFixed(4)); setVar(el, '--xfer', tr.front.toFixed(4));
       setClass(el, 'is-going', view.seekWait != null); if (view.seekWait != null) setVar(el, '--target', view.seekWait.toFixed(4));
       setClass(el, 'is-transferring', tr.transferring);
-      if (el._bk !== bk) {
+      var own = el.querySelector('[data-dk-buf]');
+      if (own) {
+        /* the mini player's own part (data-dk-buf): the arrived part the playhead is in, which a seek ahead may leave a gap before */
+        var at = parts.filter(function (r) { return f >= r[0] && f <= r[1]; })[0] || [0, 0];
+        setVar(own, 'left', (at[0] * 100) + '%'); setVar(own, 'width', ((at[1] - at[0]) * 100) + '%');
+      } else if (el._bk !== bk) {
         el._bk = bk;
         var host = el.querySelector('.seek__bufs');
         if (host) host.innerHTML = parts.map(function (r) { return '<i class="seek__buf" style="left:' + (r[0] * 100).toFixed(2) + '%;width:' + ((r[1] - r[0]) * 100).toFixed(2) + '%"></i>'; }).join('');
@@ -176,6 +188,7 @@
     function playKey(b, shortcut) {
       var label = pressed ? 'Pause' : 'Play';
       setAttr(b, 'aria-label', label); setAttr(b, 'data-tip', label + shortcut);
+      if (shortcut) setAttr(b, 'aria-keyshortcuts', KEYSHORTCUT.play);
       keyIcon(b, pressed ? 'pause' : 'play', pressed ? '' : 'ic-play');
       setClass(b, 'is-buffering', loading);
     }
@@ -197,8 +210,12 @@
     find('[data-bind="shuffle"], [data-dk="shuffle"]').forEach(function (b) { setAttr(b, 'aria-pressed', view.shuffle); });
     find('[data-bind="repeat"], [data-dk="repeat"]').forEach(function (b) {
       setAttr(b, 'aria-pressed', view.repeat !== 'off');
-      var u = b.querySelector('use'); if (u) setAttr(u, 'href', '#i-' + (view.repeat === 'one' ? 'repeat-one' : 'repeat'));
-      if (b.hasAttribute('data-bind')) { setAttr(b, 'aria-label', REPEAT_LABEL[view.repeat] + ' (R)'); setAttr(b, 'data-tip', REPEAT_LABEL[view.repeat] + ' (R)'); }
+      keyIcon(b, view.repeat === 'one' ? 'repeat-one' : 'repeat');
+      if (b.hasAttribute('data-bind')) { setAttr(b, 'aria-label', REPEAT_LABEL[view.repeat]); setAttr(b, 'data-tip', REPEAT_LABEL[view.repeat] + ' (R)'); }
+    });
+    /* a shortcut is the key's own attribute, never words in its name (aria-label) */
+    ['shuffle', 'repeat', 'like', 'save'].forEach(function (k) {
+      find('[data-bind="' + k + '"]').forEach(function (b) { setAttr(b, 'aria-keyshortcuts', KEYSHORTCUT[k]); });
     });
     find('[data-now="repeat"]').forEach(function (el) { setText(el, view.repeat === 'one' ? 'repeat 1' : 'repeat'); });
   };
