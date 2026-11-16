@@ -57,7 +57,7 @@ the view every surface shows:
 | `ended` | status `ended` |
 | `choose` | status `choose` (waiting for the listener to pick a copy) |
 | `paused` | the listener's intent is paused |
-| `loading` | status `finding`, `queued`, `buffering` or `stalled`; or `streaming`/`library` while the output waits or hasn't started |
+| `loading` | status `finding`, `queued`, `buffering` or `stalled`; or `streaming`/`library` while the output waits or hasn't started (no `time` yet, or one with `playing: false`) |
 | `playing` | status `streaming` or `library`, and the output plays and isn't waiting |
 
 `clock.rate` is 1 only while `activity` is `playing`. Every surface places the song with `PlayerView.posAt(view, now)`,
@@ -73,7 +73,7 @@ buffered-to, received; `[data-dk-pos]`, `[data-dk-dur]`, `[data-dk-vol]`; the pl
 (`[data-bind]` and `[data-dk]` alike); the volume slider.
 - The hook names stay as docs/themes.md lists them, so no theme changes.
 - Markup builders (the bar, the mini's `nowMarkup`, slots) draw the song: title, artist, cover, the copy's format. They
-  leave state to `paint`, so nothing drawn once can go stale. The peer's percentage becomes a `received` hook.
+  leave state to `paint`, so nothing drawn once can go stale. The peer's percentage becomes a `[data-bind="received"]` hook, as on the page.
 - The mini player's default markup and each design's `miniPlayer` slot gain a status line, `[data-dk-status]`, whose
   text `paint` writes from `words`, so every design says what the player is doing.
 
@@ -92,6 +92,9 @@ on `view`, and on its visible clock between views. The live model's player value
   stops its clock and shows that lull's window is away until a view comes.
 - A `hello` or a view whose `v` isn't the mini player's own is refused loudly. The mini player says which side needs
   updating and stops its clock, instead of drawing a shape it doesn't know.
+- `PlayerView.VERSION` is a whole number from 1, raised on any change to the view's shape. `main` answers every
+  `hello` with its view, whatever the `v`; the mini player is the side that judges. `main-hello` and `main-bye` carry
+  `{}`.
 - The link's state is `data-link` on `[data-dk-player]`: `ok`, `away` (after `main-bye`, until a view comes),
   `update-app` (`main` is newer) or `update-hub` (`main` is older, or sent a snapshot with no `v`).
 
