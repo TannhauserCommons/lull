@@ -162,10 +162,11 @@
         /* the mini player's own part (data-dk-buf): the arrived part the playhead is in, which a seek ahead may leave a gap before */
         var at = parts.filter(function (r) { return f >= r[0] && f <= r[1]; })[0] || [0, 0];
         setVar(own, 'left', (at[0] * 100) + '%'); setVar(own, 'width', ((at[1] - at[0]) * 100) + '%');
-      } else if (el._bk !== bk) {
-        el._bk = bk;
+      } else {
+        /* the parts drawn, skipped while they are the ones drawn: what is in the host is counted, not trusted from the last
+           write, since a page drawn again in place (App.patch) empties it */
         var host = el.querySelector('.seek__bufs');
-        if (host) host.innerHTML = parts.map(function (r) { return '<i class="seek__buf" style="left:' + (r[0] * 100).toFixed(2) + '%;width:' + ((r[1] - r[0]) * 100).toFixed(2) + '%"></i>'; }).join('');
+        if (host && (el._bk !== bk || host.childElementCount !== parts.length)) { el._bk = bk; host.innerHTML = parts.map(function (r) { return '<i class="seek__buf" style="left:' + (r[0] * 100).toFixed(2) + '%;width:' + ((r[1] - r[0]) * 100).toFixed(2) + '%"></i>'; }).join(''); }
       }
       setAttr(el, 'aria-valuenow', Math.round(f * 100)); setAttr(el, 'aria-valuetext', valText);
     });
@@ -175,7 +176,9 @@
       bars.forEach(function (b, i) {
         var x = (i + .5) / n, inBuf = parts.some(function (r) { return x >= r[0] && x <= r[1]; });
         var cls = x <= f ? 'is-played' : inBuf ? 'is-buf' : x <= tr.front ? 'is-xfer' : '';
-        if (b._c !== cls) { if (b._c) b.classList.remove(b._c); if (cls) b.classList.add(cls); b._c = cls; }
+        /* what the bar has is read from it, not remembered: a page drawn again in place resets its class */
+        var has = b.classList.contains('is-played') ? 'is-played' : b.classList.contains('is-buf') ? 'is-buf' : b.classList.contains('is-xfer') ? 'is-xfer' : '';
+        if (has !== cls) { if (has) b.classList.remove(has); if (cls) b.classList.add(cls); }
       });
       setAttr(el, 'aria-valuenow', Math.round(f * 100)); setAttr(el, 'aria-valuetext', valText);
     });
