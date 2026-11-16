@@ -81,11 +81,23 @@ const HARD = {
 const PRINTED = { 'nowHero.full': '<figure class="pr-print"><lull-part name="cover" size="240"></lull-part><figcaption data-now="album">{{album}}</figcaption></figure>' };
 const UPRIGHT_CSS = `#pbar > [data-slot="after.playerbar"] { position: fixed; right: 40px; bottom: 120px; }
 .tu-fader .seek[aria-orientation="vertical"] { width: 24px; min-width: 0; height: 160px; }`;
+/* the song's place on the theme's own live hosts (docs/themes.md: --song-pos on any [data-live] of slot markup): one beside
+   the side panel, and one in each row of a list of the queue, which lull draws again as the list's parts are */
+const PAINTED = { 'after.ctx': '<section class="pz" aria-label="Up next"><i class="pz-here" data-live></i>' +
+  '<lull-part name="list" of="queue" count="3" label="Up next"><lull-row><i class="pz-pos" data-live></i><b class="pz-t">{{item.title}}</b></lull-row></lull-part>' +
+  '<div class="pz-lead"><lull-part name="screen" path="/home" pick=".disc-lead"></lull-part></div></section>',
+  // Home's lead, the theme's own, with a live host of its own: drawn in the piece of Home above too
+  'homeLead.playing': '<div class="pz-home"><i class="pz-home-pos" data-live></i><lull-part name="state"></lull-part></div>' };
+const PAINTED_CSS = '.pz-here, .pz-pos { display: inline-block; width: 8px; height: 4px; background: currentColor; scale: var(--song-pos) 1; }';
+/* a hero copied from lull's own markup of before the one view (base): its shuffle and repeat pills carry data-act only */
+const COPIED = { 'nowHero.full': '<div class="cp-hero"><lull-part name="play-button" size="56"></lull-part><div class="device__pills">' +
+  '<button class="device__pill device__pill--shuffle" data-act="shuffle" aria-label="Shuffle"><i></i>shuffle</button>' +
+  '<button class="device__pill device__pill--repeat" data-act="repeat" aria-label="Repeat"><i></i>repeat</button></div></div>' };
 
 let hub, dir;
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'lull-slots-'));
-  for (const [id, slots, css] of [['slotted', SLOTS, CSS], ['handed', HANDED, ''], ['parted', PARTED, ''], ['upright', UPRIGHT, UPRIGHT_CSS], ['owned', OWNED, ''], ['placed', PLACED, ''], ['hard', HARD, ''], ['printed', PRINTED, '']]) {
+  for (const [id, slots, css] of [['slotted', SLOTS, CSS], ['handed', HANDED, ''], ['parted', PARTED, ''], ['upright', UPRIGHT, UPRIGHT_CSS], ['owned', OWNED, ''], ['placed', PLACED, ''], ['hard', HARD, ''], ['printed', PRINTED, ''], ['painted', PAINTED, PAINTED_CSS], ['copied', COPIED, '']]) {
     mkdirSync(join(dir, id, 'slots'), { recursive: true });
     writeFileSync(join(dir, id, 'theme.json'), JSON.stringify({ ...MANIFEST, id, name: id }));
     writeFileSync(join(dir, id, 'theme.css'), css);
@@ -451,5 +463,78 @@ test('a hero\'s cover follows the song to another album, as the album under it d
   await expect(print.locator('figcaption'), 'the album under the print').toHaveText(second.album);
   await expect(drawnFor(second.albumId), 'the print, the song\'s own cover').toHaveCount(1);
   await expect(drawnFor(first.albumId), 'and no longer the last song\'s').toHaveCount(0);
+  await ctx.close();
+});
+
+// Whatever draws a host of the player's hooks, and whenever (ADR-0041: a slot's part redrawn, a tab of the side panel),
+// it is painted in the same task: a paused song's place is on a [data-live] the moment it is drawn, with no tick or
+// player event to come and put it there.
+test('a live host drawn while the song is paused has the song\'s place at once: by a part redrawn, by a tab', async ({ browser }) => {
+  const ctx = await context(browser), page = await ctx.newPage();
+  await openScreen(page, `/album/${ids.album}`, { design: 'painted' });
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id'));
+    App.player.playTrack(rows[0], rows);
+  });
+  await page.waitForFunction(() => App.player.view().activity === 'playing', null, { timeout: 20_000 });
+  await page.evaluate(() => App.player.pause());
+  await page.evaluate(() => App.player.seekFraction(0.4));
+  await page.waitForFunction(() => App.player.view().activity === 'paused' && document.querySelector('#pbar').style.getPropertyValue('--song-pos') === '0.4', null, { timeout: 10_000 });
+  await expect(page.locator('.pz .lull-list__row .pz-pos').first(), 'the theme\'s list of the queue, drawn').toBeAttached();
+  await expect(page.locator('.pz-lead .disc-lead [data-live]'), 'Home\'s lead, with its live host, in the theme\'s piece of Home').toBeAttached();
+  await settle(page);
+
+  const drawn = await page.evaluate(async () => {
+    const bar = document.querySelector('#pbar').style.getPropertyValue('--song-pos');
+    const posOf = (sel) => [...document.querySelectorAll(sel)].map((el) => el.style.getPropertyValue('--song-pos'));
+    const sameTask = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };   // microtasks only: no task boundary
+    // a part redrawn: the list's rows drawn anew, as at a like or a read coming back
+    document.querySelector('.pz lull-part[name="list"] .lull-list').remove();
+    App.parts.redraw('like');
+    await sameTask();
+    const part = posOf('.pz .lull-list__row .pz-pos');   // the rows drawn, not the row's template (lull-row)
+    // a piece of another screen drawn again at a read coming back: Home's lead, a host of the song's place
+    document.querySelector('.pz-lead .disc-lead').remove();
+    App.parts.redraw('read:/api/feed');
+    await sameTask();
+    const lead = posOf('.pz-lead .disc-lead, .pz-lead [data-live]');
+    // a tab of the side panel drawn by renderCtx
+    App.panel('gate-live', { label: 'Gate', render: () => '<p class="gate-tab"><i class="gate-live" data-live></i></p>' });
+    App.openPanel('gate-live');
+    await sameTask();
+    const tab = posOf('#ctx .gate-live');
+    return { bar, part, lead, tab };
+  });
+  expect(drawn.bar, 'the player bar\'s --song-pos').toBe('0.4');
+  expect(drawn.part.length, 'the list\'s rows, drawn again').toBeGreaterThan(0);
+  expect.soft(drawn.part, 'a [data-live] in a part App.parts.redraw drew: its --song-pos in the same task').toEqual(drawn.part.map(() => drawn.bar));
+  expect(drawn.lead.length, 'Home\'s lead and its live host in the theme\'s piece of Home, drawn again').toBe(2);
+  expect.soft(drawn.lead, 'a host of the song\'s place in a piece of a screen App.parts.redraw drew: its --song-pos in the same task').toEqual(drawn.lead.map(() => drawn.bar));
+  expect(drawn.tab.length, 'the tab\'s live host, drawn').toBeGreaterThan(0);
+  expect.soft(drawn.tab, 'a [data-live] in a tab renderCtx drew: its --song-pos in the same task').toEqual(drawn.tab.map(() => drawn.bar));
+  await ctx.close();
+});
+
+// A hero copied from lull's own markup of before the one view keeps working: its shuffle and repeat pills carry only
+// data-act, as lull's did, and still say whether they are on (aria-pressed) as shuffle and repeat change.
+test('Now Playing pills that carry only data-act say whether shuffle and repeat are on', async ({ browser }) => {
+  const ctx = await context(browser), page = await ctx.newPage();
+  await openScreen(page, `/album/${ids.album}`, { design: 'copied' });
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id'));
+    App.player.playTrack(rows[0], rows);
+  });
+  await page.waitForFunction(() => App.player.state.playing);
+  await page.evaluate(() => { location.hash = '#/now'; });
+  const shuffle = page.locator('.now .cp-hero [data-act="shuffle"]'), repeat = page.locator('.now .cp-hero [data-act="repeat"]');
+  await expect(shuffle, 'the hero\'s shuffle pill').toBeVisible();
+  const state = () => page.evaluate(() => ({ shuffle: App.player.state.shuffle, repeat: App.player.state.repeat }));
+  for (const [what, act] of [['shuffle on', () => App.player.setShuffle()], ['repeat all', () => App.player.cycleRepeat()],
+    ['repeat one', () => App.player.cycleRepeat()], ['repeat off', () => App.player.cycleRepeat()], ['shuffle off', () => App.player.setShuffle()]]) {
+    await page.evaluate(act);
+    const s = await state();
+    await expect.soft(shuffle, `${what}: the shuffle pill (shuffle ${s.shuffle})`).toHaveAttribute('aria-pressed', String(s.shuffle));
+    await expect.soft(repeat, `${what}: the repeat pill (repeat ${s.repeat})`).toHaveAttribute('aria-pressed', String(s.repeat !== 'off'));
+  }
   await ctx.close();
 });

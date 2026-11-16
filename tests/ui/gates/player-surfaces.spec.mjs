@@ -577,6 +577,35 @@ test.describe('a system play after the song stopped for good', () => {
   });
 });
 
+// The browser output, told the system's play was ignored (a failed song's), stops that element again (ADR-0041): within a
+// frame or two it is paused, and nothing sounds under the failed song.
+test('a system play on a failed song\'s element is stopped again, and nothing sounds / browser', async ({ page, request }) => {
+  const song = plain1;
+  await mainAt(page, 'lull', `/album/${song.albumId}`);
+  await page.evaluate((id) => App.player.playList([id], 0), song.id);
+  await playing(page);
+  await request.post('/__fixture/emit', { headers: { 'x-fixture-client': fixtureClient() }, data: { topic: 'stream', data: {
+    trackId: song.id, jobId: 'fail-' + song.id, status: 'failed', attempt: 0, received: 0, size: 0, peersFound: 0, failedPeers: [], error: 'No Soulseek peer shares this song right now' } } });
+  await expect.poll(() => page.evaluate(() => App.player.view().activity), { message: 'the song failed' }).toBe('error');
+  const seen = await page.evaluate(async (id) => {
+    const el = [...window.__played].find((e) => e.src.includes(`/api/stream/${encodeURIComponent(id)}`));
+    if (!el) return null;
+    const paused = el.paused;
+    el.play().catch(() => {});                   // the system resumes the element (a media key, a headset)
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const soon = el.paused, at = el.currentTime;
+    await new Promise((r) => setTimeout(r, 800));
+    return { paused, soon, later: el.paused, moved: el.currentTime - at, heard: App.player.heard(), intent: App.player.state.playing };
+  }, song.id);
+  expect(seen, 'the failed song\'s element').not.toBeNull();
+  expect(seen.paused, 'the element, before the system play').toBe(true);
+  expect.soft(seen.soon, 'the element, two frames after the system play: paused again').toBe(true);
+  expect.soft(seen.later, 'the element, 0.8 s on: still paused').toBe(true);
+  expect.soft(seen.moved, 'seconds the failed song played on after the system play').toBeLessThan(0.1);
+  expect.soft(seen.heard, 'music heard').toBe(false);
+  expect.soft(seen.intent, 'the intent').toBe(false);
+});
+
 // A system pause during a better copy's handover fade reaches the intent, whichever deck the system pauses (ADR-0041):
 // here the outgoing deck, then the incoming one. The fade lasts a fraction of a second, so the pauses come at its very
 // start: the moment the copy's gain curve is set, which is right after the song's.

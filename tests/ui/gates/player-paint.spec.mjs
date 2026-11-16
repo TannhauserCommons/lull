@@ -61,13 +61,15 @@ function showsWords(sel) {
 }
 const near = (a, b) => a && b && ['x', 'y', 'w', 'h'].every((k) => Math.abs(a[k] - b[k]) <= 0.5);
 const sameBoxes = (a, b) => a.length === b.length && a.every((box, i) => (box === null ? b[i] === null : near(box, b[i])));
-/* the boxes of `sels` with the status line taken out of the layout, then put back */
-async function withoutStatus(mini, sels) {
-  await mini.addStyleTag({ content: '[data-dk-status] { display: none !important; }' }).then((h) => h.evaluate((s) => s.setAttribute('data-gate', 'no-status')));
+/* the boxes of `sels` with `css` applied, then taken off again */
+async function withStyle(mini, css, sels) {
+  await mini.addStyleTag({ content: css }).then((h) => h.evaluate((s) => s.setAttribute('data-gate', 'with-style')));
   const out = await mini.evaluate(boxesOf, sels);
-  await mini.evaluate(() => document.querySelector('style[data-gate="no-status"]').remove());
+  await mini.evaluate(() => document.querySelector('style[data-gate="with-style"]').remove());
   return out;
 }
+/* the boxes of `sels` with the status line taken out of the layout, then put back */
+const withoutStatus = (mini, sels) => withStyle(mini, '[data-dk-status] { display: none !important; }', sels);
 
 const PARTS = {
   mini: { player: '[data-dk-player]', title: '.device__title', artist: '.device__artist', facts: '.device__facts', wave: '[data-dk-player] .wave', times: '[data-dk-player] .wave-times' },
@@ -89,6 +91,17 @@ for (const style of ['mini', 'strip']) {
       if (state === 'playing') playing.boxes = shown;
       expect.soft(await mini.evaluate(showsWords, '[data-dk-status]'), `${state}: no status line shows`).toBe(false);
       expect.soft(sameBoxes(shown, await withoutStatus(mini, sels)), `${state}: the player, the title, the artist and the facts sit as they would with no status line`).toBe(true);
+    }
+    // a song whose copy names no format and has fully arrived has nothing in its facts row: the row takes no room, as
+    // before (its height nothing, every box where the default markup put it before the view)
+    if (style === 'mini') {
+      await inState(mini, 'playing', { copy: { where: 'soulseek', format: '', lossless: false, peer: 'mira', received: 1 } });
+      const facts = await mini.evaluate((sel) => { const f = document.querySelector(sel); return f && { h: f.getBoundingClientRect().height, words: f.textContent.trim() }; }, parts.facts);
+      expect.soft(facts && facts.words, 'no format, all arrived: the facts row has no words').toBe('');
+      expect.soft(facts && facts.h, 'no format, all arrived: the empty facts row\'s height').toBeLessThanOrEqual(0.5);
+      const bare = await mini.evaluate(boxesOf, sels);
+      const before = await withStyle(mini, `${parts.facts} { display: flex !important; min-height: 0 !important; height: 0 !important; }`, sels);
+      expect.soft(sameBoxes(bare, before), `no format, all arrived: the player, the title, the artist, the wave and the times sit as they did before the view (${JSON.stringify(bare)} against ${JSON.stringify(before)})`).toBe(true);
     }
     for (const state of ['loading', 'choose', 'failed', 'away']) {
       await inState(mini, 'playing');
@@ -182,6 +195,88 @@ for (const [design, style] of [...designs.map((d) => [d, 'mini']), [DEFAULT, 'st
   });
 }
 
+/* in a window: from now on, every text a live region outside the player says (lull's announcer, wherever it is), in
+   window.__said. A region inside [data-dk-player] is the theme's own markup, which it says itself */
+function hearAnnouncer() {
+  window.__said = [];
+  const LIVE = '[aria-live]:not([aria-live="off"]), [role="status"], [role="alert"]';
+  const regionOf = (n) => { const el = n && (n.nodeType === 1 ? n : n.parentElement); const r = el && el.closest(LIVE); return r && !r.closest('[data-dk-player]') ? r : null; };
+  new MutationObserver((records) => {
+    for (const r of records) {
+      const region = regionOf(r.target);
+      if (region) { if ((r.type === 'characterData' || r.addedNodes.length) && region.textContent.trim()) window.__said.push(region.textContent.trim()); continue; }
+      for (const n of r.addedNodes) if (n.nodeType === 1 && n.matches(LIVE) && !n.closest('[data-dk-player]') && n.textContent.trim()) window.__said.push(n.textContent.trim());
+    }
+  }).observe(document.body, { childList: true, subtree: true, characterData: true });
+}
+const saidSince = (mini, n) => mini.evaluate((n) => window.__said.slice(n), n);
+const saidCount = (mini) => mini.evaluate(() => window.__said.length);
+const AFTER_SAYING = 400;   // ms: lull's announcer says its words a moment after it is told (desktop.js announce)
+
+// The mini player announces the song once (ADR-0041): through lull's announcer while its slot has no live region of its
+// own on the song, as every built-in now; a slot whose [data-dk-now] keeps aria-live says the song itself, and lull
+// doesn't say it again.
+for (const design of designs) {
+  test(`a new song is announced once: by lull, or by the slot's own live region / ${design}`, async ({ page }) => {
+    const mini = await alone(page, design, 'mini');
+    await mini.evaluate(hearAnnouncer);
+    await inState(mini, 'playing');   // the first view: the player as it already was, nothing to say
+    const own = await mini.evaluate(() => !!document.querySelector('[data-dk-now][aria-live]:not([aria-live="off"])'));
+    let n = await saidCount(mini);
+    await mini.evaluate(fireView, { track: { id: 't2', title: 'Second Song', artist: 'Artist' } });
+    if (!own) await expect.poll(() => saidSince(mini, n).then((s) => s.filter((t) => t.includes('Second Song')).length), { message: 'lull announces the new song', timeout: 2000 }).toBeGreaterThan(0);
+    await mini.waitForTimeout(AFTER_SAYING);
+    expect.soft((await saidSince(mini, n)).filter((t) => t.includes('Second Song')).length, `the new song, as lull announced it (${own ? 'the slot says it itself' : 'the slot has no live region on it'})`).toBe(own ? 0 : 1);
+
+    await mini.evaluate(() => document.querySelectorAll('[data-dk-now]').forEach((el) => el.setAttribute('aria-live', 'polite')));
+    n = await saidCount(mini);
+    await mini.evaluate(fireView, { track: { id: 't3', title: 'Third Song', artist: 'Artist' } });
+    await mini.waitForTimeout(AFTER_SAYING);
+    expect.soft((await saidSince(mini, n)).filter((t) => t.includes('Third Song')), 'with [data-dk-now][aria-live]: what lull announced of the song').toEqual([]);
+  });
+}
+
+// The mini player announces what the listener didn't cause and can't see coming, once each: a failure, a copy to pick, the
+// queue's end, lull's window away. Not the routine moves between loading, playing and paused (ADR-0041): a streaming
+// song's short waits for the output, a pause and its resume, a song starting.
+test('the mini player says nothing of loading, playing and paused, and once each of a failure, a pick, the end and main away', async ({ page }) => {
+  const mini = await alone(page, DEFAULT, 'mini');
+  await mini.evaluate(hearAnnouncer);
+  const streaming = { status: 'streaming', words: 'Streaming from mira', copy: peerCopy, transfer: halfway };
+  const waiting = { ...streaming, activity: 'loading', status: 'buffering', words: 'Buffering from mira', clock: { rate: 0 } };
+  const next = { id: 't2', title: 'Second Song', artist: 'Artist', album: 'Album' };
+  const step = async (over) => { await mini.evaluate(fireView, over); await mini.waitForTimeout(120); };
+  await step(streaming);   // the first view: the player as it already was
+  let n = await saidCount(mini);
+  for (const [what, over] of [
+    ['the output waits', waiting], ['it plays on', streaming], ['the output waits again', waiting], ['it plays on', streaming],
+    ['paused', { ...streaming, activity: 'paused', intent: false, clock: { rate: 0 } }],
+    ['resumed: the output starts', waiting], ['resumed: playing', streaming],
+    ['the next song starts', { track: next, activity: 'loading', clock: { rate: 0, pos: 0 } }], ['the next song plays', { track: next, clock: { pos: 0 } }],
+  ]) await step(over);
+  await mini.waitForTimeout(AFTER_SAYING);
+  const routine = await saidSince(mini, n);
+  expect.soft(routine.filter((t) => !t.includes('Second Song')), 'said of routine moves (two waits, a pause, a resume, a song start)').toEqual([]);
+  expect.soft(routine.filter((t) => /\b(playing|paused|loading|buffering|streaming)\b/i.test(t)), 'said with an activity\'s words').toEqual([]);
+
+  const playingNext = { track: next };
+  for (const [what, act, words] of [
+    ['a failure', () => step({ track: next, ...STATE.failed }), STATE.failed.words],
+    ['a copy to pick', () => step({ track: next, ...STATE.choose }), STATE.choose.words],
+    ['the queue\'s end', () => step({ track: next, activity: 'ended', status: 'ended', words: 'End of queue', intent: false, clock: { rate: 0, pos: 200 } }), null],
+    ['main away', async () => { await mini.evaluate(() => window.__bridge.fire('main-bye', {})); await mini.waitForTimeout(120); }, null],
+  ]) {
+    await step(playingNext);
+    await mini.waitForTimeout(AFTER_SAYING);
+    n = await saidCount(mini);
+    await act(); await act();   // the same news twice (a view sent again, a second bye): said once
+    await mini.waitForTimeout(AFTER_SAYING);
+    const said = await saidSince(mini, n);
+    expect.soft(said.length, `${what}: announcements (${JSON.stringify(said)})`).toBe(1);
+    if (words && said.length) expect.soft(said[0], `${what}: what was said`).toContain(words);
+  }
+});
+
 // The cover comes on its own ('player-art') and redraws the song's part; what the painter fills there (the share arrived)
 // is there again at once, not at the next view, which a paused or loading song may not send for a while.
 test('the share arrived stays filled when the cover comes', async ({ page }) => {
@@ -253,6 +348,27 @@ test.describe('a theme\'s own parts', () => {
       const seen = await mini.evaluate(() => { const k = document.querySelector('[data-gate="own-repeat"]'); return { href: k.querySelector('use').getAttribute('href'), pressed: k.getAttribute('aria-pressed') }; });
       expect.soft(seen.href, `repeat ${repeat}: the theme's icon`).toBe('#gate-loop');
       expect.soft(seen.pressed, `repeat ${repeat}: aria-pressed still follows the view`).toBe(String(repeat !== 'off'));
+    }
+  });
+
+  // docs/themes.md section 6: lull gives an empty key its icon on play-pause and like only. An empty repeat, shuffle or
+  // save key is one the theme draws with CSS: nothing is put in it, whatever the mode.
+  test('an empty repeat, shuffle or save key stays empty; an empty play or like key gets lull\'s icon / mini', async ({ page }) => {
+    const mini = await alone(page, DEFAULT, 'mini');
+    await mini.evaluate(() => {
+      const host = document.querySelector('[data-dk-player]');
+      for (const k of ['repeat', 'shuffle', 'save', 'play-pause', 'like']) {
+        const b = document.createElement('button');
+        b.setAttribute('data-dk', k); b.setAttribute('data-gate', 'empty-key'); b.setAttribute('aria-label', k);
+        host.appendChild(b);
+      }
+    });
+    for (const repeat of ['all', 'one', 'off']) {
+      await mini.evaluate(fireView, { repeat, shuffle: repeat !== 'off', saved: repeat === 'one', liked: repeat === 'all' });
+      const keys = await mini.evaluate(() => Object.fromEntries([...document.querySelectorAll('[data-gate="empty-key"]')]
+        .map((b) => [b.getAttribute('data-dk'), { html: b.innerHTML, children: b.childElementCount }])));
+      for (const k of ['repeat', 'shuffle', 'save']) expect.soft(keys[k], `repeat ${repeat}: the theme's empty ${k} key`).toEqual({ html: '', children: 0 });
+      for (const k of ['play-pause', 'like']) expect.soft(keys[k].children, `repeat ${repeat}: the empty ${k} key gets lull's icon`).toBeGreaterThan(0);
     }
   });
 
