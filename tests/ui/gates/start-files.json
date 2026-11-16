@@ -16,6 +16,7 @@
     "align.js": "the player's switch to a better copy mid-song",
     "eq.js": "the device's equaliser, applied from the first song",
     "player-rules.js": "the player's rules, which the player follows from the first song",
+    "player-view.js": "the one player view: the player derives what every surface shows of it, from the first song",
     "app.js": "the router, the shell and the player",
     "layout.js": "size classes and the panels",
     "connect.js": "lull Connect: this device reports what it plays, and takes commands, from the start",
