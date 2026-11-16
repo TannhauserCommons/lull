@@ -1752,7 +1752,7 @@
 :root[data-design="glasshouse"] .dk-strip .dk-sep { background: color-mix(in srgb, var(--gh-frame) 55%, transparent); }
 :root[data-design="glasshouse"] .dk-strip__keys .btn-icon { color: var(--fg-panel); }
 :root[data-design="glasshouse"] .dk-strip__keys .btn-gloss { --size: 44px; width: 44px; height: 44px; }
-:root[data-design="glasshouse"] .dk-strip-wrap[data-playing="false"] .dk-strip__title { opacity: .92; }
+:root[data-design="glasshouse"] .dk-strip-wrap[data-playing="false"] .dk-strip__title { opacity: .96; }
 
 /* =====================================================================
    Classic stage: Webamp alone on the misty desktop itself (the app is hidden while the stage is open, so nothing smears
