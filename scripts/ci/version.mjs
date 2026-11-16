@@ -8,7 +8,7 @@
 // dependency (`document-features`) that happens to share lull's version number. The F-Droid changelog is written, not checked.
 // A bump prepares everything that can fail (temp files, the changelog stub, staging it) before the first holder changes, and
 // rolls back if a holder cannot be replaced; a rerun at a version the tree already partly carries completes what is missing.
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -87,23 +87,56 @@ function setManifestVersion(file, text, section, version) {
   return lines.join('');
 }
 
-/** The `members = [...]` paths of a manifest's [workspace] (none when it has no such list). */
-function workspaceMembers(text) {
+/** The strings of the TOML array that opens `text`, or null when `text` does not start with a plain list of strings. */
+function stringList(text) {
+  const token = /\s+|#[^\n]*|,|"([^"\n]*)"|'([^'\n]*)'|(\[)|(\])/y;
+  const items = [];
+  let open = false;
+  for (;;) {
+    const match = token.exec(text);
+    if (!match) return null;
+    if (match[3]) {
+      if (open) return null;
+      open = true;
+    } else if (match[4]) {
+      return open ? items : null;
+    } else if (match[1] !== undefined || match[2] !== undefined) {
+      if (!open) return null;
+      items.push(match[1] ?? match[2]);
+    }
+  }
+}
+
+/**
+ * What a manifest's [workspace] says about its members: the literal `members` and `exclude` folders, and `errors` for anything
+ * this script cannot resolve to a manifest (a glob, a form it does not read), which `check` and `bump` refuse to guess at.
+ */
+function workspaceInfo(file, text) {
+  const info = { members: [], exclude: [], errors: [] };
   const lines = linesOf(text);
   let current = null;
   for (let i = 0; i < lines.length; i++) {
     const name = header(lines[i]);
-    if (name !== null) current = name;
-    else if (current === 'workspace' && /^\s*members\s*=/.test(lines[i])) {
-      let list = '';
-      for (let j = i; j < lines.length; j++) {
-        list += lines[j].replace(/#.*$/, '');
-        if (list.includes(']')) break;
+    if (name !== null) {
+      current = name;
+      if (/^workspace\.(members|exclude)$/.test(name)) info.errors.push(`${file}: [${name}] is a table of its own, which this script does not read; use a list under [workspace]`);
+    } else if (current === null && /^\s*workspace\s*[.=]/.test(lines[i])) {
+      info.errors.push(`${file}: workspace is written as a dotted or inline key, which this script does not read; use a [workspace] table`);
+    } else if (current === 'workspace') {
+      const key = /^\s*(members|exclude)\s*=/.exec(lines[i]);
+      if (!key) continue;
+      const items = stringList(lines.slice(i).join('').replace(/^\s*(members|exclude)\s*=/, ''));
+      if (items === null) {
+        info.errors.push(`${file}: workspace.${key[1]} is not a plain list of strings, which this script does not read`);
+        continue;
       }
-      return [...list.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+      for (const item of items) {
+        if (/[*?\[\]{}]/.test(item)) info.errors.push(`${file}: workspace.${key[1]} entry "${item}" is a glob, which this script does not expand; list ${key[1]} by path`);
+        else info[key[1]].push(item);
+      }
     }
   }
-  return [];
+  return info;
 }
 
 const INHERITS = /^\s*version\s*\.\s*workspace\s*=\s*true\b|^\s*version\s*=\s*\{[^}]*\bworkspace\s*=\s*true/;
@@ -127,27 +160,60 @@ function packageOf(text) {
 
 /** The packages of one workspace that lull versions: its listed members, then its own root package if the manifest has one. */
 function workspacePackages(files, [manifest, dir]) {
-  const members = workspaceMembers(files[manifest]).filter((m) => !m.includes('*')).map((m) => `${dir}${m}/Cargo.toml`);
+  const members = workspaceInfo(manifest, files[manifest]).members.map((m) => `${dir}${m}/Cargo.toml`);
   const own = packageOf(files[manifest]).name === null ? [] : [manifest];
   return [...members, ...own];
 }
 
+/** Every manifest a workspace's lists name, members and excluded folders alike: all must be there to read. */
+function workspaceManifests(files, [manifest, dir]) {
+  const { members, exclude } = workspaceInfo(manifest, files[manifest]);
+  return [...members, ...exclude].map((m) => `${dir}${m}/Cargo.toml`);
+}
+
+/** What stops the script reading the workspaces: lists it cannot resolve, a listed folder with no manifest, a renamed member. */
+function structureProblems(files) {
+  const problems = [];
+  for (const workspace of WORKSPACES) {
+    const [manifest] = workspace;
+    problems.push(...workspaceInfo(manifest, files[manifest]).errors);
+    for (const file of workspaceManifests(files, workspace)) {
+      if (files[file] === undefined) problems.push(`${file}: missing, but ${manifest} lists its folder`);
+    }
+  }
+  // A dependency renamed with `package = "lull-x"` in the root manifest is spelled under another key, so the app's reach would be guessed.
+  for (const [name] of memberNames(files, WORKSPACES[0])) {
+    if (hasRename(files[MANIFEST], name)) problems.push(`${MANIFEST}: renames a dependency on ${name} (package = "${name}"), which this script cannot follow`);
+  }
+  return problems;
+}
+
+/** [name, file] of the packages of one workspace whose manifests were read. */
+const memberNames = (files, workspace) => workspacePackages(files, workspace).filter((f) => files[f] !== undefined).map((f) => [packageOf(files[f]).name, f]).filter(([name]) => name !== null);
+
+const hasRename = (text, name) => new RegExp(`\\bpackage\\s*=\\s*["']${escaped(name)}["']`).test(text);
+
 const escaped = (name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Whether a manifest's text depends on the package `name`: as a key, as a `[dependencies.name]` table, or renamed with `package =`. */
+function reaches(text, name) {
+  const key = new RegExp(`^\\s*${escaped(name)}\\s*[.=]`, 'm');
+  const table = new RegExp(`(^|\\.)(dependencies|dev-dependencies|build-dependencies)\\.${escaped(name)}$`);
+  return key.test(text) || hasRename(text, name) || linesOf(text).some((line) => table.test((header(line) ?? '').replace(/\s+/g, '')));
+}
 
 /**
  * The package names each lock file must hold: the workspace's own packages, and for the app the root members it reaches
- * (a member is reached when a manifest of the closure names it as a dependency; the lock lists them whatever the target).
+ * (a member is reached when a manifest of the closure depends on it; the lock lists them whatever the target).
  */
 function expectedLocks(files) {
-  const names = ([manifest, dir]) => workspacePackages(files, [manifest, dir]).filter((f) => files[f] !== undefined).map((f) => [packageOf(files[f]).name, f]);
-  const [root, app] = WORKSPACES.map((w) => names(w));
+  const [root, app] = WORKSPACES.map((workspace) => memberNames(files, workspace));
   const reached = new Map(app);
-  const queue = [...app.map(([, file]) => file)];
-  const known = new Map(root);
+  const queue = app.map(([, file]) => file);
   while (queue.length) {
     const text = files[queue.pop()];
-    for (const [name, file] of known) {
-      if (name && !reached.has(name) && new RegExp(`^\\s*${escaped(name)}\\s*[.=]`, 'm').test(text)) {
+    for (const [name, file] of root) {
+      if (name && !reached.has(name) && reaches(text, name)) {
         reached.set(name, file);
         queue.push(file);
       }
@@ -192,7 +258,9 @@ function readTree(root) {
   const files = {};
   for (const file of [MANIFEST, APP_MANIFEST, ANDROID_CONF, ...LOCKS]) files[file] = readFile(root, file);
   for (const workspace of WORKSPACES) {
-    for (const file of workspacePackages(files, workspace)) if (files[file] === undefined && existsSync(join(root, file))) files[file] = readFile(root, file);
+    for (const file of [...workspaceManifests(files, workspace), ...workspacePackages(files, workspace)]) {
+      if (files[file] === undefined && existsSync(join(root, file))) files[file] = readFile(root, file);
+    }
   }
   return files;
 }
@@ -229,14 +297,12 @@ export function problemsIn(files) {
     problems.push(`${MANIFEST}: ${error.message}`);
   }
 
+  problems.push(...structureProblems(files));
   for (const workspace of WORKSPACES) {
     const [manifest] = workspace;
     const shared = manifestVersion(files[manifest], 'workspace.package');
     for (const file of workspacePackages(files, workspace)) {
-      if (files[file] === undefined) {
-        problems.push(`${file}: missing, but ${manifest} lists it as a member`);
-        continue;
-      }
+      if (files[file] === undefined) continue; // structureProblems names it
       const pkg = packageOf(files[file]);
       if (pkg.name === null) problems.push(`${file}: no [package] name`);
       else if (pkg.inherits && shared !== version) problems.push(`${file}: takes the workspace version, which ${manifest} has as ${shared ?? 'nothing'}, not ${version}`);
@@ -289,18 +355,17 @@ function retarget(files, version, code) {
   return next;
 }
 
-const canonical = (path) => realpathSync.native(path);
-
-/** `git add` of `file`, only when `root` is the top of a git work tree: the skeleton commits a bump with `git commit -am`, which skips new files. */
+/**
+ * `git add` of `file` in the git work tree lull's folder sits in, an enclosing repository included: it is the repository a
+ * `git commit -am` run from here commits to. False when the folder is in none. Any other failure of git throws.
+ */
 function stage(root, file) {
-  let top;
   try {
-    top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch {
-    return false; // not a repository (or no git): there is nothing to commit into
+    execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (error) {
+    if (error.status === 128 && /not a git repository/i.test(error.stderr)) return false;
+    throw error;
   }
-  // Inside some other repository (lull unpacked into one): staging there would stage into the wrong tree.
-  if (canonical(top) !== canonical(root)) return false;
   execFileSync('git', ['add', '--', file], { cwd: root, stdio: 'inherit' });
   return true;
 }
@@ -311,12 +376,14 @@ const unstage = (root, file) => execFileSync('git', ['rm', '--cached', '-q', '--
  * Write `version` into every holder under `root`. Refuses anything that is not X.Y.Z, a version older than the one Cargo.toml
  * carries (the same version completes what an earlier run left undone, and is a no-op on a finished tree), a versionCode below
  * the file's, and a holder that is read-only. Everything that can fail runs before a holder changes: the new texts go to temp
- * files, the changelog stub is created and staged (`stage: true`), and only then are the temp files renamed over the holders,
+ * files, the changelog stub is created and staged (`stage: true`, in whatever git work tree the folder is in), and only then are the temp files renamed over the holders,
  * each restored if a later one cannot be. Returns `{ written, staged }`.
  */
 export function bump(root, version, { stage: staging = false } = {}) {
   const code = versionCode(version);
   const files = readTree(root);
+  const unresolved = structureProblems(files);
+  if (unresolved.length) throw new Error(`cannot read the workspaces:\n  ${unresolved.join('\n  ')}`);
   const current = carried(files);
   if (!VERSION.test(current)) throw new Error(`${MANIFEST}: [workspace.package] has version ${JSON.stringify(current)}, which is not X.Y.Z; fix it by hand before bumping`);
   if (compare(version, current) < 0) throw new Error(`${version} is older than ${current}`);
@@ -393,7 +460,7 @@ function main(args) {
       const version = rest[0];
       const { written, staged } = bump(ROOT, version, { stage: true });
       console.log(`bumped to ${version} (versionCode ${versionCode(version)}): ${written.length ? written.join(', ') : 'nothing to change'}`);
-      if (!staged) console.log('the changelog stub was not staged: this is not the top of a git work tree');
+      if (!staged) console.log('the changelog stub was not staged: this folder is not in a git work tree');
       console.log(version);
     } else {
       console.error('usage: node scripts/ci/version.mjs [print | check | bump X.Y.Z]');

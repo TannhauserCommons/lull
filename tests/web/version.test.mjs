@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { bump, problems, readVersion, trackedFiles, versionCode } from '../../scripts/ci/version.mjs';
+import { bump, problemsIn, problems, readVersion, trackedFiles, versionCode } from '../../scripts/ci/version.mjs';
 
 const repo = resolve(import.meta.dirname, '..', '..');
 const CHANGELOGS = 'fastlane/metadata/android/en-US/changelogs';
@@ -360,7 +360,7 @@ test('a rerun at a version the tree already partly carries completes it', (t) =>
   assert.deepEqual(bump(root, target, { stage: true }).written, []);
 });
 
-test('the stub is staged only in the repository whose top is lull\'s tree', (t) => {
+test('the stub is staged in the repository lull\'s folder sits in, an enclosing one included', (t) => {
   const outer = mkdtempSync(join(tmpdir(), 'lull-version-outer-'));
   t.after(() => rmSync(outer, { recursive: true, force: true }));
   execFileSync('git', ['init', '-q'], { cwd: outer });
@@ -372,7 +372,59 @@ test('the stub is staged only in the repository whose top is lull\'s tree', (t) 
   }
   const target = nextPatch(readVersion(root));
   const { staged } = bump(root, target, { stage: true });
-  assert.equal(staged, false);
-  assert.ok(existsSync(join(root, CHANGELOGS, `${versionCode(target)}.txt`)));
-  assert.equal(execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: outer, encoding: 'utf8' }).trim(), '');
+  assert.equal(staged, true);
+  // `git commit -am` from lull's folder commits to this repository, so that is where the new file must be staged.
+  assert.equal(execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: outer, encoding: 'utf8' }).trim(), `unpacked/${CHANGELOGS}/${versionCode(target)}.txt`);
+});
+
+test('a workspace list the script cannot resolve is refused by the check and by bump, naming the file and the entry', (t) => {
+  const cases = [
+    ['a glob in members', 'Cargo.toml', (text) => text.replace('members = [', 'members = [\n  "crates/*",'), /^Cargo\.toml: workspace\.members entry "crates\/\*" is a glob/],
+    ['a glob in exclude', 'Cargo.toml', (text) => text.replace('exclude = ["app"]', 'exclude = ["app", "tools/*"]'), /^Cargo\.toml: workspace\.exclude entry "tools\/\*" is a glob/],
+    ['a member folder with no manifest', 'Cargo.toml', (text) => text.replace('"crates/core",', '"crates/core",\n  "crates/gone",'), /^crates\/gone\/Cargo\.toml: missing, but Cargo\.toml lists its folder/],
+    ['an excluded folder with no manifest', 'Cargo.toml', (text) => text.replace('exclude = ["app"]', 'exclude = ["app", "tools"]'), /^tools\/Cargo\.toml: missing/],
+    ['members as a dotted key', 'Cargo.toml', (text) => `workspace.members = ["crates/core"]\n${text}`, /^Cargo\.toml: workspace is written as a dotted or inline key/],
+    ['members that is not a list of strings', 'Cargo.toml', (text) => text.replace(/members = \[[^\]]*\]/, 'members = { core = "crates/core" }'), /^Cargo\.toml: workspace\.members is not a plain list of strings/],
+    ['a renamed member in the root manifest', 'Cargo.toml', (text) => `${text}\n[workspace.dependencies.core]\npath = "crates/core"\npackage = "lull-core"\n`, /^Cargo\.toml: renames a dependency on lull-core/],
+  ];
+  for (const [label, file, change, expected] of cases) {
+    const root = copyOfRepo(t);
+    edit(root, file, change);
+    const found = problems(root);
+    assert.ok(found.some((line) => expected.test(line)), `check, ${label}: ${found.join(' | ')}`);
+    const before = snapshot(root);
+    assert.throws(() => bump(root, nextPatch(readVersion(root))), new RegExp(expected.source.replace(/^\^/, ''), 'm'), `bump, ${label}`);
+    assert.deepEqual(changedFiles(before, snapshot(root)), [], `bump, ${label}, wrote files`);
+  }
+});
+
+test('a glob is reported although the member behind it is stale and its lock entry gone', (t) => {
+  const root = copyOfRepo(t);
+  edit(root, 'Cargo.toml', (text) => text.replace(/members = \[[^\]]*\]/, 'members = ["crates/*"]'));
+  edit(root, 'crates/core/Cargo.toml', (text) => text.replace('version.workspace = true', 'version = "9.9.9"'));
+  edit(root, 'Cargo.lock', (text) => withoutPackage(text, 'lull-core'));
+  const found = problems(root);
+  assert.ok(found.some((line) => /^Cargo\.toml: .*is a glob/.test(line)), found.join(' | '));
+});
+
+test('the app workspace\'s reach follows a dependency written as a table, and one renamed with package =', () => {
+  const manifest = (name, deps = '') => `[package]\nname = "${name}"\nversion = "1.0.0"\n${deps}`;
+  const lock = (names) => names.map((name) => `[[package]]\nname = "${name}"\nversion = "1.0.0"\n`).join('\n');
+  const tree = (appDeps, appLock) => ({
+    'Cargo.toml': '[workspace]\nmembers = ["crates/a"]\nexclude = ["app"]\n\n[workspace.package]\nversion = "1.0.0"\n',
+    'crates/a/Cargo.toml': '[package]\nname = "lull-a"\nversion.workspace = true\n',
+    'app/Cargo.toml': manifest('lull-app', appDeps),
+    'app/tauri.android.conf.json': '{"bundle":{"android":{"versionCode":1000000}}}',
+    'Cargo.lock': lock(['lull-a']),
+    'app/Cargo.lock': lock(appLock),
+  });
+  assert.deepEqual(problemsIn(tree('\n[dependencies]\nlull-a = { path = "../crates/a" }\n', ['lull-app', 'lull-a'])), []);
+  for (const [label, deps] of [
+    ['a [dependencies.x] table', '\n[dependencies.lull-a]\npath = "../crates/a"\n'],
+    ['a target table', '\n[target.\'cfg(unix)\'.dependencies.lull-a]\npath = "../crates/a"\n'],
+    ['a rename', '\n[dependencies]\nsomething = { path = "../crates/a", package = "lull-a" }\n'],
+  ]) {
+    assert.deepEqual(problemsIn(tree(deps, ['lull-app'])), ['app/Cargo.lock: no entry for lull-a'], `${label} was not followed`);
+    assert.deepEqual(problemsIn(tree(deps, ['lull-app', 'lull-a'])), [], label);
+  }
 });
