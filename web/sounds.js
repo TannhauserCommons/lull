@@ -234,8 +234,8 @@
   /* ---------- the buffering loop: only in silence, gone the moment the music sounds ---------- */
   var loopSrc = null, loopUrl = null, loopInstead = null;
   function waiting() {
-    /* a stalled peer has its own cue (below): the loop is for a song still being found or buffered */
-    return armed && P.view().activity === 'loading' && ps.status !== 'stalled';
+    /* a wait for a source with nothing sounding, not an output starting a song it already holds (PlayerView.waitsForSource) */
+    return armed && PlayerView.waitsForSource(P.view());
   }
   function loopEntry() {
     if (loopInstead) { var g = S.soundFor(loopInstead, stack(), settings, known, true); if (g && g.entry.loop) return g.entry; }

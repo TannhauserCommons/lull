@@ -218,8 +218,13 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   `playing` or `loading`, first match: the listener's pause is `paused`; a song the output plays and isn't waiting on is
   `playing` whatever the status says (a stalled peer whose arrived part still plays is playing); anything else is
   `loading`. Nothing else decides "playing" or "busy": the wave's motion, the play keys' Pause and spinner
-  (`PlayerView.pressed`: playing, loading or choose), Now Playing's light and state words, the buffering loop's sound
-  (not while `stalled`, which has its own cue) all read it. `data-playing` stays the listener's intent, for themes.
+  (`PlayerView.pressed`: the view's `intent`, which is `ps.playing` and what the key's press acts on, so every end and
+  failure shows Play), Now Playing's light and state words, the buffering loop's sound (`PlayerView.waitsForSource`: a
+  wait for a source with nothing sounding, `finding`, `queued` or `stalled`; never a resume, a song's start or a gapless
+  handover) all read it. `data-playing` stays the listener's intent, for themes, painted from `intent`.
+  `words` is the state without a wait's running count ("Finding a source", not "..., 7 s"), so the view's key doesn't
+  change each second of a wait; `since` is when the wait began (ms, or null), and a surface that shows the count draws it
+  from there (the player bar's state tab, `P.statusText(true)`).
   The clock is `{ pos, at, rate, duration, known }`, moving at rate 1 only while playing; surfaces place the song with
   `PlayerView.posAt(view, now)`. The view's `transfer.buffered` is the end the output holds (`song.buffered`).
   The engine emits the `view` event (`App.on('view', fn)`, the view as the argument) when `PlayerView.key(view)` changes
@@ -241,7 +246,10 @@ The state shape and methods are DESIGN.md 7.8; the insides:
 - **The intent follows the output.** `ps.playing` is what the listener asked for. An output that pauses or resumes for a
   reason of the system's (another app took the audio, headphones out, a key the page doesn't handle) says so with the
   `system` event, and the engine sets `ps.playing` to it and does nothing else (the output has already stopped its own work). It is never guessed from a `time` with `playing: false`: an
-  output reports that at a song's end, when it is cleared and on a seek after the end, and nothing would undo it.
+  output reports that at a song's end, when it is cleared and on a seek after the end, and nothing would undo it. A system
+  play is ignored after a failure or the queue's end (the intent stays cleared: the key shows Play and its press retries or
+  starts the queue again). The browser output reports a system pause whichever deck it reaches first during a crossfade
+  or a better copy's handover.
 - **Streaming state** comes from `stream` events (`finding queued buffering streaming stalled fallback failed`,
   `received/size`, `peer`, `peersFound`, `queuePos`, `failedPeers`), merged with the element's own `playing`/`waiting`.
   `buffered` is `audio.buffered` cut to `received`. A seek may go anywhere for saved songs and up to what has

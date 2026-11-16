@@ -14,6 +14,11 @@
   /* the statuses the player has (app.js, "Player engine"); an unknown one fails loudly rather than guessing */
   var SOURCE = { finding: 1, queued: 1, buffering: 1, stalled: 1, streaming: 1, library: 1 };
 
+  /* the statuses that are a wait for a source: the buffering sound follows them (with nothing sounding), not an output
+     starting a song it already holds (a resume, a song's start, a gapless handover) */
+  var WAIT = { finding: 1, queued: 1, stalled: 1 };
+  V.waitsForSource = function (view) { return view.activity === 'loading' && !!WAIT[view.status]; };
+
   /* what the player is doing, by the first row that matches (ADR-0041's table) */
   function activityOf(i) {
     if (!i.track || i.status === 'idle') return 'idle';
@@ -33,6 +38,8 @@
       activity: activity,
       status: i.status,
       words: i.words,
+      since: i.since == null ? null : i.since,
+      intent: !!i.intent,
       track: t ? { id: t.id, title: t.title, artist: t.artist, album: t.album } : null,
       copy: c ? { where: c.where, format: c.format, lossless: !!c.lossless, peer: c.peer || null, received: c.received } : null,
       clock: { pos: i.pos, at: i.now, rate: activity === 'playing' ? 1 : 0, duration: i.duration, known: !!i.durationKnown },
@@ -62,9 +69,9 @@
     return !prev || Math.abs(V.posAt(next, now) - V.posAt(prev, now)) >= V.STRAY_S;
   };
 
-  /* the play key shows Pause while the listener's play stands: the song plays, waits for sound, or waits for a copy to
-     be picked. A paused, ended or failed song shows Play, so the key always does what it shows */
-  V.pressed = function (view) { return view.activity === 'playing' || view.activity === 'loading' || view.activity === 'choose'; };
+  /* the play key shows Pause while the listener's play stands: the view's intent, which is what the key's press acts on,
+     so the key always does what it shows. Every end and failure clears the intent, so those show Play */
+  V.pressed = function (view) { return !!view.intent; };
 
   /* ---------- the painter ----------
      paint() is the one writer of every player hook whose value changes during a song, in the page and in the mini player

@@ -2110,7 +2110,7 @@
   P.view = function () {
     var t = P.current(), bar = P.transferBar(), copy = t ? P.playingCopy() : null;
     return PlayerView.derive({
-      track: t, status: ps.status, intent: ps.playing, sound: sound, words: t ? P.stateWords() : '',
+      track: t, status: ps.status, intent: ps.playing, sound: sound, words: t ? P.stateWords() : '', since: t ? P.waitSince() : null,
       copy: copy && Object.assign({ lossless: !!(M.formats[copy.format] || {}).lossless }, copy),
       pos: ps.pos, duration: P.duration(), durationKnown: ps.durationKnown, received: ps.received, front: bar.front, parts: bar.parts,
       buffered: ps.buffered,
@@ -2891,10 +2891,12 @@
   /* the system paused or resumed the output (another app took the audio, headphones out): the intent follows, as any
      player shows a pause the system made, and that is all. The output has already stopped its own work, and pausing it
      in answer would tell the platform the listener paused (iOS then doesn't resume after a call). A pause applies
-     whatever song it names (the intent is the player's, not a song's); a play only the song that plays. It is never
-     guessed from a `time` (a song's end, a clear and a seek after the end report playing: false too) */
+     whatever song it names (the intent is the player's, not a song's); a play only the song that plays, and only while
+     it can: after a failure or the queue's end the intent stays cleared, so the key shows Play and its press retries or
+     starts the queue again. It is never guessed from a `time` (a song's end, a clear and a seek after the end report
+     playing: false too) */
   out.on('system', function (d) {
-    if ((d.playing && !isCur(d.key)) || ps.playing === d.playing) return;
+    if ((d.playing && (!isCur(d.key) || /^(idle|error|ended)$/.test(P.view().activity))) || ps.playing === d.playing) return;
     ps.playing = d.playing; changed('play');
   });
 
@@ -2975,8 +2977,16 @@
            abandoned) is not the output's to play: it is stopped, or the next song would start under this one */
         if (d === a && d.item) { system = true; el._wants = true; } else { halt(el); return; }
       }
-      /* a system pause stops this output's own crossfade or better-copy switch too, so nothing finishes while silent */
-      if (type === 'pause' && system && (fading || switching)) { abandonSwitch(); abandonFade(); }
+      /* a system pause stops this output's own crossfade or better-copy switch too, so nothing finishes while silent. It is
+         the system's pause of the song whichever deck it reaches first (the playing one, or the incoming one of a fade or a
+         switch), so the song is named before the abandoned fade or switch swaps the decks */
+      if (type === 'pause' && system && (d === a || fading || switching) && a.item) {
+        var song = key(a);
+        if (fading || switching) { abandonSwitch(); abandonFade(); }
+        emit('system', { key: song, playing: false });
+        if (a.item) time(a);
+        return;
+      }
       if (!d.item) return;
       if (type === 'waiting') d.waiting = true;
       else if (type === 'playing') d.waiting = false;
@@ -2984,7 +2994,6 @@
       if (type === 'error') { emit('error', { key: key(d), message: null, status: null }); return; }
       if (d !== a) return;                                   // the preloading deck reports only errors
       if (type === 'play') { if (system) emit('system', { key: key(d), playing: true }); return; }
-      if (type === 'pause' && system) emit('system', { key: key(d), playing: false });
       if (type === 'ended') { abandonSwitch(); if (fading) finishFade(); else ended(); return; }
       time(d);
     }
@@ -3448,15 +3457,19 @@
 
   /* how long the song has waited in this state, once that is long enough to wonder (5 s) */
   var statusWas = null, statusSince = 0;
-  App.on('player', function () { if (ps.status !== statusWas) { statusWas = ps.status; statusSince = Date.now(); } });
-  function waited() { var sec = Math.floor((Date.now() - statusSince) / 1000); return sec >= 5 ? ', ' + sec + ' s' : ''; }
-  /* one line describing the current status (player bar state tab, mini-player sub line, aria) */
-  P.statusText = function () {
+  /* noted whenever the player is asked (every change of status goes through changed(), which derives the view) */
+  function noteStatus() { if (ps.status !== statusWas) { statusWas = ps.status; statusSince = Date.now(); } }
+  /* when a wait for a source began (ms), or null: the view carries it, and a surface that shows the count draws it from here */
+  P.waitSince = function () { noteStatus(); return ps.status === 'finding' || ps.status === 'queued' ? statusSince : null; };
+  function waited() { noteStatus(); var sec = Math.floor((Date.now() - statusSince) / 1000); return sec >= 5 ? ', ' + sec + ' s' : ''; }
+  /* one line describing the current status (player bar state tab, aria): with the wait's running count when `counted`,
+     which the view's words (P.stateWords) never have, or each second of a wait would be a new view */
+  P.statusText = function (counted) {
     var peer = ps.peer ? ps.peer.name : 'a peer', of = ps.peer && ps.peer.of ? ' of ' + ps.peer.of : '';
     switch (ps.status) {
       case 'idle': return 'Search or pick something from Home';
-      case 'finding': return 'Finding a source' + (ps.peersFound ? ', ' + ps.peersFound + ' peers answered' : '') + waited();
-      case 'queued': return 'Queued at peer ' + peer + (ps.queuePos ? ', position ' + ps.queuePos : '') + waited();
+      case 'finding': return 'Finding a source' + (ps.peersFound ? ', ' + ps.peersFound + ' peers answered' : '') + (counted ? waited() : '');
+      case 'queued': return 'Queued at peer ' + peer + (ps.queuePos ? ', position ' + ps.queuePos : '') + (counted ? waited() : '');
       case 'buffering':
         if (cur && !cur.soulseek) return cur.local ? 'Loading from this device' : 'Loading from your library';
         return ps.fallback ? 'Switching to ' + ps.fallback.to + ' (' + ps.fallback.n + (ps.fallback.of ? ' of ' + ps.fallback.of : '') + ')' : 'Buffering from ' + peer;
@@ -3990,7 +4003,7 @@
     var fitKey = String(nowMarkup);
     if (App.layout && now._fitKey !== fitKey) { now._fitKey = fitKey; App.layout.refit(); }
     // state tab above the seek bar
-    var line = P.statusText(), stEl = $('#pbar-state');
+    var line = P.statusText(true), stEl = $('#pbar-state');
     if (line && st !== 'idle') {
       var err = st === 'failed' || st === 'jellyfin-error';
       var acts = st === 'failed' ? html`<button class="btn btn--quiet" data-act="retry-search">Retry search</button><button class="btn btn--quiet" data-act="pick-source">Pick another source</button><button class="btn btn--quiet" data-act="next">Skip</button>`
