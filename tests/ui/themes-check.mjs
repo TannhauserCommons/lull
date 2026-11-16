@@ -211,7 +211,7 @@ async function shootMini(job) {
     await page.waitForFunction((d) => !document.documentElement.hasAttribute('data-booting') && window.Designs && Designs.current === d &&
       document.querySelector('[data-dk-player]'), job.design, { timeout: 10000 });
     if (main.snap.clock) await page.evaluate(fireView, inState(main.snap, job.route.state));
-    else await page.evaluate((s) => window.__bridge.fire('player', s), { ...main.snap, playing: true, pos: Math.floor((main.snap.duration || 0) / 3) });   // before the view
+    else await page.evaluate((s) => window.__bridge.fire('player', s), snapInState(main.snap, job.route.state));   // before the view
     await page.evaluate((art) => window.__bridge.fire('player-art', { art }), main.art);
     await page.evaluate(() => document.fonts.ready);
     // the window fits its height to the player (desktop.js, fitWindow), as the app's does
@@ -233,6 +233,17 @@ function inState(view, state) {
     paused: { ...view, activity: 'paused', intent: false, clock },
     loading: { ...view, activity: 'loading', intent: true, status: 'buffering', words: 'Buffering from a peer', transfer: { ...view.transfer, ...half }, clock },
     failed: { ...view, activity: 'error', intent: false, status: 'failed', words: 'No Soulseek peer shares this song right now.', clock },
+  }[state];
+}
+
+/* the same for a web UI from before the view, which sent main's snapshot of the player instead */
+function snapInState(snap, state = 'playing') {
+  const at = { ...snap, pos: Math.floor((snap.duration || 0) / 3) };
+  return {
+    playing: { ...at, playing: true },
+    paused: { ...at, playing: false },
+    loading: { ...at, playing: true, status: 'buffering', statusText: 'Buffering from a peer', received: 0.4, front: 0.4, buffered: [[0, 0.4]] },
+    failed: { ...at, playing: false, status: 'failed', statusText: 'No Soulseek peer shares this song right now.' },
   }[state];
 }
 
