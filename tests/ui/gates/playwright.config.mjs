@@ -99,6 +99,8 @@ export default defineConfig({
     { name: 'search-covers', testMatch: 'search-covers.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // the queue's radio switch stays after radio is switched off, and starts a radio on a queue that never had one
     { name: 'queue-radio', testMatch: 'queue-radio.spec.mjs', fullyParallel: true },
+    // Undo of Remove and Clear works on the entries they touched, and does nothing once the queue they belonged to is gone
+    { name: 'queue-undo', testMatch: 'queue-undo.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // Home's parts the hub fills: the first-run screen and its artists, a followed tag's "you might like"
     { name: 'home', testMatch: 'home.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // long lists: every row works, drawn or not (a fixture hub of its own: it likes, downloads and reorders)
