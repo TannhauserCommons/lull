@@ -1,0 +1,2 @@
+* Right-click any song, album, artist or playlist name for lull's menu; Copy link gives the link anyone can open
+* Covers no longer go blank after scrolling
