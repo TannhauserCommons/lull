@@ -235,6 +235,7 @@ for (const design of designs) {
     // it is cut, and the panel's own buttons can still be clicked. Where it sits and how many lines it takes are the
     // design's
     test(`side panel strip, a long song title / ${design} / ${theme}`, async ({ page }) => {
+      await watchObservers(page);
       await page.setViewportSize({ width: 1440, height: 900 });
       await openScreen(page, `/album/${ids.album}`, { design, theme });
       await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');
@@ -244,7 +245,7 @@ for (const design of designs) {
       const found = [];
       for (const w of [2560, 1440, 1280]) {
         await page.setViewportSize({ width: w, height: 900 });
-        await frames(page);
+        await drawnAt(page, w);
         for (const tab of ['queue', 'lyrics', 'activity']) {
           // the tab as a press picks it (app.js hears clicks on the document), whether or not the panel shows now
           if (!(await page.evaluate((tab) => { const b = document.querySelector(`[data-ctx-tab="${tab}"]`); if (b) b.click(); return !!b; }, tab))) continue;
@@ -356,6 +357,7 @@ for (const design of designs) {
 // margin and padding (desktop.css), with the chrome checks as above. lull's header once ran under them
 for (const design of designs) {
   test(`header beside the desktop window's buttons / ${design}`, async ({ page }) => {
+    await watchObservers(page);
     await page.addInitScript({ path: fileURLToPath(new URL('./desktop-bridge.js', import.meta.url)) });
     await page.addInitScript(() => { window.__LULL_DESKTOP__ = { os: 'win', titlebar: 'win' }; });
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -367,7 +369,7 @@ for (const design of designs) {
     const found = new Map();
     for (let w = 2560; w >= 480; w -= 40) {     // the window is never narrower than 480 px (app/src/desktop/main_window.rs)
       await page.setViewportSize({ width: w, height: 900 });
-      await frames(page);
+      await drawnAt(page, w);
       const under = await page.evaluate(() => {
         const c = document.querySelector('.dk-caption').getBoundingClientRect();
         return [...document.querySelectorAll('.header :is(a, button, input, [tabindex], .tray)')].filter((e) => {
@@ -390,6 +392,7 @@ for (const design of designs) {
 for (const design of designs) {
   for (const desktop of [false, true]) {
     test(`the search and the seek keep their room / ${design} / ${desktop ? 'desktop app' : 'browser'}`, async ({ page }) => {
+      await watchObservers(page);
       if (desktop) {
         await page.addInitScript({ path: fileURLToPath(new URL('./desktop-bridge.js', import.meta.url)) });
         await page.addInitScript(() => { window.__LULL_DESKTOP__ = { os: 'win', titlebar: 'win' }; });
@@ -405,7 +408,7 @@ for (const design of designs) {
         await page.evaluate((css) => { let t = document.getElementById('gate-text'); if (!t) { t = document.createElement('style'); t.id = 'gate-text'; document.head.appendChild(t); } t.textContent = css; }, `html { font-size: ${text}% !important; }` + (chrome ? ` .header__search .input { padding-left: calc(46px + ${chrome}px) !important; padding-right: calc(48px + ${chrome}px) !important; }` : ''));
         await page.setViewportSize({ width: w, height: 900 });
         await page.fill('#header-search', 'odetari blackhole');
-        await frames(page); await frames(page);
+        await drawnAt(page, w); await frames(page);
         const m = await page.evaluate(() => {
           const shown = (e) => e.getClientRects().length > 0;
           const input = document.querySelector('#header-search'), cs = getComputedStyle(input);
