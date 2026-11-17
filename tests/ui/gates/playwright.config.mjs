@@ -59,6 +59,7 @@ export default defineConfig({
     { name: 'perf', testMatch: 'perf.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' } },
     { name: 'screens', testMatch: 'screens.spec.mjs', fullyParallel: true },
     { name: 'a11y', testMatch: 'a11y.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
+    { name: 'context-menu', testMatch: 'context-menu.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'covers', testMatch: 'covers.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'fit', testMatch: 'fit.spec.mjs', fullyParallel: true },
     // what loading Classic mode on first use must keep (a browser) and not change (the desktop app)

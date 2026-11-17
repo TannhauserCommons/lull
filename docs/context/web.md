@@ -815,8 +815,10 @@ Right-click, the Menu key (Shift+F10) and a touch long-press open lull's own "â€
 where its "â€¦" is: song and queue rows, Home picks and the album and artist heroes hold theirs; a playlist's header
 opens the playlist's, the player bar's song and Now Playing's song the player's. Items without one (tiles, a rail
 playlist, the search's top result) open `App.itemMenus[track|album|artist|playlist](id, anchor)` (track in app.js,
-the rest in library.js). The keyboard opens it by the item. Text fields and selected text keep the browser's menu (copy, paste),
-and so does everything else; the desktop app's WebView2 shows its own menu only where the page leaves the event.
+the rest in library.js). Anything else that names a song, album, artist or playlist (a link to it, or a song's play
+button: Stats, Following, "Playing from") opens that item's menu, so no name gets the browser's "Copy link" with the hub's
+address (gate: `context-menu.spec.mjs`); tags have no share link and keep it. The keyboard opens it by the item. Text
+fields and selected text keep the browser's menu (copy, paste), and so does everything else; the desktop app's WebView2 shows its own menu only where the page leaves the event.
 
 **Several songs at once.** A click on a song row selects it (`.is-selected`), Ctrl (Cmd) adds or drops one, Shift
 reaches from the last one picked, and Shift with Up or Down does the same from the keyboard. With more than one

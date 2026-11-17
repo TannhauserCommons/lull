@@ -4494,10 +4494,22 @@
       var more = scope && scope.querySelector(MENU_OF[i][2]);
       if (more && actions[more.getAttribute('data-act')]) return function () { actions[more.getAttribute('data-act')](more); };
     }
-    var thing = target.closest('.tile, .rail__pl, .disc-top, .disc-lead'); if (!thing) return null;
+    var thing = target.closest('.tile, .rail__pl, .disc-top, .disc-lead'); if (!thing) return nameMenu(target);
     var song = thing.matches('.disc-top, .disc-lead') && thing.querySelector('[data-act="play-track"][data-id]');
     if (song) return function () { App.itemMenus.track(song.getAttribute('data-id'), song); };
     var link = thing.matches('a') ? thing : thing.querySelector('.tile__title a[href], .tile__art a[href], a[href^="#/album/"], a[href^="#/artist/"]');
+    return linkMenu(link);
+  }
+  /* last, anything else that names a song, album, artist or playlist (a name on Stats or Following, "Playing from" in
+     the queue): the menu of what it names, whatever screen or design drew it. Without it, the browser's menu showed,
+     whose "Copy link" copied the hub's own address */
+  function nameMenu(target) {
+    var link = linkMenu(target.closest('a[href]')); if (link) return link;
+    var song = target.closest('[data-act="play-track"][data-id], [data-track-id]');
+    var id = song && (song.getAttribute('data-track-id') || song.getAttribute('data-id'));
+    return id ? function () { App.itemMenus.track(id, song); } : null;
+  }
+  function linkMenu(link) {
     var m = link && ITEM_LINK.exec(link.getAttribute('href') || '');
     var open = m && App.itemMenus[m[1]];
     return open ? function () { open(decodeURIComponent(m[2]), link); } : null;
