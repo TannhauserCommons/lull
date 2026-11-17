@@ -2289,6 +2289,22 @@ mod tests {
     }
 
     #[test]
+    fn a_next_in_the_tick_of_a_natural_end_lands_on_the_next_song_not_the_one_after() -> Result<(), String> {
+        let hub = hub(json!({"playback": {"gapless": false}})).ok_or("no hub")?;
+        let songs = [("a", true, Some(1.0)), ("b", true, Some(2.0)), ("c", true, Some(2.0))];
+        let (mut run, output) = by_hand(&hub, &songs, Repeat::Off).ok_or("no player")?;
+        assert!(
+            pull_until(&mut run, &output, |run, _| mixer_spoke(run)),
+            "the song never ended"
+        );
+        // The end is waiting for the tick when the listener's Next arrives.
+        run.command(Command::Next);
+        run.tick();
+        assert_eq!(run.queue.index, 1);
+        Ok(())
+    }
+
+    #[test]
     fn a_fallbacks_new_attempt_reopens_the_song_where_it_was() -> Result<(), String> {
         let hub = hub(json!({})).ok_or("no hub")?;
         let (engine, output) = player(&hub, &[("s", false, Some(6.0))], Repeat::Off).ok_or("no player")?;
