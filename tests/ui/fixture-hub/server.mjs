@@ -31,6 +31,9 @@
 // POST /__fixture/artist-late { id, pending, errors } makes that artist's page answer with those sections still coming
 // (empty, named in `pending`) and `errors`, for that client; POST /__fixture/artist-in { id } answers it whole again
 // and sends nothing: an `artist.updated` the page never heard.
+// POST /__fixture/album-late { id, ms } makes that album's first read (for that client) answer `partial: true` with no songs,
+// as a Soulseek album lull never opened does; its tracklist then arrives with an `album.updated` event ms later, and reads
+// after that answer whole.
 // GET /__fixture/spare-song hands a test an unsaved song nobody else was given (library.mjs spareSongs) to trickle: { id, entities }.
 // POST /__fixture/trickle { id, bytesPerS, seekAhead } makes that unsaved song a Soulseek transfer arriving at bytesPerS from
 // now (its WAV is 8000 bytes a second of sound): GET /api/stream/<id> serves only what has arrived and holds a range that
@@ -374,8 +377,17 @@ const routes = [
     if (album) return { kind: 'album', id: album, entities: entities({ albums: [album] }) };
     return err(404, 'not_found', 'That song, album or artist isn\'t there any more.');
   }],
-  ['GET', /^\/api\/albums\/([^/]+)$/, (m) => {
+  ['GET', /^\/api\/albums\/([^/]+)$/, (m, q, body, client) => {
     const a = L.albums[m[1]]; if (!a) return err(404, 'not_found', 'lull doesn\'t know this album.');
+    const late = albumLate.get(client + ' ' + a.id);
+    if (late && !late.sent) {
+      late.sent = true;
+      setTimeout(() => { late.arrived = true; emit('album.updated', { albumId: a.id }, client); }, late.ms);
+    }
+    if (late && !late.arrived) {
+      const bare = { ...a, trackIds: [], duration: 0 }, e = entities({ artists: [a.artistId] });
+      return { album: bare, partial: true, entities: { ...e, albums: { [a.id]: bare } } };
+    }
     return { album: a, entities: entities({ tracks: a.trackIds, albums: [a.id, ...L.albumIds.filter((x) => L.albums[x].artistId === a.artistId)], artists: [a.artistId] }) };
   }],
   // ADR-0035's name page (the `namesakes` switch): Soft Choir shares its name with two invented artists.
@@ -529,6 +541,7 @@ function lateArtist(page, late) {
   if (gone.has('similar')) out.similar = [];
   return out;
 }
+const albumLate = new Map();    // client + ' ' + album id -> { ms, sent, arrived }
 const artistLate = new Map();   // client + ' ' + artist id -> { pending, errors }
 
 const streams = new Map();      // fixture client -> trackId -> the latest `stream` event emitted
@@ -1058,6 +1071,7 @@ const server = createServer(async (req, res) => {
     for (const [stream, c] of clients) if (c === clientOf(req)) { clients.delete(stream); stream.end(); }
     return send(res, 204);
   }
+  if (path === '/__fixture/album-late' && req.method === 'POST') { const b = await readBody(req); albumLate.set(clientOf(req) + ' ' + b.id, { ms: b.ms }); return send(res, 204); }
   if (path === '/__fixture/artist-late' && req.method === 'POST') { const b = await readBody(req); artistLate.set(clientOf(req) + ' ' + b.id, b); return send(res, 204); }
   if (path === '/__fixture/artist-in' && req.method === 'POST') { artistLate.delete(clientOf(req) + ' ' + (await readBody(req)).id); return send(res, 204); }
   if (path === '/api/events') {
