@@ -98,6 +98,8 @@ export default defineConfig({
     // search's song rows, Soulseek's too, take their album's cover when the hub learns it, without a new search
     { name: 'search-covers', testMatch: 'search-covers.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // the queue's radio switch stays after radio is switched off, and starts a radio on a queue that never had one
+    // the queue's rows: a double-click jumps like Enter, Shift+Enter plays next, focus survives a removal, Escape ends a drag only
+    { name: 'queue-keys', testMatch: 'queue-keys.spec.mjs', fullyParallel: true },
     { name: 'queue-radio', testMatch: 'queue-radio.spec.mjs', fullyParallel: true },
     // Home's parts the hub fills: the first-run screen and its artists, a followed tag's "you might like"
     { name: 'home', testMatch: 'home.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
