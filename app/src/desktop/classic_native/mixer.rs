@@ -16,15 +16,16 @@ use std::sync::Arc;
 /// Mono samples kept for the visualiser.
 const TAP: usize = 1024;
 
-/// What the mixer did that the engine needs to know.
-#[derive(Debug, PartialEq)]
+/// What the mixer did that the engine needs to know. Each names the decks it happened to: the
+/// engine reads events on its own clock, and one for a deck that isn't the current one any more
+/// (a Next, a Jump or a Previous came first) is stale and dropped.
 pub enum Event {
     /// The next deck took over (gapless, or a crossfade's end): it is the current one now.
-    Handover,
+    Handover { from: Arc<Deck>, to: Arc<Deck> },
     /// The song ended and nothing took over.
-    Ended,
+    Ended(Arc<Deck>),
     /// The better copy took over.
-    Switched,
+    Switched { from: Arc<Deck>, to: Arc<Deck> },
 }
 
 /// A crossfade under way: its length and how far it got, in frames.
@@ -185,26 +186,29 @@ impl Mixer {
 
     /// The current deck ran dry: the next takes over if the song really ended, else it ended (or it
     /// is waiting for sound, and silence fills in). Whether to carry on in this buffer.
-    fn move_on(&mut self, current: &Deck) -> bool {
+    fn move_on(&mut self, current: &Arc<Deck>) -> bool {
         if !current.drained() {
             return false;
         }
         let complete = rules::gapless(current.duration(), current.position());
         match self.next.take() {
             Some(next) if complete && next.phase() != Phase::Opening => {
-                self.current = Some(next);
+                self.current = Some(next.clone());
                 self.level = self.next_level;
                 self.glide = None;
                 self.fade = None;
                 self.heard = (0.0, 0);
-                self.events.push(Event::Handover);
+                self.events.push(Event::Handover {
+                    from: current.clone(),
+                    to: next,
+                });
                 true
             }
             other => {
                 self.next = other;
                 self.ended = true;
                 self.fade = None;
-                self.events.push(Event::Ended);
+                self.events.push(Event::Ended(current.clone()));
                 false
             }
         }
@@ -232,12 +236,15 @@ impl Mixer {
         }
         fade.done += (out.len() / 2) as u64;
         if fade.done >= fade.frames {
-            self.current = self.next.take();
+            let from = self.current.replace(next.clone());
+            self.next = None;
             self.level = self.next_level;
             self.glide = None;
             self.fade = None;
             self.heard = (0.0, 0);
-            self.events.push(Event::Handover);
+            if let Some(from) = from {
+                self.events.push(Event::Handover { from, to: next });
+            }
         }
     }
 
@@ -277,11 +284,13 @@ impl Mixer {
         if switch.fade.done >= switch.fade.frames {
             let switch = self.switch.take();
             if let Some(switch) = switch {
-                self.current = Some(switch.deck);
+                let from = self.current.replace(switch.deck.clone());
                 self.level = switch.level;
                 self.glide = Some((switch.matched, 0));
                 self.heard = (0.0, 0);
-                self.events.push(Event::Switched);
+                if let Some(from) = from {
+                    self.events.push(Event::Switched { from, to: switch.deck });
+                }
             }
         }
     }

@@ -1329,6 +1329,12 @@ impl Run {
         })
     }
 
+    /// Whether `deck` is the one the engine holds as playing (a mixer event about any other deck
+    /// is stale).
+    fn is_playing_deck(&self, deck: &Arc<Deck>) -> bool {
+        self.current.as_ref().is_some_and(|c| Arc::ptr_eq(&c.deck, deck))
+    }
+
     /// The page's clock: what the mixer did, the play, the decks, and everything that waits.
     fn tick(&mut self) {
         let events: Vec<Event> = std::mem::take(&mut lock(&self.mixer).events);
@@ -1336,7 +1342,10 @@ impl Run {
             match event {
                 // Gapless or a crossfade's end: the next song plays, its play a completed one's
                 // successor (app.js `handOver`).
-                Event::Handover => {
+                Event::Handover { from, to } => {
+                    if !self.is_playing_deck(&from) || !self.next.as_ref().is_some_and(|n| Arc::ptr_eq(&n.deck, &to)) {
+                        continue;
+                    }
                     self.end_play(How::Completed);
                     if let (Some(next), Some(i)) = (self.next.take(), self.queue.next_index(true)) {
                         self.loads += 1;
@@ -1357,7 +1366,10 @@ impl Run {
                         self.connect_now();
                     }
                 }
-                Event::Ended => {
+                Event::Ended(deck) => {
+                    if !self.is_playing_deck(&deck) {
+                        continue;
+                    }
                     let early = self
                         .current
                         .as_ref()
@@ -1368,14 +1380,14 @@ impl Run {
                         self.next(true);
                     }
                 }
-                Event::Switched => {
+                Event::Switched { from, to } => {
+                    if !self.is_playing_deck(&from) {
+                        continue;
+                    }
                     if let Some(Better::Switching { offset }) = self.better.take()
                         && let Some(current) = self.current.as_mut()
                     {
-                        current.deck = lock(&self.mixer)
-                            .current
-                            .clone()
-                            .unwrap_or_else(|| current.deck.clone());
+                        current.deck = to;
                         current.offset = offset;
                         self.notice("Switched to a better copy".into());
                     }
