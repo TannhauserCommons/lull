@@ -744,10 +744,12 @@ impl Run {
         self.loads += 1;
         self.better = None;
         self.failed_at = None;
+        // A preloaded deck is reused only where it stands at `at`: a crossfade under way has already
+        // played into it.
         let reuse = self
             .next
             .take()
-            .filter(|n| n.track_id == entry.track_id && n.source == entry.source && at == 0.0);
+            .filter(|n| n.track_id == entry.track_id && n.source == entry.source && n.deck.position() == at);
         let loaded = match reuse {
             Some(mut next) => {
                 next.load = self.loads;
@@ -757,7 +759,12 @@ impl Run {
             None => self.open(&entry, at, AHEAD),
         };
         let level = self.level_for(&loaded.track_id);
-        lock(&self.mixer).play(loaded.deck.clone(), level);
+        {
+            // The engine's next deck was taken above (reused or dropped): the mixer's is the same.
+            let mut mixer = lock(&self.mixer);
+            mixer.next = None;
+            mixer.play(loaded.deck.clone(), level);
+        }
         if let Some(was) = was {
             self.let_go(&was);
         }
