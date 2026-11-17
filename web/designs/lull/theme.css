@@ -360,8 +360,7 @@
 
 /* the side panel: a shell named by its tab ("queue", "lyrics", "activity"), the live meta on a readout, the close key a
    chrome bead clear of the corner screw; the tabs the first row of its screen */
-:root[data-design="lull"] .ctx { width: auto; }
-:root[data-design="lull"] .app[data-ctx="docked"] .ctx { position: relative; }
+:root[data-design="lull"] .app[data-ctx="docked"] .ctx { position: relative; width: auto; }
 :root[data-design="lull"] .ctx > .region-title { padding-right: 150px; }
 :root[data-design="lull"] .ctx > .region-meta { display: block; right: 54px; left: auto; max-width: calc(100% - 200px); line-height: 24px; letter-spacing: .06em; }
 @container panel (max-width: 290px) { :root[data-design="lull"] .ctx > .region-meta { display: none; } }
