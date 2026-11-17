@@ -1986,8 +1986,8 @@
   function albumMenu(id, anchor) {
     var a = M.album(id); if (!a) return;
     var items = [
-      { label: 'Play next', icon: 'queue', run: function () { App.player.playNext(a.trackIds); } },
-      { label: 'Add to queue', icon: 'plus', run: function () { App.player.addToQueue(a.trackIds); } },
+      { label: 'Play next', icon: 'queue', run: function () { App.withAlbum(id, App.player.playNext); } },
+      { label: 'Add to queue', icon: 'plus', run: function () { App.withAlbum(id, App.player.addToQueue); } },
       { label: 'Add to playlist', icon: 'playlists', run: function () {
         App.albumTracks(id).then(function (list) { openPicker(list, a.title); }, function (err) { App.toast('Couldn\'t read ' + a.title + ': ' + err.message, { kind: 'error' }); });
       } },
@@ -2054,8 +2054,8 @@
     var ids = plIds(p);
     App.menu(anchor, [
       { label: 'Rename', icon: 'edit', run: function () { openEdit(p); } },
-      { label: 'Play next', icon: 'queue', run: function () { if (!ids.length) return App.toast('This playlist is empty', { icon: 'info' }); App.player.playNext(ids); } },
-      { label: 'Add to queue', icon: 'plus', run: function () { if (!ids.length) return App.toast('This playlist is empty', { icon: 'info' }); App.player.addToQueue(ids); } },
+      { label: 'Play next', icon: 'queue', run: function () { App.withPlaylist(id, App.player.playNext); } },
+      { label: 'Add to queue', icon: 'plus', run: function () { App.withPlaylist(id, App.player.addToQueue); } },
       { label: 'Add to another playlist', icon: 'playlists', run: function () { if (!ids.length) return App.toast('This playlist is empty', { icon: 'info' }); openPicker(ids, p.name, p.id); } },
       { label: 'Duplicate', icon: 'playlists', run: function () {
         makePlaylist(p.name + ' (copy)', p.desc, ids, undefined, addedOf(p)).then(function (c) { if (c) { App.go('/playlist/' + c.id); App.toast('Made a copy of ' + p.name, { confirms: true, group: 'playlist-edit', icon: 'playlists' }); } });

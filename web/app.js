@@ -2461,7 +2461,8 @@
      its end. They play before the context continues and outlive a new context (playList). */
   function nextUpEnd() { var at = ps.index + 1; while (ps.queue[at] && ps.queue[at].group === 'next') at++; return at; }
   P.playNext = function (ids) {
-    ids = [].concat(ids); var at = ps.queue.length ? ps.index + 1 : 0;
+    ids = [].concat(ids); if (!ids.length) return;
+    var at = ps.queue.length ? ps.index + 1 : 0;
     ps.queue.splice.apply(ps.queue, [at, 0].concat(ids.map(function (id) { return entry(id, 'next'); })));
     if (ps.status === 'idle') load(0);
     queueChanged();
@@ -2470,7 +2471,7 @@
   /* opts.paused: with nothing loaded, the first song waits paused rather than playing (a share page's Add to queue
      never starts music on its own) */
   P.addToQueue = function (ids, opts) {
-    ids = [].concat(ids);
+    ids = [].concat(ids); if (!ids.length) return;
     var at = ps.queue.length ? nextUpEnd() : 0;
     ps.queue.splice.apply(ps.queue, [at, 0].concat(ids.map(function (id) { return entry(id, 'next'); })));
     if (ps.status === 'idle') load(0, { autoplay: !(opts && opts.paused) });
@@ -4256,6 +4257,21 @@
       if (list.length) fn(list); else App.toast('This album has no songs to play yet', { icon: 'info' });
     }, function (err) { App.toast('Couldn\'t open the album: ' + err.message, { kind: 'error' }); });
   }
+  App.withAlbum = withAlbum;
+  /* a playlist's songs, known to the cache: the list of playlists describes only its first songs (as a list's album
+     carries trackIds without tracks), so the playlist is read when any is missing. A playlist made offline has no
+     hub copy to read, and its songs are the ones the listener picked */
+  function playlistTracks(id) {
+    var p = state.playlists.filter(function (x) { return x.id === id; })[0], list = p ? p.items.map(function (i) { return i.trackId; }) : [];
+    if (p && list.every(function (t) { return M.track(t); }) || isTemp(id)) return Promise.resolve(list);
+    return M.api('/api/playlists/' + encodeURIComponent(id)).then(function (res) { return res.items.map(function (i) { return i.trackId; }); });
+  }
+  function withPlaylist(id, fn) {
+    playlistTracks(id).then(function (list) {
+      if (list.length) fn(list); else App.toast('This playlist is empty. Drag songs here or use Add to playlist.', { icon: 'info' });
+    }, function (err) { App.toast('Couldn\'t open the playlist: ' + err.message, { kind: 'error' }); });
+  }
+  App.withPlaylist = withPlaylist;
   function feedback(kind, id, done) {
     App.closePopover(true);
     M.api('/api/feedback', { method: 'POST', body: { kind: kind, id: id } }).then(done, function (err) {
@@ -4345,9 +4361,8 @@
       withAlbum(id, function (list) { P.setShuffle(true); P.playList(list, Math.floor(Math.random() * list.length), { context: App.place('album', id, M.album(id).title) }); });
     },
     'play-playlist': function (el) {
-      var p = state.playlists.filter(function (x) { return x.id === el.getAttribute('data-id'); })[0];
-      if (!p.items.length) { App.toast('This playlist is empty. Drag songs here or use Add to playlist.', { icon: 'info' }); return; }
-      P.playList(p.items.map(function (i) { return i.trackId; }), 0, { context: App.place('playlist', p.id, p.name) });
+      var id = el.getAttribute('data-id'), p = state.playlists.filter(function (x) { return x.id === id; })[0];
+      withPlaylist(id, function (list) { P.playList(list, 0, { context: App.place('playlist', id, p.name) }); });
     },
     'play-ids': function (el) { P.playList(ids(el), 0); },
     'go-playing': function () { App.goPlaying(); },
@@ -4735,13 +4750,14 @@
   /* =====================================================================
      14. Drag and drop: rows (draggable) onto [data-drop] = queue | play | playlist:<id>; files onto the window
      ===================================================================== */
-  var dragIds = null, chip = null;
+  var dragIds = null, dragAlbum = null, chip = null;   // dragAlbum: the album a tile drags, whose songs the queue needs read
   document.addEventListener('dragstart', function (e) {
     var r = e.target.closest && e.target.closest('[draggable="true"][data-track-id], [draggable="true"][data-album-id]');
     if (!r) return;
     var sel = $$('.trow.is-selected', r.parentElement);
     var album = r.hasAttribute('data-album-id') && M.album(r.getAttribute('data-album-id'));
     if (r.hasAttribute('data-album-id') && !(album && album.trackIds.length)) { e.preventDefault(); return; }   // songs not known yet
+    dragAlbum = album ? album.id : null;
     dragIds = album ? album.trackIds
       : sel.length > 1 && r.classList.contains('is-selected') ? sel.map(function (x) { return x.getAttribute('data-track-id'); }) : [r.getAttribute('data-track-id')];
     e.dataTransfer.effectAllowed = 'copyMove';
@@ -4752,7 +4768,7 @@
     r.classList.add('is-dragging');
   });
   document.addEventListener('dragend', function () {
-    dragIds = null; $$('.is-dragging, .is-drop-target').forEach(function (n) { n.classList.remove('is-dragging', 'is-drop-target'); });
+    dragIds = dragAlbum = null; $$('.is-dragging, .is-drop-target').forEach(function (n) { n.classList.remove('is-dragging', 'is-drop-target'); });
   });
   var fileDepth = 0;
   function isFileDrag(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0; }
@@ -4780,12 +4796,14 @@
     if (!t || !dragIds) return;
     e.preventDefault(); t.classList.remove('is-drop-target');
     var dest = t.getAttribute('data-drop');
-    if (dest === 'queue') P.addToQueue(dragIds);
-    else if (dest === 'play') { P.playList(dragIds, 0); }
+    if (dest === 'queue') withDragged(P.addToQueue);
+    else if (dest === 'play') withDragged(function (list) { P.playList(list, 0); });
     else if (dest.indexOf('playlist:') === 0) addToPlaylist(dest.slice(9), dragIds);
     else App.emit('drop', { target: t, dest: dest, ids: dragIds });
-    dragIds = null;
+    dragIds = dragAlbum = null;
   });
+  /* what was dragged, for the queue: an album's songs are read first (App.albumTracks) */
+  function withDragged(fn) { if (dragAlbum) withAlbum(dragAlbum, fn); else fn(dragIds); }
 
   /* =====================================================================
      15. Server events and boot: pairing (GET /api/ping), /health, the event stream, collections,
