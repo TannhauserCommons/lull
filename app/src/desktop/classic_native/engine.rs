@@ -2317,6 +2317,26 @@ mod tests {
     }
 
     #[test]
+    fn a_next_during_a_crossfade_starts_the_next_song_from_its_start() -> Result<(), String> {
+        let hub = hub(json!({"playback": {"crossfade": 2}})).ok_or("no hub")?;
+        let songs = [("a", true, Some(4.0)), ("b", true, Some(4.0)), ("c", true, Some(4.0))];
+        let (mut run, output) = by_hand(&hub, &songs, Repeat::Off).ok_or("no player")?;
+        let fading = |run: &mut Run, _: &[f32]| {
+            run.tick();
+            lock(&run.mixer).fading()
+        };
+        assert!(pull_until(&mut run, &output, fading), "no crossfade began");
+        for _ in 0..20 {
+            output.pull(RATE as usize / 100);
+        }
+        assert!(lock(&run.mixer).fading());
+        run.command(Command::Next);
+        assert_eq!(run.queue.index, 1);
+        assert!(run.position() < 0.01, "b starts {} s in", run.position());
+        Ok(())
+    }
+
+    #[test]
     fn a_fallbacks_new_attempt_reopens_the_song_where_it_was() -> Result<(), String> {
         let hub = hub(json!({})).ok_or("no hub")?;
         let (engine, output) = player(&hub, &[("s", false, Some(6.0))], Repeat::Off).ok_or("no player")?;
