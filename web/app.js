@@ -2450,7 +2450,8 @@
   };
   P.playTrack = function (id, contextIds, opts) {
     var ids = contextIds && contextIds.indexOf(id) >= 0 ? contextIds : [id];
-    P.playList(ids, ids.indexOf(id), opts);
+    /* opts.index: the picked row, for a song the list holds twice */
+    P.playList(ids, opts && ids[opts.index] === id ? opts.index : ids.indexOf(id), opts);
   };
   function titleOf(id) { var t = M.track(id); return t ? t.title : 'one song'; }
   /* the words of confirmations collapsed into one toast (ADR-0040) */
@@ -2503,7 +2504,8 @@
   /* manual source choice (source picker): useSource(trackId, { peer, path, format, sizeBytes, speed }). The playing
      song switches mid-song (ADR-0008): the chosen peer's stream reopens at the same time, as the same play. */
   P.useSource = function (trackId, source) {
-    var i = ps.queue.findIndex(function (q) { return q.trackId === trackId; });
+    var onIndex = ps.queue[ps.index] && ps.queue[ps.index].trackId === trackId;     // the playing copy, when the song is queued twice
+    var i = onIndex ? ps.index : ps.queue.findIndex(function (q) { return q.trackId === trackId; });
     var current = i >= 0 && i === ps.index && !!cur && ps.status !== 'ended';
     if (i < 0) { i = ps.queue.length ? ps.index + 1 : 0; ps.queue.splice(i, 0, entry(trackId, 'next', source)); }
     else ps.queue[i].source = source;
@@ -3558,9 +3560,10 @@
 
   /* rows and buttons that show per-track state: playing row, like buttons, Saved/Soulseek badges, save buttons */
   App.syncRows = function () {
-    var cur = P.currentId();
+    var cur = P.currentId(), curUid = ps.queue[ps.index] ? ps.queue[ps.index].uid : null;
     $$('.trow[data-track-id]').forEach(function (r) {
-      var on = r.getAttribute('data-track-id') === cur;
+      /* a queue row (it has its entry's uid) is the playing one by entry: the same song queued twice plays once */
+      var uid = r.getAttribute('data-uid'), on = uid ? uid === curUid : r.getAttribute('data-track-id') === cur;
       if (r.classList.contains('is-playing') !== on) { r.classList.toggle('is-playing', on); playingBars(r, on); }
       r.classList.toggle('is-playing-now', on && ps.playing);
     });
@@ -4236,6 +4239,15 @@
   /* the songs a button names, else the one playing: a theme's own Like, Save or Add to playlist names none */
   function songIds(el) { var l = ids(el), cur = P.currentId(); return l.length ? l : cur ? [cur] : []; }
   function listIds(el) { var l = el.closest('[data-ids]'); return l ? l.getAttribute('data-ids').split(',') : null; }
+  /* what play-track hands P.playTrack for a row or its button: the list, and which copy of the song was picked (a song
+     can sit in a list twice). The row's place among the list's rows is the index when it matches the list. */
+  function listPick(el) {
+    var ids = listIds(el), row = el.closest('.trow[data-track-id]'), l = el.closest('[data-ids]');
+    if (!ids || !row) return { ids: ids };
+    var at = Array.prototype.indexOf.call(l.querySelectorAll('.trow[data-track-id]'), row);
+    return { ids: ids, opts: ids[at] === row.getAttribute('data-track-id') ? { index: at } : undefined };
+  }
+  function playRow(id, el) { var p = listPick(el); P.playTrack(id, p.ids, p.opts); }
   /* the Queue panel (phone: Now Playing, Queue tab) */
   function showQueue() { if (App.layout.switch('phone') === 'on') App.go('/now?tab=queue'); else App.openPanel('queue'); }
   /* start radio, then show where it landed */
@@ -4335,7 +4347,7 @@
     'noop': function () {},
     'noop-saved': function () { App.toast('Already saved to your library', { icon: 'saved' }); },
     'reload': function () { location.reload(); },
-    'play-track': function (el) { var id = el.getAttribute('data-id'); P.playTrack(id, listIds(el)); },
+    'play-track': function (el) { playRow(el.getAttribute('data-id'), el); },
     'play-album': function (el) {
       var id = el.getAttribute('data-id');
       withAlbum(id, function (list) { var a = M.album(id); P.playList(list, 0, { context: App.place('album', id, a.title) }); App.toast('Playing ' + a.title, { confirms: true, group: 'play', icon: 'play' }); });
@@ -4594,7 +4606,7 @@
   // double-click a row plays it
   document.addEventListener('dblclick', function (e) {
     var r = e.target.closest('.trow[data-track-id]'); if (!r || e.target.closest('button, a')) return;
-    P.playTrack(r.getAttribute('data-track-id'), listIds(r));
+    playRow(r.getAttribute('data-track-id'), r);
   });
 
   /* =====================================================================
@@ -4654,7 +4666,7 @@
         if (n) { if (e.shiftKey) { if (!selFrom || rows.indexOf(selFrom) < 0) selFrom = row; selectRows(n, 'range'); } else selectRows(n, 'one'); n.focus(); }
         return;
       }
-      if (k === 'Enter' && a === row) { e.preventDefault(); if (e.shiftKey) P.playNext([row.getAttribute('data-track-id')]); else P.playTrack(row.getAttribute('data-track-id'), listIds(row)); return; }
+      if (k === 'Enter' && a === row) { e.preventDefault(); if (e.shiftKey) P.playNext([row.getAttribute('data-track-id')]); else playRow(row.getAttribute('data-track-id'), row); return; }
       if ((k === 'Delete' || k === 'Backspace') && a === row) { e.preventDefault(); App.emit('row:delete', { row: row, list: list, index: i }); return; }
     }
     var onControl = a && a.closest && a.closest('[role="slider"], input[type="range"], [role="tablist"], [role="menu"], [role="radiogroup"], select');
