@@ -107,6 +107,8 @@ export default defineConfig({
     { name: 'queue-after-end', testMatch: 'queue-after-end.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // the same song twice in the queue or a list is two entries: source pick, double-click and the playing mark tell them apart
     { name: 'queue-duplicates', testMatch: 'queue-duplicates.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
+    // Undo of Remove and Clear works on the entries they touched, and does nothing once the queue they belonged to is gone
+    { name: 'queue-undo', testMatch: 'queue-undo.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // Home's parts the hub fills: the first-run screen and its artists, a followed tag's "you might like"
     { name: 'home', testMatch: 'home.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // long lists: every row works, drawn or not (a fixture hub of its own: it likes, downloads and reorders)
