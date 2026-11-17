@@ -665,15 +665,31 @@
     P.move(qi, ps.index + 1); ps.shuffle = false; P.next(); ps.shuffle = sh;
   }
   App.on('row:move', function (d) { if (d.row.closest('.now-q')) moveRow(+d.row.getAttribute('data-qi'), d.dir); });
-  App.on('row:delete', function (d) {
-    if (!d.row.closest('.now-q')) return;
-    var qi = +d.row.getAttribute('data-qi'), next = ps.queue[qi + 1] || ps.queue[qi - 1];
+  function removeRow(qi) {
+    var next = ps.queue[qi + 1] || ps.queue[qi - 1];
     withFocus(next ? 'row-' + next.uid : null, function () { P.removeAt(qi); });
-  });
-  /* keyboard Enter on a queue row jumps to it (instead of replacing the queue) */
+  }
+  function playNextRow(qi) {
+    var q = ps.queue[qi], t = q && M.track(q.trackId);
+    if (!t || qi === ps.index) return;
+    withFocus('row-' + q.uid, function () { P.move(qi, ps.index + 1); });
+    App.announce(t.title + ' plays next');
+  }
+  App.on('row:delete', function (d) { if (d.row.closest('.now-q')) removeRow(+d.row.getAttribute('data-qi')); });
+  /* The queue's rows (the panel's and Now Playing's up-next preview) act on the queue itself, so these capture handlers
+     answer before the generic list ones, which would replace the queue (double-click, Enter) or add a copy (Shift+Enter).
+     Enter or a double-click jumps to the song, Shift+Enter moves it to play next. */
   document.addEventListener('keydown', function (e) {
     var row = e.target.closest && e.target.closest('.now-q__row');
-    if (row && e.target === row && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); jumpTo(+row.getAttribute('data-qi')); }
+    if (!row || e.target !== row || e.key !== 'Enter') return;
+    e.preventDefault(); e.stopPropagation();
+    var qi = +row.getAttribute('data-qi');
+    if (e.shiftKey) playNextRow(qi); else jumpTo(qi);
+  }, true);
+  document.addEventListener('dblclick', function (e) {
+    var row = e.target.closest && e.target.closest('.now-q__row');
+    if (!row || e.target.closest('button, a')) return;
+    e.stopPropagation(); jumpTo(+row.getAttribute('data-qi'));
   }, true);
   /* drag to reorder inside the queue, with pointer events rather than native drag and drop: the row follows the
      pointer and the rows it passes slide out of its way, all by transforms, so nothing is laid out again until the
@@ -750,7 +766,8 @@
   }
   document.addEventListener('pointerup', function (e) { if (qd && e.pointerId === qd.id) qEnd(true); });
   document.addEventListener('pointercancel', function (e) { if (qd && e.pointerId === qd.id) qEnd(false); });
-  document.addEventListener('keydown', function (e) { if (qd && qd.live && e.key === 'Escape') { e.preventDefault(); qEnd(false); } }, true);
+  /* Escape ends the drag and nothing else: the overlay panel it runs in stays open */
+  document.addEventListener('keydown', function (e) { if (qd && qd.live && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); qEnd(false); } }, true);
 
   /* =====================================================================
      6. Activity: transfers (hatched progress), saves (5 steps), imports, rescans; filters; All quiet
@@ -1086,10 +1103,10 @@
       { label: playing ? (ps.playing ? 'Pause' : 'Play') : 'Play now', icon: playing && ps.playing ? 'pause' : 'play', run: function () { jumpTo(qi); } }
     ];
     if (!playing) {
-      items.push({ label: 'Play next', icon: 'queue', run: function () { withFocus('row-' + q.uid, function () { P.move(qi, ps.index + 1); }); App.announce(t.title + ' plays next'); } });
+      items.push({ label: 'Play next', icon: 'queue', run: function () { playNextRow(qi); } });
       items.push({ label: 'Move up', icon: 'chevron-up', run: function () { moveRow(qi, -1); } });
       items.push({ label: 'Move down', icon: 'chevron-down', run: function () { moveRow(qi, 1); } });
-      items.push({ label: 'Remove from queue', icon: 'trash', run: function () { P.removeAt(qi); } });
+      items.push({ label: 'Remove from queue', icon: 'trash', run: function () { removeRow(qi); } });
     }
     items.push('sep');
     items.push({ label: App.isSaved(t.id) ? 'In your library' : 'Save to library', icon: App.isSaved(t.id) ? 'saved' : 'save', run: function () { App.saves.start([t.id]); } });
@@ -1099,7 +1116,11 @@
     items.push({ label: 'Show sources', icon: 'soulseek', run: function () { App.hooks.sourcePicker(t.id); } });
     App.menu(el, items, { label: 'Queue actions for ' + t.title });
   });
-  App.action('now-q-clear', function () { P.clear(); });
+  /* Clear disables its own button, so focus goes to the song that keeps playing */
+  App.action('now-q-clear', function () {
+    var cur = ps.queue[ps.index];
+    withFocus(cur ? 'row-' + cur.uid : null, function () { P.clear(); });
+  });
   App.action('now-q-playlist', function () {
     var ids = ps.queue.map(function (q) { return q.trackId; });
     var name = ps.radio && ps.radio.name ? ps.radio.name.toLowerCase() + ' radio' : 'saved queue';
