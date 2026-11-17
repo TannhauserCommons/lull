@@ -64,7 +64,8 @@ pub struct Mixer {
     /// The current deck's sound so far, for measured loudness: the sum of squares and frames.
     pub heard: (f64, u64),
     pub events: Vec<Event>,
-    /// Whether the song ended (and nothing took over): silence until the engine moves on.
+    /// Whether the song ended (and nothing took over): silence until the engine moves on or the
+    /// deck has sound again (a seek).
     ended: bool,
     /// The playing song's sound from a moment on (its own time), mono, for lining a better copy up.
     recording: Option<(f64, Vec<f32>)>,
@@ -152,9 +153,12 @@ impl Mixer {
             let Some(current) = self.current.clone() else {
                 break;
             };
-            if self.ended {
+            // Ended holds only while the deck stays dry: a seek on it (repeat one's replay, a seek
+            // after the end) fills it again, and the sound goes on.
+            if self.ended && current.drained() {
                 break;
             }
+            self.ended = false;
             self.scratch.resize((frames - at) * 2, 0.0);
             let from = current.position();
             let got = current.take(&mut self.scratch);
