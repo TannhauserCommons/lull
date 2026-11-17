@@ -744,12 +744,12 @@ impl Run {
         self.loads += 1;
         self.better = None;
         self.failed_at = None;
-        // A preloaded deck is reused only where it stands at `at`: a crossfade under way has already
-        // played into it.
-        let reuse = self
-            .next
-            .take()
-            .filter(|n| n.track_id == entry.track_id && n.source == entry.source && n.deck.position() == at);
+        // A preloaded deck (opened at 0) is reused only while nothing has played into it: a
+        // crossfade under way has taken from it already.
+        let frame = 1.0 / f64::from(self.rate);
+        let reuse = self.next.take().filter(|n| {
+            n.track_id == entry.track_id && n.source == entry.source && at == 0.0 && n.deck.position() < frame
+        });
         let loaded = match reuse {
             Some(mut next) => {
                 next.load = self.loads;
@@ -1004,7 +1004,16 @@ impl Run {
 
     /// The song set as next isn't any more (app.js `releaseNext`).
     fn release_next(&mut self) {
-        lock(&self.mixer).next = None;
+        {
+            let mut mixer = lock(&self.mixer);
+            // The mixer may have handed over to it already, the tick yet to hear: it is the playing
+            // deck, not an unused next, and that tick adopts it.
+            let plays = |n: &Loaded| mixer.current.as_ref().is_some_and(|c| Arc::ptr_eq(c, &n.deck));
+            if self.next.as_ref().is_some_and(plays) {
+                return;
+            }
+            mixer.next = None;
+        }
         if let Some(next) = self.next.take() {
             self.let_go(&next);
         }
@@ -2064,11 +2073,10 @@ mod tests {
         !lock(&run.mixer).events.is_empty()
     }
 
-    fn setup(
-        hub: &TestHub,
-        songs: &[(&str, bool, Option<f64>)],
-        repeat: Repeat,
-    ) -> Option<(Hub, Start, Arc<Mutex<Mixer>>, Arc<Manual>)> {
+    /// What a test player is made of: the hub, what it starts with, its mixer and its output.
+    type Setup = (Hub, Start, Arc<Mutex<Mixer>>, Arc<Manual>);
+
+    fn setup(hub: &TestHub, songs: &[(&str, bool, Option<f64>)], repeat: Repeat) -> Option<Setup> {
         {
             let mut book = hub.book.lock().ok()?;
             for (i, (id, _, seconds)) in songs.iter().enumerate() {
