@@ -176,7 +176,9 @@ export async function openMenu(browser, page, opts) {
 // Start a playlist, open the queue in the side panel, drag a song down five places. (A 1,200-song queue re-renders
 // every row on a move, about 100 ms unthrottled: windowing long lists is the fix, docs/context/quality.md#ui-gates.)
 export async function queueDrag(browser, page, opts, playlist = ids.playlist) {
-  await openScreen(page, `/playlist/${playlist}`, opts);
+  // the real clock: the fixed one replaces requestAnimationFrame with a timer, which runs between frames, when the last
+  // frame's writes are not laid out yet, so the drag's per-frame reads (scrollTop at an edge) counted as forced layouts at random
+  await openScreen(page, `/playlist/${playlist}`, { ...opts, clock: false });
   await playShown(page);
   await page.waitForFunction(() => App.player.state.queue.length > 20);
   await page.evaluate(() => App.openPanel('queue'));   // the side panel's queue, beside the long playlist
