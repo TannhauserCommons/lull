@@ -62,3 +62,31 @@ for (const how of ['Play next', 'Add to queue']) {
     expect((await queue(page)).length).toBe(0);
   });
 }
+
+// A Soulseek album lull has never opened answers `partial: true` with no songs and sends `album.updated` when the
+// tracklist arrives, within 90 s (api.md): the songs are coming, so the click waits for them and queues them then.
+for (const how of ['Play next', 'Add to queue']) {
+  test(`an album whose tracklist arrives late: "${how}" waits for it and queues the songs after the playing one`, async ({ page, request }) => {
+    const headers = { 'x-fixture-client': `${test.info().testId}:${test.info().repeatEachIndex}` };
+    await page.context().setExtraHTTPHeaders(headers);
+    await request.post('/__fixture/album-late', { data: { id: ids.album, ms: 1500 }, headers });
+    await openScreen(page, '/home');
+    const playing = await page.evaluate(async () => {
+      const r = await App.data.api('/__fixture/unsaved-songs?n=1'); App.data.absorb(r.entities);
+      App.player.playList(r.items, 0, { autoplay: false });
+      return r.items[0];
+    });
+    await page.evaluate((id) => {
+      App.data.absorb({ albums: { [id]: { id, title: 'Late', artist: 'Soft Choir', artistId: 'ar-none', trackIds: [] } } });
+      App.itemMenus.album(id, document.querySelector('#view'));
+    }, ids.album);
+    await choose(page, how);
+    await expect(page.locator('.toast', { hasText: 'Getting the tracklist' })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => App.player.state.queue.length), { timeout: 10_000 }).toBeGreaterThan(1);
+    const q = await page.evaluate(() => App.player.state.queue.map((e) => ({ id: e.trackId, known: !!App.data.track(e.trackId) })));
+    expect(q[0].id).toBe(playing);
+    expect(q.every((e) => e.known)).toBe(true);
+    expect(q.slice(1).map((e) => e.id)).toEqual(await page.evaluate((id) => App.data.album(id).trackIds, ids.album));
+    await expect(page.locator('.toast', { hasText: 'no songs' })).toHaveCount(0);
+  });
+}
