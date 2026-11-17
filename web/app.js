@@ -2479,12 +2479,17 @@
   };
   P.removeAt = function (i) {
     if (i === ps.index) { App.toast('That song is playing. Skip it instead.', { icon: 'info' }); return; }
+    var before = ps.queue[i - 1], after = ps.queue[i + 1];       // Undo anchors on the neighbours, not on the number
     var removed = ps.queue.splice(i, 1)[0]; if (i < ps.index) ps.index--;
     queueChanged();
     App.toast('Removed from queue', { group: 'queue-remove', together: function (n) { return 'Removed ' + n + ' songs from the queue'; }, icon: 'trash', action: 'Undo', onAction: function () {
-      ps.queue.splice(i, 0, removed); if (i <= ps.index) ps.index++; queueChanged();
+      var at = ps.queue.indexOf(before) >= 0 ? ps.queue.indexOf(before) + 1 : ps.queue.indexOf(after);
+      if (at < 0 || ps.queue.indexOf(removed) >= 0) { undoGone(); return; }
+      var playingEntry = ps.queue[ps.index];
+      ps.queue.splice(at, 0, removed); ps.index = ps.queue.indexOf(playingEntry); queueChanged();
     } });
   };
+  function undoGone() { App.toast('Can\'t undo: the queue has changed since', { icon: 'info' }); }
   P.move = function (from, to) {
     if (from === to || from < 0 || to < 0 || from >= ps.queue.length || to >= ps.queue.length) return;
     var playingEntry = ps.queue[ps.index], item = ps.queue.splice(from, 1)[0];
@@ -2496,9 +2501,17 @@
     queueChanged();
   };
   P.clear = function () {
-    var before = ps.queue.slice(), beforeIndex = ps.index, playingEntry = ps.queue[ps.index];
+    var before = ps.queue.slice(), playingEntry = ps.queue[ps.index];
     ps.queue = playingEntry ? [playingEntry] : []; ps.index = 0; queueChanged();
-    App.toast('Queue cleared', { group: 'queue-remove', icon: 'trash', action: 'Undo', onAction: function () { ps.queue = before; ps.index = beforeIndex; queueChanged(); } });
+    /* Undo restores the old queue around the entry still playing, with what was added since right after it; once another
+       song plays, the old queue has no place to come back to */
+    App.toast('Queue cleared', { group: 'queue-remove', icon: 'trash', action: 'Undo', onAction: function () {
+      var playing = ps.queue[ps.index];
+      if (!playing || before.indexOf(playing) < 0) { undoGone(); return; }
+      var added = ps.queue.filter(function (q) { return before.indexOf(q) < 0; }), restored = before.slice();
+      restored.splice.apply(restored, [restored.indexOf(playing) + 1, 0].concat(added));
+      ps.queue = restored; ps.index = restored.indexOf(playing); queueChanged();
+    } });
   };
   /* manual source choice (source picker): useSource(trackId, { peer, path, format, sizeBytes, speed }). The playing
      song switches mid-song (ADR-0008): the chosen peer's stream reopens at the same time, as the same play. */
