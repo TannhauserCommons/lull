@@ -464,12 +464,11 @@
   /* A page whose parts are still coming waits for its `*.updated` push, which it can miss: the app asleep or in the
      background, the event stream down a while (a reconnect re-reads everything anyway). So it reads again when it is
      seen again, and once after the hub's own bound: every late part has arrived or failed within 90 s (api.md). */
-  var LATE_BOUND_MS = 95000;
   function readAgainWhileComing(ctx, path, coming) {
     function again() { var d = M.peek(path); if (d && coming(d)) M.reload(path); }
     function seen() { if (!document.hidden) again(); }
     document.addEventListener('visibilitychange', seen);
-    var guard = setTimeout(again, LATE_BOUND_MS);
+    var guard = setTimeout(again, App.lateBoundMs);
     ctx.onCleanup(function () { document.removeEventListener('visibilitychange', seen); clearTimeout(guard); });
   }
 
