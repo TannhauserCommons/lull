@@ -2246,7 +2246,8 @@
   }
   P.play = function () {
     if (!ps.queue.length) { App.toast('Nothing queued. Search or pick something from Home.', { icon: 'info' }); return; }
-    if (ps.status === 'ended') { load(0); return; }
+    /* over: the first song added since the end, else the queue starts again */
+    if (ps.status === 'ended') { load(ps.index + 1 < ps.queue.length ? ps.index + 1 : 0); return; }
     if (ps.status === 'failed' || ps.status === 'jellyfin-error') { P.retry(); return; }
     /* restored after a reload: resume where it was. A Soulseek song may no longer be on the hub at that point (the
        cache evicted it, or only its start arrived before): if the resumed stream fails before it plays, it starts
@@ -2307,7 +2308,7 @@
     changed('ended');
   }
   P.prev = function () {
-    var i = LullRules.previous(ps.index, ps.pos);
+    var i = ps.status === 'ended' ? ps.index : LullRules.previous(ps.index, ps.pos);   // after the end: the last song again
     if (i < 0) { P.seek(0); return; }
     load(i);
   };
@@ -2460,11 +2461,15 @@
   /* the listener's own picks go to "next up", right after the playing song: Play next at its front, Add to queue at
      its end. They play before the context continues and outlive a new context (playList). */
   function nextUpEnd() { var at = ps.index + 1; while (ps.queue[at] && ps.queue[at].group === 'next') at++; return at; }
+  /* with nothing loaded, or the queue over, the first song just added plays (idle: the queue's first) */
+  function startIfStopped(at, opts) {
+    if (ps.status === 'idle') load(0, opts); else if (ps.status === 'ended') load(at, opts);
+  }
   P.playNext = function (ids) {
     ids = [].concat(ids); if (!ids.length) return;
     var at = ps.queue.length ? ps.index + 1 : 0;
     ps.queue.splice.apply(ps.queue, [at, 0].concat(ids.map(function (id) { return entry(id, 'next'); })));
-    if (ps.status === 'idle') load(0);
+    startIfStopped(at);
     queueChanged();
     App.toast(ids.length > 1 ? ids.length + ' songs will play next' : 'Playing next: ' + titleOf(ids[0]), { confirms: true, group: 'queue', n: ids.length, together: queued, icon: 'queue' });
   };
@@ -2474,7 +2479,7 @@
     ids = [].concat(ids); if (!ids.length) return;
     var at = ps.queue.length ? nextUpEnd() : 0;
     ps.queue.splice.apply(ps.queue, [at, 0].concat(ids.map(function (id) { return entry(id, 'next'); })));
-    if (ps.status === 'idle') load(0, { autoplay: !(opts && opts.paused) });
+    startIfStopped(at, { autoplay: !(opts && opts.paused) });
     queueChanged();
     App.toast(ids.length > 1 ? 'Added ' + ids.length + ' songs to the queue' : 'Added to queue: ' + titleOf(ids[0]), { confirms: true, group: 'queue', n: ids.length, together: queued, icon: 'queue' });
   };

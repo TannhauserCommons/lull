@@ -256,7 +256,8 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   `system` event, and the engine sets `ps.playing` to it and does nothing else (the output has already stopped its own work). It is never guessed from a `time` with `playing: false`: an
   output reports that at a song's end, when it is cleared and on a seek after the end, and nothing would undo it. A system
   play is ignored after a failure or the queue's end (the intent stays cleared: the key shows Play and its press retries or
-  starts the queue again). The browser output reports a system pause whichever deck it reaches first during a crossfade
+  starts the queue again, or at the first song added since the end; Previous after the end replays the last song, and Add
+  to queue or Play next after it start the added song). The browser output reports a system pause whichever deck it reaches first during a crossfade
   or a better copy's handover.
 - **Streaming state** comes from `stream` events (`finding queued buffering streaming stalled fallback failed`,
   `received/size`, `peer`, `peersFound`, `queuePos`, `failedPeers`), merged with the element's own `playing`/`waiting`.
