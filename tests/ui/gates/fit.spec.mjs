@@ -290,6 +290,31 @@ for (const design of designs) {
       expect(found, 'the side panel strip with a long song title').toEqual([]);
     });
 
+    // the side panel opened as an overlay (a window too narrow to dock it) is as wide as the panel column (--ctx), or the
+    // window leaves room for, never a sliver: it is a size container, so a width of `auto` shrinks it to its padding
+    test(`side panel overlay width / ${design} / ${theme}`, async ({ page }) => {
+      await watchObservers(page);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openScreen(page, '/home', { design, theme });
+      const found = [];
+      for (const w of [1300, 1100, 900, 700]) {
+        await page.setViewportSize({ width: w, height: 900 });
+        await drawnAt(page, w);
+        await page.evaluate(() => App.openPanel('queue'));
+        await frames(page);
+        await page.evaluate(() => Promise.race([Promise.all(document.getAnimations().filter((a) => Number.isFinite(a.effect?.getComputedTiming().endTime)).map((a) => a.finished.catch(() => {}))), new Promise((r) => setTimeout(r, 3000))]));
+        const got = await page.evaluate(() => {
+          const app = document.querySelector('#app'), ctx = document.querySelector('#ctx');
+          return { mode: app.getAttribute('data-ctx'), width: ctx.getBoundingClientRect().width, want: Math.min(parseFloat(getComputedStyle(ctx).getPropertyValue('--ctx')) || 320, innerWidth - 32) };
+        });
+        if (got.mode !== 'open') found.push(`${w} px: the panel is ${got.mode}, not open`);
+        else if (Math.abs(got.width - got.want) > 1) found.push(`${w} px: ${got.width} px wide, ${got.want} px expected`);
+        await page.evaluate(() => App.closePanel());
+        await frames(page);
+      }
+      expect(found, 'the side panel opened as an overlay').toEqual([]);
+    });
+
     // Settings' tab list on a short laptop window (a 1080p screen at 125%: 1536 x 864): beside a section that scrolls,
     // it fits in the view and its last tab can be reached and clicked, scrolling the list itself where it must, both at
     // the top of the page (the page's heading above it) and stuck mid-section (screens/settings-fit.js, --view-h and
