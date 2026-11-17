@@ -156,3 +156,30 @@ test('an artist drawn without a photo shows the one the hub vets later', async (
   }, ids.artist, { timeout: 5000 });
   expect(reads, 'the artist page read again').toEqual([]);
 });
+
+// A re-render keeps a cover's picture (App.patch: the fitter's size is kept), so the cover stays shown. Live
+// (2026-11-16), Starlight draws Home's picks at about 228 px while the markup asks for 64: the fitter loads 256, and the
+// next re-render took the span's class from markup drawn for 96 (never loaded), dropping .has-art; the picture stayed
+// loaded but hidden behind the recipe until a reload.
+test('a re-render keeps every shown cover shown, at whatever size the fitter chose', async ({ page }) => {
+  await openScreen(page, '/home', { design: 'starlight' });
+  const visible = () => [...document.querySelectorAll('img.cover__img')].filter((i) => {
+    const r = i.getBoundingClientRect(); return r.width > 0 && r.bottom > 0 && r.top < innerHeight && i.complete && i.naturalWidth > 0;
+  });
+  await page.waitForFunction((v) => { const imgs = new Function('return (' + v + ')()')(); return imgs.length > 0 && imgs.every((i) => i.parentNode.classList.contains('has-art')); },
+    visible.toString(), { timeout: 5000 });
+  // the case that matters: a cover shown at a size other than the one its markup asks for
+  const refitted = await page.evaluate((v) => new Function('return (' + v + ')()')().filter((i) => {
+    const base = parseFloat(i.parentNode.style.getPropertyValue('--cover-size-base')) || 0;
+    const asked = +(/[?&]size=(\d+)/.exec(i.getAttribute('src')) || [])[1];
+    return base && asked > [96, 256, 512, 1024, 2048].find((s) => s >= base * devicePixelRatio * 0.9);
+  }).length, visible.toString());
+  expect(refitted, 'covers drawn larger than their markup asks (Starlight picks)').toBeGreaterThan(0);
+
+  await page.evaluate(() => App.refresh());
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 100))));
+  const hidden = await page.evaluate((v) => new Function('return (' + v + ')()')()
+    .filter((i) => !i.parentNode.classList.contains('has-art') || getComputedStyle(i).opacity === '0')
+    .map((i) => i.getAttribute('data-art') + ' ' + i.getAttribute('src')), visible.toString());
+  expect(hidden, 'loaded covers hidden after a re-render').toEqual([]);
+});

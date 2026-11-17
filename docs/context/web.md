@@ -913,7 +913,8 @@ The hub serves every cover and photo at 96, 256, 512, 1024 and 2048 px, scaled d
   `.has-art` is added once it loads and hides the recipe's `::before/::after`. Designs that draw on those
   pseudo-elements handle `.has-art` (starlight keeps its frame line, petal never mirrors real art). A picture this page
   has already loaded renders with `.has-art` from the start, and the player warms the next song's cover
-  (`ui.warmArt`), so art never fades in twice.
+  (`ui.warmArt`), so art never fades in twice. A re-render that keeps a cover's picture (`App.patch`: same picture, the fitter's size)
+  sets `.has-art` from that picture, not from the new markup, which was drawn for the size it first asked for.
 - **Re-renders patch, they don't rebuild.** `App.refresh()` of the page already showing, the player bar, the side
   panel and the screens' own repaints go through `App.patch(el, markup)`: only what differs changes, children matched
   by `id`, `data-key`, `data-track-id` or `data-id`, else by position. Attributes are compared by name

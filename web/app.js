@@ -153,8 +153,12 @@
   function busy(n) { return n.nodeType === 1 && n.getAttribute('aria-busy') === 'true'; }
   function patchNode(old, want) {
     if (old.nodeType !== 1) { if (old.nodeValue !== want.nodeValue) old.nodeValue = want.nodeValue; return; }
-    if (old.nodeName === 'IMG' && old.getAttribute('src') === want.getAttribute('src')) return;   // same picture: leave it be
-    if (old.nodeName === 'IMG' && old.hasAttribute('data-pic') && old.getAttribute('data-pic') === want.getAttribute('data-pic')) return;   // a cover's size is the fitter's
+    if (old.nodeName === 'IMG' && (old.getAttribute('src') === want.getAttribute('src') ||   // same picture: leave it be
+        old.hasAttribute('data-pic') && old.getAttribute('data-pic') === want.getAttribute('data-pic'))) {   // a cover's size is the fitter's
+      /* the cover's .has-art came from the new markup, drawn for the size it asked for; the picture kept is the one shown */
+      if (old.classList.contains('cover__img')) old.parentNode.classList.toggle('has-art', old.complete && old.naturalWidth > 0);
+      return;
+    }
     patchAttrs(old, want);
     if (want.hasAttribute('data-fill')) { watchRow(old); if (old.firstChild) fillRow(old); else holdPlace(old); return; }   // a lazy row: see ui.row
     if (old.nodeName === 'TEXTAREA') { if (old !== document.activeElement) old.value = want.value; return; }
