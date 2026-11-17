@@ -4247,10 +4247,22 @@
   /* an album's songs, known to the cache: a list's album entity carries trackIds without the tracks, and the player can't
      load a song it doesn't know, so the album is read whenever any of them is missing */
   function albumTracks(id) {
-    var a = M.album(id);
+    var a = M.album(id), path = '/api/albums/' + encodeURIComponent(id);
     if (a && a.trackIds.length && a.trackIds.every(function (t) { return M.track(t); })) return Promise.resolve(a.trackIds);
-    return M.api('/api/albums/' + encodeURIComponent(id)).then(function () { var x = M.album(id); return x ? x.trackIds : []; });
+    function songs() { var x = M.album(id); return x ? x.trackIds : []; }
+    return M.api(path).then(function (d) {
+      if (!d || !d.partial) return songs();
+      /* the tracklist is still coming (an album lull never opened): the hub sends `album.updated` within 90 s, so wait
+         for it, as the album page does, and read again. A missed push ends at the hub's bound (App.lateBoundMs) */
+      App.toast('Getting the tracklist…', { icon: 'info' });
+      return new Promise(function (arrived) {
+        var off = App.on('server:album.updated', function (e) { if (e.albumId === id) done(); }), guard = setTimeout(done, App.lateBoundMs);
+        function done() { off(); clearTimeout(guard); arrived(); }
+      }).then(function () { return M.api(path); }).then(function (again) { return again && again.partial ? [] : songs(); });
+    });
   }
+  /* every late part has arrived or failed within the hub's 90 s (api.md), plus a margin */
+  App.lateBoundMs = 95000;
   App.albumTracks = albumTracks;
   function withAlbum(id, fn) {
     albumTracks(id).then(function (list) {
