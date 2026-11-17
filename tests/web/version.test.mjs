@@ -81,11 +81,19 @@ test('a bump changes exactly the holders and adds the changelog stub', (t) => {
   assert.equal(readVersion(root), target);
   assert.deepEqual(problems(root), []);
 
-  // Only version lines moved: swapping the new version back for the old one restores every holder byte for byte.
+  // Only version lines moved: every line the bump changed reads as it was once the new version is swapped back for the old.
+  // Line by line, not the whole file: a dependency can already sit at the target version (vcpkg is 0.2.15 in both locks)
+  // and must not be swapped by the undo either.
   const code = versionCode(target);
   for (const file of HOLDERS) {
-    const restored = after.get(file).toString().replaceAll(`"${target}"`, `"${version}"`).replaceAll(`"versionCode": ${code}`, `"versionCode": ${versionCode(version)}`);
-    assert.equal(restored, before.get(file).toString(), file);
+    const was = before.get(file).toString().split('\n');
+    const now = after.get(file).toString().split('\n');
+    assert.equal(now.length, was.length, file);
+    now.forEach((line, i) => {
+      if (line === was[i]) return;
+      const undone = line.replace(`"${target}"`, `"${version}"`).replace(`"versionCode": ${code}`, `"versionCode": ${versionCode(version)}`);
+      assert.equal(undone, was[i], `${file}:${i + 1}`);
+    });
   }
 });
 
