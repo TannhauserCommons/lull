@@ -2282,9 +2282,11 @@
     /* repeat one replays the same response, unless a better copy waits for the next play: that is now */
     if (i === ps.index && auto && !(ps.upgrade && ps.upgrade.state === 'next-play')) { endPlay('completed'); out.seek(0); out.play().catch(playRefused); return; }
     if (i < 0) {                                        // the end: radio may still add songs
+      var from = ps.index;
       topUpRadio().then(function (added) {
+        if (ps.index !== from) return;                  // the queue already moved on: a second press while it topped up
         if (!added) { endQueue(auto); return; }
-        load(ps.index + 1, { reason: auto ? 'completed' : 'skipped' });
+        load(from + 1, { reason: auto ? 'completed' : 'skipped' });
       });
       return;
     }
