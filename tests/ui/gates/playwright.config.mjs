@@ -103,6 +103,8 @@ export default defineConfig({
     { name: 'queue-radio', testMatch: 'queue-radio.spec.mjs', fullyParallel: true },
     // an album or playlist queued or played from a tile has its songs read first, so they load and play
     { name: 'queue-unknown', testMatch: 'queue-unknown.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
+    // after the queue ends, adding, Play and Previous act on the queue as it now is
+    { name: 'queue-after-end', testMatch: 'queue-after-end.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // Home's parts the hub fills: the first-run screen and its artists, a followed tag's "you might like"
     { name: 'home', testMatch: 'home.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // long lists: every row works, drawn or not (a fixture hub of its own: it likes, downloads and reorders)
