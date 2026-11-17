@@ -27,3 +27,23 @@ test('two quick Next presses at the end of a radio queue move to the first new s
   await page.waitForFunction(() => App.player.state.queue.length > 2 && App.player.state.index >= 2);
   expect((await page.evaluate(() => App.player.state.index)), 'the first radio song, once').toBe(2);
 });
+
+test('Next at the end of a radio queue still advances when a row above the playing song is removed while it tops up', async ({ page }) => {
+  await openScreen(page, '/home');
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route('**/api/radio?*', async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.evaluate((album) => {
+    const t = App.data.album(album).trackIds.slice(0, 3);
+    App.player.playList(t, 2, { autoplay: false, radio: { name: 'Radio', seed: { kind: 'track', id: t[0] }, keepsAdding: true, steer: 0.4 } });
+    App.player.pause();
+    App.player.next();                       // waits for the top-up
+    App.player.removeAt(0);                  // the playing song keeps playing, one number lower
+  }, ids.album);
+  release();
+  await page.waitForFunction(() => App.player.state.queue.length > 2);
+  expect(await page.evaluate(() => App.player.state.index), 'the first radio song').toBe(2);
+});
