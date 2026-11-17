@@ -1994,6 +1994,62 @@ mod tests {
     /// A player on the stand-in output, its queue the given songs (id, saved, seconds; `None`: the
     /// hub refuses it), from the first, playing.
     fn player(hub: &TestHub, songs: &[(&str, bool, Option<f64>)], repeat: Repeat) -> Option<(Engine, Arc<Manual>)> {
+        let (hub, start, mixer, output) = setup(hub, songs, repeat)?;
+        let engine = Engine::with_output(hub, start, Box::new(output.clone()), mixer, false).ok()?;
+        Some((engine, output))
+    }
+
+    /// The same player, but on the test's own thread: the test gives its commands and its ticks
+    /// itself, so what happens within one tick doesn't depend on timing.
+    fn by_hand(hub: &TestHub, songs: &[(&str, bool, Option<f64>)], repeat: Repeat) -> Option<(Run, Arc<Manual>)> {
+        let (hub, start, mixer, output) = setup(hub, songs, repeat)?;
+        let shared = Arc::new(Shared {
+            commands: Mutex::new(VecDeque::new()),
+            wake: Condvar::new(),
+            snapshot: Mutex::new(Snapshot::default()),
+        });
+        let catalogue = Arc::new(Mutex::new(
+            start.tracks.iter().map(|t| (t.id.clone(), t.clone())).collect(),
+        ));
+        let (heard_to, heard) = channel();
+        let run = Run::new(
+            hub,
+            start,
+            Box::new(output.clone()),
+            mixer,
+            shared,
+            catalogue,
+            heard,
+            heard_to,
+            Arc::new(AtomicBool::new(false)),
+        );
+        Some((run, output))
+    }
+
+    /// Takes sound from the output, 10 ms at a time, until `done` is true of what the player and
+    /// the sound just taken say; false after 20 s of waiting.
+    fn pull_until(run: &mut Run, output: &Manual, mut done: impl FnMut(&mut Run, &[f32]) -> bool) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            let sound = output.pull(RATE as usize / 100);
+            if done(run, &sound) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        false
+    }
+
+    /// Whether the mixer has something for the engine to read.
+    fn mixer_spoke(run: &Run) -> bool {
+        !lock(&run.mixer).events.is_empty()
+    }
+
+    fn setup(
+        hub: &TestHub,
+        songs: &[(&str, bool, Option<f64>)],
+        repeat: Repeat,
+    ) -> Option<(Hub, Start, Arc<Mutex<Mixer>>, Arc<Manual>)> {
         {
             let mut book = hub.book.lock().ok()?;
             for (i, (id, _, seconds)) in songs.iter().enumerate() {
@@ -2045,8 +2101,7 @@ mod tests {
         };
         let output = Arc::new(Manual::new(render, RATE));
         let hub = Hub::new(tauri::Url::parse(&hub.origin).ok()?, "token".into());
-        let engine = Engine::with_output(hub, start, Box::new(output.clone()), mixer, false).ok()?;
-        Some((engine, output))
+        Some((hub, start, mixer, output))
     }
 
     /// `seconds` of sound, taken four times faster than it plays (the engine's clock still sees
@@ -2210,6 +2265,26 @@ mod tests {
                 .map(|e| e["completed"].clone()),
             Some(json!(true))
         );
+        Ok(())
+    }
+
+    #[test]
+    fn repeat_one_sounds_every_time_round_not_only_counts_it() -> Result<(), String> {
+        let hub = hub(json!({})).ok_or("no hub")?;
+        let (mut run, output) = by_hand(&hub, &[("a", true, Some(1.0))], Repeat::One).ok_or("no player")?;
+        let audible = |_: &mut Run, sound: &[f32]| sound.iter().any(|s| s.abs() > 0.01);
+        assert!(pull_until(&mut run, &output, audible), "the song never sounded");
+        for round in 1..=3 {
+            assert!(
+                pull_until(&mut run, &output, |run, _| mixer_spoke(run)),
+                "round {round}: the song never ended"
+            );
+            run.tick();
+            assert!(
+                pull_until(&mut run, &output, audible),
+                "round {round}: silence after the replay"
+            );
+        }
         Ok(())
     }
 
