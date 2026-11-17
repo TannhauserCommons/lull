@@ -2324,6 +2324,30 @@ mod tests {
     }
 
     #[test]
+    fn a_queue_change_between_a_handover_and_the_tick_keeps_the_song_the_mixer_plays() -> Result<(), String> {
+        let hub = hub(json!({})).ok_or("no hub")?;
+        let songs = [("a", true, Some(1.0)), ("b", true, Some(3.0)), ("c", true, Some(3.0))];
+        let (mut run, output) = by_hand(&hub, &songs, Repeat::Off).ok_or("no player")?;
+        // The gapless handover into b waits for the tick (b was set as next by an earlier one)...
+        let handed_over = |run: &mut Run, _: &[f32]| {
+            if mixer_spoke(run) {
+                return true;
+            }
+            run.tick();
+            false
+        };
+        assert!(pull_until(&mut run, &output, handed_over), "no handover");
+        // ...when the listener changes the repeat, which sets the next song aside again.
+        run.command(Command::CycleRepeat);
+        run.tick();
+        assert_eq!(run.current.as_ref().map(|c| c.track_id.as_str()), Some("b"));
+        assert_eq!(run.queue.index, 1);
+        let audible = |_: &mut Run, sound: &[f32]| sound.iter().any(|s| s.abs() > 0.01);
+        assert!(pull_until(&mut run, &output, audible), "b doesn't sound");
+        Ok(())
+    }
+
+    #[test]
     fn a_next_during_a_crossfade_starts_the_next_song_from_its_start() -> Result<(), String> {
         let hub = hub(json!({"playback": {"crossfade": 2}})).ok_or("no hub")?;
         let songs = [("a", true, Some(4.0)), ("b", true, Some(4.0)), ("c", true, Some(4.0))];
