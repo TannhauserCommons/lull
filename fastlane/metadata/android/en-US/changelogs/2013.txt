@@ -1,0 +1,5 @@
+* One player view derives what every surface shows, and the intent follows the output
+* The view carries the intent and when a wait began; the engine keeps a system pause, ignores a dead song's play, and follows only a wait for a source
+* The engine only records a system pause; the browser output stops its own work and halts a stray resume
+* The browser output keeps what it wants per element, and Android pauses work with the page gone
+* The view's buffered input is the output's ranges
