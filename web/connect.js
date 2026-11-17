@@ -136,9 +136,10 @@
       var at = C.position(st), queue = st.queue.slice(Math.max(0, st.queueIndex - 50), st.queueIndex + 150);
       var index = st.queueIndex - Math.max(0, st.queueIndex - 50);
       return learnTracks(queue).then(function () {
-        var known = queue.filter(function (id) { return M.track(id); }), cur = queue[index];
-        if (known.indexOf(cur) < 0) { App.toast('Couldn\'t read the song ' + d.name + ' was playing', { kind: 'error' }); return; }
-        P.playList(known, known.indexOf(cur), { at: at, autoplay: !!st.playing, context: null });   // the state doesn't say where it played from
+        // the reported entry's place among the songs this device can read (a song in the queue twice is two entries)
+        var known = queue.filter(function (id) { return M.track(id); }), start = queue.slice(0, index).filter(function (id) { return M.track(id); }).length;
+        if (!M.track(queue[index])) { App.toast('Couldn\'t read the song ' + d.name + ' was playing', { kind: 'error' }); return; }
+        P.playList(known, start, { at: at, autoplay: !!st.playing, context: null });   // the state doesn't say where it played from
         App.toast('Playing here, from ' + d.name, { kind: 'ok', icon: 'connect' });
       });
     }).catch(function () {});
