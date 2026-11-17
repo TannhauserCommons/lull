@@ -3831,20 +3831,29 @@
     App.popover(anchor, body, { label: 'Service status', className: 'popover--status' });
   }
   /* a service as /health or a `service` event reports it: { state, detail, extra } -> the tray's shape */
-  function applyService(name, svc) {
-    if (!SERVICE_LABELS[name]) return;
+  function servicePatch(name, svc) {
     var x = svc.extra || {}, patch = { state: svc.state, detail: svc.detail };
     if (name === 'cache') { patch.usedGB = Math.round((x.usedBytes || 0) / 1e8) / 10; patch.capGB = Math.round((x.capBytes || 0) / 1e8) / 10; }
     if (name === 'lastfm') patch.queued = x.queued || 0;
     if (name === 'library') patch.mode = x.mode || null;   // folder | jellyfin: what source details call the library
-    App.setService(name, patch);
+    return patch;
   }
-  App.setService = function (key, patch) {
-    var was = state.services[key] || {};
-    if (Object.keys(patch).every(function (k) { return was[k] === patch[k]; })) return;   // the same report again: nothing to redraw
-    App.store.update('services', function (s) { s[key] = Object.assign({}, s[key], patch); });
-    renderTray();
+  function applyServices(reports) {
+    var patches = {};
+    Object.keys(reports).forEach(function (name) { if (SERVICE_LABELS[name]) patches[name] = servicePatch(name, reports[name]); });
+    App.setServices(patches);
+  }
+  /* services as { key: patch }, drawn once however many changed: the tray's redraw fits the header again, and one for each
+     of /health's services at startup was most of the longest task of the start (the store's event draws it) */
+  App.setServices = function (patches) {
+    var changed = Object.keys(patches).filter(function (key) {
+      var was = state.services[key] || {};
+      return !Object.keys(patches[key]).every(function (k) { return was[k] === patches[key][k]; });   // the same report again: nothing to redraw
+    });
+    if (!changed.length) return;
+    App.store.update('services', function (s) { changed.forEach(function (key) { s[key] = Object.assign({}, s[key], patches[key]); }); });
   };
+  App.setService = function (key, patch) { var one = {}; one[key] = patch; App.setServices(one); };
   App.on('store', function (keys) {
     if (keys.indexOf('services') >= 0) renderTray();
     if (keys.indexOf('playlists') >= 0 || keys.indexOf('followed') >= 0) renderRail();
@@ -4856,7 +4865,7 @@
   /* `service`, `stream`, `save`, `job`, `transfer` drive the engines here; every topic is also re-emitted as
      App.emit('server:<topic>', payload) for screens (search.results -> discover.js). */
   var serverHandlers = {
-    service: function (e) { applyService(e.name, e.service); },
+    service: function (e) { var one = {}; one[e.name] = e.service; applyServices(one); },
     stream: onStreamEvent,
     save: onSaveEvent,
     job: onJobEvent,
@@ -4905,7 +4914,7 @@
       if (changedVersion) offeredVersion = version;
       setServer(version ? { reachable: true, version: version, build: h.build || null, flags: h.flags || [] } : { reachable: true });
       if (events && events.readyState === EventSource.CLOSED && App.server.authorized) connectEvents();
-      Object.keys(h.services || {}).forEach(function (k) { applyService(k, h.services[k]); });
+      applyServices(h.services || {});
       if (changedVersion) App.emit('pwa', { kind: 'update' });
     }, function () {
       if (!pageVersion) pageVersion = keptVersion();               // started without the hub: running what the worker kept
