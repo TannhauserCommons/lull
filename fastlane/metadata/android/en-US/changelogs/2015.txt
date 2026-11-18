@@ -1,0 +1,8 @@
+* Add to queue on an album or playlist queues all its songs, waiting for a late tracklist
+* Albums opened before load at once
+* After the queue ends, adding, Play and Previous do what you expect
+* A song queued twice is two entries, and Undo puts back what it removed
+* Next at the end of a radio queue moves one song
+* Play here starts where the other device was
+* Queue keys: double-click jumps, Shift+Enter plays next
+* Desktop Classic: repeat one, Next during a crossfade and gapless fixes
