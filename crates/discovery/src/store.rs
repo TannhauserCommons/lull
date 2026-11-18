@@ -104,6 +104,12 @@ impl Store {
         Ok(album)
     }
 
+    /// The album with its whole tracklist, when a catalog or MusicBrainz gave it (`full_album`)
+    /// and lull still holds every song of it.
+    pub async fn known_tracklist(&self, _id: AlbumId) -> Result<Option<(Album, Vec<Track>)>> {
+        Ok(None)
+    }
+
     /// What MusicBrainz knows of a remembered album (its MBID, tags, type, date) fills its gaps.
     pub async fn enrich_album(&self, id: AlbumId, group: Release) -> Result<()> {
         self.db
@@ -1458,6 +1464,71 @@ mod tests {
             blue[0].id,
             "no release group: the one known"
         );
+        Ok(())
+    }
+
+    fn song(title: &str, no: u32) -> crate::sources::Song {
+        crate::sources::Song {
+            mbid: None,
+            title: title.into(),
+            artist: "Glow Tape".into(),
+            artist_mbid: None,
+            album: "Second Light".into(),
+            album_artist: None,
+            album_mbid: None,
+            year: Some(2024),
+            no: Some(no),
+            disc: None,
+            duration_s: Some(200),
+            tags: Vec::new(),
+            artist_source: None,
+            isrc: None,
+        }
+    }
+
+    /// Live, an album opened before asked its catalog again on every read, and when that answer
+    /// took over the page's deadline the listener waited for a tracklist lull already had.
+    #[tokio::test]
+    async fn an_album_whose_whole_tracklist_was_given_answers_from_it_and_only_then() -> Result<()> {
+        let db = lull_core::db::Db::memory()?;
+        db.migrate(&lull_core::catalog::MIGRATIONS)?;
+        db.migrate(&crate::MIGRATIONS)?;
+        let store = Store::new(db, std::sync::Arc::new(Shelves), false);
+        let release = || crate::sources::Release {
+            mbid: None,
+            title: "Second Light".into(),
+            artist: "Glow Tape".into(),
+            artist_mbid: None,
+            kind: Some("album".into()),
+            date: Some("2024".into()),
+            tags: Vec::new(),
+        };
+        let id = super::album(release()).id;
+        store.albums(vec![release()]).await?;
+        assert!(store.known_tracklist(id.clone()).await?.is_none(), "shown in a discography: no tracklist yet");
+
+        // Before, a page whose tracklist failed kept the one song lull held of it as its tracks.
+        let held = store.tracks(vec![song("Two", 2)]).await?;
+        let stale = super::with_tracks(super::album(release()), &held);
+        store
+            .db
+            .call(move |c| super::merge_put(c, "discovery_albums", vec![stale], |a| &a.id.0, super::merge_album))
+            .await?;
+        assert!(
+            store.known_tracklist(id.clone()).await?.is_none(),
+            "the songs lull happened to hold aren't the album's tracklist"
+        );
+
+        let whole = store.tracks(vec![song("One", 1), song("Two", 2), song("Three", 3)]).await?;
+        store.full_album(super::album(release()), &whole).await?;
+        store.albums(vec![release()]).await?;
+        let Some((album, tracks)) = store.known_tracklist(id).await? else {
+            unreachable!("a tracklist a catalog gave is known, shown in a discography again or not")
+        };
+        let titles: Vec<&str> = tracks.iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(titles, ["One", "Two", "Three"]);
+        assert_eq!(album.track_ids, whole.iter().map(|t| t.id.clone()).collect::<Vec<_>>());
+        assert_eq!(album.duration, Some(600));
         Ok(())
     }
 }
