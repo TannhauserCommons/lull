@@ -5,8 +5,9 @@
 //!
 //! An album a catalog found (iTunes, Deezer) takes its tracklist from that catalog in one call;
 //! MusicBrainz, paced and shared with every lull crate, then only adds its facts in the
-//! background. The album page answers within `ALBUM_DEADLINE` with what lull has, and
-//! announces the full tracklist as `album.updated` when it arrives later.
+//! background. The album page answers at once with a tracklist lull has whole, else within
+//! `ALBUM_DEADLINE` with what lull has, and announces the full tracklist as `album.updated` when
+//! it arrives later.
 
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
@@ -128,10 +129,24 @@ pub async fn album(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> R
         .await?
         .ok_or_else(|| Error::NotFound(format!("Album {id} is unknown to lull.")))?;
     known.id = id.clone();
+    let started = Instant::now();
+
+    // A tracklist lull has whole answers at once. It is still filled behind, so the catalog's
+    // answer kept a week stays the album's (a reissue's added songs show on the next read).
+    if let Some((album, tracks)) = svc.store.known_tracklist(id.clone()).await? {
+        let task = (svc.clone(), known);
+        svc.ctx.spawn(async move {
+            let (svc, known) = task;
+            if let Err(e) = bounded(fill(&svc, known)).await {
+                tracing::info!(error = %e, album = %id, "known tracklist not refreshed");
+            }
+        });
+        tracing::info!(album = %album.id, ms = started.elapsed().as_millis() as u64, "album page answered from its known tracklist");
+        return page(&svc, album, tracks, false, Errors::new()).await;
+    }
 
     // Filled in a task of its own, so a tracklist that misses the deadline is still fetched,
     // remembered and announced: arrived or failed, within `LATE_LIMIT`.
-    let started = Instant::now();
     let (tx, rx) = oneshot::channel();
     let task = (svc.clone(), known.clone());
     svc.ctx.spawn(async move {
@@ -165,6 +180,16 @@ pub async fn album(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> R
         }
     };
     tracing::info!(album = %id, ms = started.elapsed().as_millis() as u64, partial, "album page answered");
+    page(&svc, album, tracks, partial, errors).await
+}
+
+async fn page(
+    svc: &Service,
+    album: Album,
+    tracks: Vec<Track>,
+    partial: bool,
+    errors: Errors,
+) -> Result<Json<AlbumPage>> {
     let artist = svc
         .store
         .artists(vec![store::artist(ArtistInfo {
@@ -173,15 +198,15 @@ pub async fn album(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> R
         })])
         .await?;
     Ok(Json(AlbumPage {
-        entities: art::pictured(&svc, entities(tracks, vec![album.clone()], artist)).await?,
+        entities: art::pictured(svc, entities(tracks, vec![album.clone()], artist)).await?,
         partial,
         errors,
         album,
     }))
 }
 
-/// The album's tracklist, remembered with it: from the catalog that found it, else from
-/// MusicBrainz, else the catalog tracks lull already has of it.
+/// The album's tracklist: from the catalog that found it, else from MusicBrainz, remembered with
+/// it; else the catalog tracks lull already has of it, not remembered as its tracklist.
 async fn fill(svc: &Service, known: Album) -> Result<Filled> {
     let id = known.id.clone();
     if let Some(source) = svc.store.album_source(id.clone()).await? {
@@ -208,11 +233,16 @@ async fn fill(svc: &Service, known: Album) -> Result<Filled> {
         }
     };
     album.id = id.clone();
-    let tracks = if songs.is_empty() {
-        svc.store.catalog_album_tracks(id).await?
-    } else {
-        svc.store.tracks(songs).await?
-    };
+    // No source gave its tracklist: the songs lull holds of it are shown, never remembered as it.
+    if songs.is_empty() {
+        let tracks = svc.store.catalog_album_tracks(id).await?;
+        return Ok(Filled {
+            album: store::with_tracks(album, &tracks),
+            tracks,
+            from_catalog: false,
+        });
+    }
+    let tracks = svc.store.tracks(songs).await?;
     Ok(Filled {
         album: svc.store.full_album(album, &tracks).await?,
         tracks,

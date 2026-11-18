@@ -146,6 +146,14 @@ pub const MIGRATIONS: Migrations = Migrations {
             shown_at  INTEGER NOT NULL
         );
     "#,
+        r#"
+        -- Albums whose whole tracklist a catalog or MusicBrainz gave (store::full_album): their
+        -- page answers from it at once. An album's trackIds alone may be only the songs lull held
+        -- of it when its tracklist failed.
+        CREATE TABLE discovery_tracklists (
+            album_id  TEXT PRIMARY KEY
+        );
+    "#,
     ],
 };
 

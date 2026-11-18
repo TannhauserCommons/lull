@@ -94,20 +94,60 @@ impl Store {
         Ok(albums)
     }
 
-    /// An album whose tracks are known: remembered with them and its saved state.
+    /// An album with its whole tracklist, as a catalog or MusicBrainz gave it: remembered with
+    /// it and its saved state, so its page answers from it next time (`known_tracklist`).
     pub async fn full_album(&self, album: Album, tracks: &[Track]) -> Result<Album> {
         let album = with_tracks(album, tracks);
         let stored = album.clone();
         self.db
-            .call(move |c| merge_put(c, "discovery_albums", vec![stored], |a| &a.id.0, |_, new| new))
+            .call(move |c| {
+                let id = stored.id.0.clone();
+                let whole = !stored.track_ids.is_empty();
+                merge_put(c, "discovery_albums", vec![stored], |a| &a.id.0, |_, new| new)?;
+                if whole {
+                    c.execute(
+                        "INSERT OR IGNORE INTO discovery_tracklists (album_id) VALUES (?1)",
+                        [id],
+                    )?;
+                }
+                Ok(())
+            })
             .await?;
         Ok(album)
     }
 
     /// The album with its whole tracklist, when a catalog or MusicBrainz gave it (`full_album`)
-    /// and lull still holds every song of it.
-    pub async fn known_tracklist(&self, _id: AlbumId) -> Result<Option<(Album, Vec<Track>)>> {
-        Ok(None)
+    /// and lull still holds every song of it, with their saved state now.
+    pub async fn known_tracklist(&self, id: AlbumId) -> Result<Option<(Album, Vec<Track>)>> {
+        let known = self
+            .db
+            .call(move |c| {
+                let whole = c
+                    .prepare_cached("SELECT 1 FROM discovery_tracklists WHERE album_id = ?1")?
+                    .exists([&id.0])?;
+                let Some(album) =
+                    get::<Album>(c, "discovery_albums", &id.0)?.filter(|a| whole && !a.track_ids.is_empty())
+                else {
+                    return Ok(None);
+                };
+                let mut tracks = Vec::with_capacity(album.track_ids.len());
+                for t in &album.track_ids {
+                    match catalog::track(c, t)? {
+                        Some(track) => tracks.push(track),
+                        None => return Ok(None),
+                    }
+                }
+                Ok(Some((album, tracks)))
+            })
+            .await?;
+        let Some((album, mut tracks)) = known else {
+            return Ok(None);
+        };
+        let saved = self.saved(album.track_ids.clone()).await;
+        for t in &mut tracks {
+            t.saved = saved.contains(&t.id);
+        }
+        Ok(Some((with_tracks(album, &tracks), tracks)))
     }
 
     /// What MusicBrainz knows of a remembered album (its MBID, tags, type, date) fills its gaps.
@@ -1505,7 +1545,10 @@ mod tests {
         };
         let id = super::album(release()).id;
         store.albums(vec![release()]).await?;
-        assert!(store.known_tracklist(id.clone()).await?.is_none(), "shown in a discography: no tracklist yet");
+        assert!(
+            store.known_tracklist(id.clone()).await?.is_none(),
+            "shown in a discography: no tracklist yet"
+        );
 
         // Before, a page whose tracklist failed kept the one song lull held of it as its tracks.
         let held = store.tracks(vec![song("Two", 2)]).await?;
@@ -1519,7 +1562,9 @@ mod tests {
             "the songs lull happened to hold aren't the album's tracklist"
         );
 
-        let whole = store.tracks(vec![song("One", 1), song("Two", 2), song("Three", 3)]).await?;
+        let whole = store
+            .tracks(vec![song("One", 1), song("Two", 2), song("Three", 3)])
+            .await?;
         store.full_album(super::album(release()), &whole).await?;
         store.albums(vec![release()]).await?;
         let Some((album, tracks)) = store.known_tracklist(id).await? else {
