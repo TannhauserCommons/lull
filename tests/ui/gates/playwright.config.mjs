@@ -97,9 +97,9 @@ export default defineConfig({
     { name: 'queue-moved', testMatch: 'queue-moved.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // search's song rows, Soulseek's too, take their album's cover when the hub learns it, without a new search
     { name: 'search-covers', testMatch: 'search-covers.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
-    // the queue's radio switch stays after radio is switched off, and starts a radio on a queue that never had one
     // the queue's rows: a double-click jumps like Enter, Shift+Enter plays next, focus survives a removal, Escape ends a drag only
     { name: 'queue-keys', testMatch: 'queue-keys.spec.mjs', fullyParallel: true },
+    // the queue's radio switch stays after radio is switched off, and starts a radio on a queue that never had one
     { name: 'queue-radio', testMatch: 'queue-radio.spec.mjs', fullyParallel: true },
     // an album or playlist queued or played from a tile has its songs read first, so they load and play
     { name: 'queue-unknown', testMatch: 'queue-unknown.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
