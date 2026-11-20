@@ -128,7 +128,7 @@ const playAlbum = async (page, album) => {
 test('a song the hub failed shows the hub\'s own reason, YouTube\'s part included', async ({ page }) => {
   const { failingAlbum } = await import('../fixture-hub/library.mjs');
   const text = await playAlbum(page, failingAlbum);
-  expect(text).toBe('no peer shares this song right now; YouTube: no YouTube upload matches this song');
+  expect(text).toBe('No peer shares this song right now, and no YouTube upload matches this song');
 });
 
 // The job's opening event comes on the event stream, its outcome on the play's own request: the event can arrive last.
@@ -144,14 +144,14 @@ test('a song that stopped stays stopped when its job\'s opening event comes late
     data: { topic: 'stream', data: { trackId: id, jobId: 'fixture-fail-' + id, attempt: 0, ...data } } });
   await emit({ status: 'finding', peersFound: 0, received: 0, size: 0 });
   await emit({ status: 'failed', error: 'the same job, failed again' });   // one stream, in order: the late event came first
-  await expect.poll(() => page.evaluate(() => document.querySelector('#pbar').dataset.statusText)).toBe('the same job, failed again');
+  await expect.poll(() => page.evaluate(() => document.querySelector('#pbar').dataset.statusText)).toBe('The same job, failed again');
   expect(await page.evaluate(() => window.seenStatus)).not.toContain('finding');
 });
 
 test('a copy this browser can\'t decode shows what the hub recorded for its job', async ({ page }) => {
   const { brokenAlbum } = await import('../fixture-hub/library.mjs');
   const text = await playAlbum(page, brokenAlbum);
-  expect(text).toBe('this copy can\'t be played in this player (WAV 8 kHz)');
+  expect(text).toBe('This copy can\'t be played in this player (WAV 8 kHz)');
 });
 
 test('with the hub out of reach, the bar says only that', async ({ page }) => {

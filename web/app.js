@@ -211,7 +211,9 @@
   function albumLine(a) {
     return a ? 'Tracks: ' + a.trackIds.length + '  Duration: ' + fmtClock(a.duration) + (a.sizeMB ? '  Size: ' + fmtSize(a.sizeMB) : '') : '';
   }
-  App.fmt = { time: fmtTime, date: fmtDate, length: fmtLength, size: fmtSize, rate: fmtRate, clock: fmtClock, formatLine: formatLine, albumLine: albumLine };
+  /* the hub's reasons are clauses ("no peer shares this song right now"); said alone, a sentence */
+  function fmtReason(s) { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1); }
+  App.fmt = { time: fmtTime, date: fmtDate, length: fmtLength, size: fmtSize, rate: fmtRate, clock: fmtClock, formatLine: formatLine, albumLine: albumLine, reason: fmtReason };
   App.storage = storage; App.data = M; App.clamp = clamp; App.uid = nextId;
 
   /* =====================================================================
@@ -1562,7 +1564,7 @@
       var c = status === 'saved' || i < step ? 'is-done' : i === step ? (status === 'failed' ? 'is-failed' : 'is-current') : '';
       segs.push(html`<span class="pipeline__seg ${c}" aria-hidden="true">${c === 'is-done' ? icon('check') : c === 'is-failed' ? icon('close') : ''}</span>`);
     }
-    var text = status === 'saved' ? 'Saved to your library' : status === 'failed' || status === 'waiting' ? error || '' : M.saveSteps[step - 1];
+    var text = status === 'saved' ? 'Saved to your library' : status === 'failed' || status === 'waiting' ? fmtReason(error) : M.saveSteps[step - 1];
     return html`<div class="pipeline-wrap" role="group" aria-label="Save progress"><div class="pipeline">${segs}</div>
       <div class="pipeline__text" aria-live="polite"><span class="pipeline__step">${status === 'saved' ? 'done' : 'step ' + step + ' of 5'}</span><span class="pipeline__label">${text}</span></div></div>`;
   };
@@ -3522,7 +3524,7 @@
         return ps.fallback ? 'Switching to ' + ps.fallback.to + ' (' + ps.fallback.n + (ps.fallback.of ? ' of ' + ps.fallback.of : '') + ')' : 'Buffering from ' + peer;
       case 'stalled': return 'Peer stalled, switching to the next source (' + ((ps.peer ? ps.peer.rank : 1) + 1) + of + ')';
       case 'choose': return 'No copy meets your streaming minimum: pick one or skip';
-      case 'failed': return ps.error || '';
+      case 'failed': return fmtReason(ps.error);
       case 'jellyfin-error': return 'Library item unavailable' + (ps.error ? ': ' + ps.error : '');
       case 'ended': return 'End of queue';
       default:
