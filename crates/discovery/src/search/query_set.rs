@@ -153,22 +153,35 @@ pub(super) fn recorded() -> Value {
 /// The fast sources' answers merged in the order they arrive from the homelab: Deezer's
 /// artists (about 0.6 s), iTunes's songs and albums (0.6-1 s), Deezer's playlists.
 pub(super) fn merged(q: &str, answers: &Value) -> Merged {
-    let mut m = Merged::default();
-    m.add(Found {
-        artists: deezer::artists_of(answers["deezer-artist"].clone()).unwrap_or_default(),
-        ..Found::default()
-    });
-    m.add(itunes::answer(
-        q,
-        itunes::songs(answers["itunes-song"].clone()).unwrap_or_default(),
-        itunes::albums(answers["itunes-album"].clone()),
-    ));
-    // YouTube Music answers about as fast, and adds only what the catalog lacks.
-    merge::fill_gaps(&mut m, super::youtube_music::answer_of(&answers["youtube-music"]));
+    let mut m = merged_from(
+        Found::default(),
+        Found {
+            artists: deezer::artists_of(answers["deezer-artist"].clone()).unwrap_or_default(),
+            ..Found::default()
+        },
+        itunes::answer(
+            q,
+            itunes::songs(answers["itunes-song"].clone()).unwrap_or_default(),
+            itunes::albums(answers["itunes-album"].clone()),
+        ),
+        super::youtube_music::answer_of(&answers["youtube-music"]),
+    );
     m.add(Found {
         playlists: deezer::playlists_of(answers["deezer-playlist"].clone()).unwrap_or_default(),
         ..Found::default()
     });
+    m
+}
+
+/// The fast sources' answers merged in the order search takes them: the library's saved songs,
+/// the artists, the catalog's songs and albums, then YouTube Music, which answers about as fast
+/// and adds only what the catalog lacks. The eval's recorded answers are merged by this too.
+pub(super) fn merged_from(saved: Found, artists: Found, catalog: Found, youtube_music: Found) -> Merged {
+    let mut m = Merged::default();
+    m.add(saved);
+    m.add(artists);
+    m.add(catalog);
+    merge::fill_gaps(&mut m, youtube_music);
     m
 }
 
