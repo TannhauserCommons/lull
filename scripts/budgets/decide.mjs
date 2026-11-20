@@ -1,12 +1,12 @@
-// The verdict on shipped bytes: a route may grow over its merge-base by its allowance, and never past its ceiling.
-// Both live in scripts/budgets/shipped-bytes.json, each with its reason. Pure functions; run.mjs measures and prints.
+// The verdict on shipped bytes: a route may grow over its merge-base by the allowance, and no more.
+// The allowance lives in scripts/budgets/shipped-bytes.json with its reason. Pure functions; run.mjs measures and prints.
 
 const n = new Intl.NumberFormat('en-US');
 const bytes = (v) => `${n.format(v)} B`;
 const signed = (v) => `${v < 0 ? '-' : '+'}${n.format(Math.abs(v))}`;
 
-// Fails loudly on a budgets file that is not what the check reads: every limit an object with a whole number of bytes
-// (0 is "none allowed", not "off") and a reason. A limit that is present but not that object (0, false, a string) is an
+// Fails loudly on a budgets file that is not what the check reads: every allowance an object with a whole number of bytes
+// (0 is "none allowed", not "off") and a reason. An allowance that is present but not that object (0, false, a string) is an
 // error, never a skipped check.
 export function validateLimits(limits) {
   const entry = (what, e) => {
@@ -17,7 +17,8 @@ export function validateLimits(limits) {
   const routes = Object.entries(limits.routes ?? {});
   if (!routes.length) throw new Error('the budgets file has no routes');
   for (const [route, r] of routes) {
-    entry(`${route} ceiling`, r?.ceiling);
+    if (r === null || typeof r !== 'object' || Array.isArray(r)) throw new Error(`${route}: a route is an object, empty or with its own allowance`);
+    for (const key of Object.keys(r)) if (key !== 'allowance') throw new Error(`${route}: unknown limit "${key}"`);
     if (r.allowance !== undefined) entry(`${route} allowance`, r.allowance);
   }
 }
@@ -41,8 +42,8 @@ const measured = (m) => !!m && !m.gone;
 // change's own. The merge-base's limits judge every route it knows, so a change can't loosen what judges it, with these
 // exceptions, each the owner's own doing in the budgets file:
 //   - nothing grew on any route both sides measured, and the change's file differs: that file judges, since the change
-//     only moves limits (a route removed or renamed, a ceiling raised over a main that already exceeds it);
-//   - a route the merge-base doesn't know is judged by the change's own entry, by its ceiling alone;
+//     only moves limits (a route removed or renamed, the allowance changed);
+//   - a route the merge-base doesn't know has nothing to grow from: it is listed as new, and the change's entry names it;
 //   - a route the merge-base budgets and the change's file drops is listed as removed when no screen answers to its key in
 //     the change's app (the screen is gone), and fails when one does.
 // Returns { rows, notes }: a row per route with what is wrong with it, if anything.
@@ -70,19 +71,18 @@ export function decide({ base, change, limits, ownLimits = limits }) {
     const growth = prior ? now.bytes - prior.bytes : 0;
     const problems = [];
     if (growth > allowance) problems.push({ kind: 'growth', growth, allowance, why: (spec.allowance ?? from.allowance).why });
-    if (now.bytes > spec.ceiling.bytes) problems.push({ kind: 'ceiling', over: now.bytes - spec.ceiling.bytes, ceiling: spec.ceiling.bytes, why: spec.ceiling.why });
-    return { route, isNew: !inBase, base: prior?.bytes ?? null, change: now.bytes, growth, allowance, ceiling: spec.ceiling.bytes, problems, files: changedFiles(prior, now) };
+    return { route, isNew: !inBase, base: prior?.bytes ?? null, change: now.bytes, growth, allowance, problems, files: changedFiles(prior, now) };
   });
   return { rows, notes };
 }
 
 // The table, then what to do about each route that is over. Lines to print; `ok` is whether the check passes.
 export function report({ rows, notes = [] }, file) {  // `file`: where the limits are, named in the message
-  const head = ['route', 'base', 'change', 'growth', 'allowance', 'ceiling', ''];
+  const head = ['route', 'base', 'change', 'growth', 'allowance', ''];
   const cells = rows.map((r) => (r.removed
-    ? [r.route, r.base === null ? '' : n.format(r.base), r.gone ? '' : n.format(r.change), '', '', '', r.gone ? 'removed (screen gone)' : 'REMOVED']
+    ? [r.route, r.base === null ? '' : n.format(r.base), r.gone ? '' : n.format(r.change), '', '', r.gone ? 'removed (screen gone)' : 'REMOVED']
     : [r.route, r.isNew ? 'new' : r.base === null ? '' : n.format(r.base), n.format(r.change), r.isNew || r.base === null ? '' : signed(r.growth),
-      n.format(r.allowance), n.format(r.ceiling), r.problems.length ? 'OVER' : r.isNew ? 'ok (new)' : 'ok']));
+      n.format(r.allowance), r.problems.length ? 'OVER' : r.isNew ? 'ok (new)' : 'ok']));
   const width = head.map((h, i) => Math.max(h.length, ...cells.map((c) => c[i].length)));
   const line = (c) => c.map((v, i) => (i === 0 || i === c.length - 1 ? v.padEnd(width[i]) : v.padStart(width[i]))).join('  ').trimEnd();
   const lines = ['budgets: shipped bytes of each route\'s start, as the hub sends them (response headers not counted)', line(head), ...cells.map(line), ...notes.map((note) => `budgets: ${note}`)];
@@ -98,8 +98,7 @@ export function report({ rows, notes = [] }, file) {  // `file`: where the limit
     lines.push('');
     for (const p of first.problems) {
       if (p.kind === 'removed') lines.push(`budgets: ${names}: budgeted by the merge-base, no longer in this change's budgets file, and its screen still exists in this change's app`);
-      else if (p.kind === 'growth') lines.push(`budgets: ${names}: grew ${bytes(p.growth)} over the merge-base (${bytes(first.base)} to ${bytes(first.change)}); the allowance is ${bytes(p.allowance)}`);
-      else lines.push(`budgets: ${names}: ${bytes(first.change)} is ${bytes(p.over)} over the ceiling of ${bytes(p.ceiling)}`);
+      else lines.push(`budgets: ${names}: grew ${bytes(p.growth)} over the merge-base (${bytes(first.base)} to ${bytes(first.change)}); the allowance is ${bytes(p.allowance)}`);
     }
     const grown = first.files.filter((f) => f.delta > 0).slice(0, 8);
     if (grown.length) lines.push(`  what grew: ${grown.map((f) => `${f.path} ${signed(f.delta)} B${f.added ? ' (new at start)' : ''}`).join(', ')}`);
@@ -115,7 +114,7 @@ export function report({ rows, notes = [] }, file) {  // `file`: where the limit
       'loads where it is used), and leave out what no first load needs. If it is still needed, attach an impact note to the',
       'change (what grew, what a listener would feel, what you tried) and wait for the owner\'s yes or no. A label or a commit',
       'footer never passes this check.',
-      `With the yes, a commit that only raises the allowance or ceiling in ${file}, with the owner's reason, lands first:`,
+      `With the yes, a commit that only raises the allowance in ${file}, with the owner's reason, lands first:`,
       'the check judges a change by the limits of its merge-base, so a change cannot raise the limit it is judged by.');
   }
   if (over.some((r) => r.removed)) {

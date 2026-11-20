@@ -101,8 +101,8 @@ test('the fixture hub is ours only when it says so; a port taken in the gap says
 const limits = {
   allowance: { bytes: 500, why: 'an ordinary change' },
   routes: {
-    home: { ceiling: { bytes: 10_000, why: 'what home ships now' } },
-    now: { ceiling: { bytes: 10_000, why: 'x' }, allowance: { bytes: 100, why: 'now barely moves' } },
+    home: {},
+    now: { allowance: { bytes: 100, why: 'now barely moves' } },
   },
 };
 const side = (home, now, extra = {}) => ({ home: { bytes: home, files: [{ path: 'app.js', bytes: home }] }, now: { bytes: now, files: [{ path: 'app.js', bytes: now }] }, ...extra });
@@ -110,7 +110,6 @@ const route = (bytes) => ({ bytes, files: [{ path: 'app.js', bytes }] });
 const kinds = (args) => decide({ limits, ...args }).rows.filter((r) => r.problems.length).map((r) => [r.route, r.problems.map((p) => p.kind)]);
 const verdict = (base, change) => kinds({ base, change });
 const withRoutes = (routes, allowance = limits.allowance) => ({ allowance, routes });
-const entry = (bytes) => ({ ceiling: { bytes, why: 'its size now' } });
 
 test('growth within the allowance passes, past it fails, and shrinking never does', () => {
   assert.deepEqual(verdict(side(5000, 5000), side(5500, 5100)), []);
@@ -119,57 +118,66 @@ test('growth within the allowance passes, past it fails, and shrinking never doe
   assert.deepEqual(verdict(side(9000, 5000), side(4000, 5000)), []);
 });
 
-test('the ceiling holds however small the growth', () => {
-  assert.deepEqual(verdict(side(9900, 5000), side(10_001, 5000)), [['home', ['ceiling']]]);
-  assert.deepEqual(verdict(side(9900, 5000), side(10_450, 5000)), [['home', ['growth', 'ceiling']]]);
+test('a change that grows a start by more than 500 B fails with the files that grew; 500 B exactly passes', () => {
+  const home = (bytes, extra = []) => ({ bytes, files: [{ path: 'app.js', bytes: 5000 }, ...extra] });
+  const base = { home: home(5000) };
+  const within = report(decide({ base, change: { home: home(5500, [{ path: 'screens/a.js', bytes: 500 }]) }, limits: withRoutes({ home: {} }) }), 'f');
+  assert.equal(within.ok, true);
+  const over = report(decide({ base, change: { home: home(5501, [{ path: 'screens/a.js', bytes: 501 }]) }, limits: withRoutes({ home: {} }) }), 'f');
+  assert.equal(over.ok, false);
+  assert.match(over.lines.join('\n'), /home: grew 501 B over the merge-base \(5,000 B to 5,501 B\); the allowance is 500 B/);
+  assert.match(over.lines.join('\n'), /what grew: screens\/a\.js \+501 B \(new at start\)/);
 });
 
-test('every limit is a whole number of bytes with a reason; 0 allows no growth and is never "off"', () => {
+test('there is no fixed ceiling: a route is judged by its growth over the merge-base, however large it already is', () => {
+  assert.deepEqual(verdict(side(900_000, 5000), side(900_400, 5000)), []);
+  assert.deepEqual(verdict(side(900_000, 5000), side(900_501, 5000)), [['home', ['growth']]]);
+  assert.ok(decide({ base: side(1, 1), change: side(2, 1), limits }).rows.every((r) => !('ceiling' in r)));
+});
+
+test('every allowance is a whole number of bytes with a reason; 0 allows no growth and is never "off"', () => {
   assert.throws(() => decide({ base: null, change: side(1, 1, { search: route(1) }), limits }), /search is measured but has no limits/);
   assert.throws(() => validateLimits({ ...limits, allowance: { bytes: 500, why: ' ' } }), /reason/);
-  assert.throws(() => validateLimits({ ...limits, routes: { home: { ceiling: { bytes: 1.5, why: 'x' } } } }), /whole number/);
-  for (const allowance of [0, false, null, '', NaN, { bytes: NaN, why: 'x' }, { bytes: -1, why: 'x' }, { bytes: '500', why: 'x' }]) {
-    assert.throws(() => validateLimits({ ...limits, routes: { home: { ...entry(10_000), allowance } } }), /home allowance/, String(allowance));
+  assert.throws(() => validateLimits({ ...limits, routes: { home: 'ceiling' } }), /home: a route is an object/);
+  assert.throws(() => validateLimits({ ...limits, routes: { home: { ceiling: { bytes: 10_000, why: 'x' } } } }), /home: unknown limit "ceiling"/);
+  for (const allowance of [0, false, null, '', NaN, { bytes: NaN, why: 'x' }, { bytes: -1, why: 'x' }, { bytes: '500', why: 'x' }, { bytes: 1.5, why: 'x' }]) {
+    assert.throws(() => validateLimits({ ...limits, routes: { home: { allowance } } }), /home allowance/, String(allowance));
     assert.throws(() => validateLimits({ ...limits, allowance }), /allowance/, String(allowance));
   }
-  const none = withRoutes({ home: entry(10_000) }, { bytes: 0, why: 'no growth at all' });
+  const none = withRoutes({ home: {} }, { bytes: 0, why: 'no growth at all' });
   const grow = (by) => decide({ base: { home: route(5000) }, change: { home: route(5000 + by) }, limits: none }).rows[0].problems.map((p) => p.kind);
   assert.deepEqual([grow(0), grow(1)], [[], ['growth']]);
   assert.throws(() => decide({ base: side(1, 1), change: side(900_000, 1), limits: { ...limits, allowance: { bytes: NaN, why: 'x' } } }), /whole number/);
 });
 
-test('a route new in the change is judged by its own entry, by its ceiling, and printed as new', () => {
-  const own = withRoutes({ ...limits.routes, search: entry(6000) });
-  const rows = (search) => decide({ base: side(5000, 5000), change: { ...side(5000, 5000), search: route(search) }, limits, ownLimits: own });
-  const added = rows(5900).rows.find((r) => r.route === 'search');
+test('a route new in the change has nothing to grow from: it is named by its own entry and printed as new', () => {
+  const own = withRoutes({ ...limits.routes, search: {} });
+  const result = decide({ base: side(5000, 5000), change: { ...side(5000, 5000), search: route(900_000) }, limits, ownLimits: own });
+  const added = result.rows.find((r) => r.route === 'search');
   assert.deepEqual([added.isNew, added.base, added.growth, added.problems], [true, null, 0, []]);
-  assert.deepEqual(rows(6001).rows.find((r) => r.route === 'search').problems.map((p) => p.kind), ['ceiling']);
-  const { ok, lines } = report(rows(5900), 'f');
+  const { ok, lines } = report(result, 'f');
   assert.equal(ok, true);
-  assert.match(lines.join('\n'), /search +new +5,900 .* ok \(new\)/);
+  assert.match(lines.join('\n'), /search +new +900,000 .* ok \(new\)/);
 });
 
-test('the merge-base\'s entry judges a route it knows: a change that grew cannot loosen its own limit', () => {
-  const loosened = withRoutes({ ...limits.routes, home: entry(99_999) }, { bytes: 99_999, why: 'loosened' });
-  assert.deepEqual(kinds({ base: side(9000, 5000), change: side(10_001, 5000), ownLimits: loosened }), [['home', ['growth', 'ceiling']]]);
+test('the merge-base\'s allowance judges a route it knows: a change that grew cannot loosen it', () => {
+  const loosened = withRoutes({ ...limits.routes }, { bytes: 99_999, why: 'loosened' });
+  assert.deepEqual(kinds({ base: side(9000, 5000), change: side(9600, 5000), ownLimits: loosened }), [['home', ['growth']]]);
 });
 
-test('the owner\'s own limit changes land when nothing grew: a route removed or renamed, a ceiling raised over a red main', () => {
+test('the owner\'s own limit changes land when nothing grew: the allowance changed, a route removed or renamed', () => {
   const base = side(9900, 5000);
-  // a ceiling raised over a main that already exceeds it: red under the base's limits, green under the change's own
-  const red = side(10_500, 5000);
-  assert.deepEqual(kinds({ base: red, change: red }), [['home', ['ceiling']]]);
-  const raised = { ownLimits: withRoutes({ ...limits.routes, home: entry(10_600) }) };
-  const done = decide({ base: red, change: red, limits, ...raised });
-  assert.deepEqual([done.rows.filter((r) => r.problems.length).length, done.notes], [0, ["limits changed, nothing grew: this change's own budgets file judges it"]]);
-  assert.match(report(done, 'f').lines.join('\n'), /limits changed, nothing grew/);
+  // the allowance changed in a change that grew nothing: the change's own file judges, and says so
+  const changed = decide({ base, change: base, limits, ownLimits: withRoutes(limits.routes, { bytes: 800, why: 'the owner raised it' }) });
+  assert.deepEqual([changed.rows.filter((r) => r.problems.length).length, changed.notes], [0, ["limits changed, nothing grew: this change's own budgets file judges it"]]);
+  assert.match(report(changed, 'f').lines.join('\n'), /limits changed, nothing grew/);
   // a route removed together with its screen
   const gone = decide({ base, change: { home: base.home, now: { gone: true } }, limits, ownLimits: withRoutes({ home: limits.routes.home }) });
   assert.deepEqual(gone.rows.map((r) => [r.route, !!r.removed, !!r.gone, r.problems.length]), [['home', false, false, 0], ['now', true, true, 0]]);
   assert.match(report(gone, 'f').lines.join('\n'), /now .*removed \(screen gone\)/);
   // a route renamed with its screen: the old key's screen is gone, the new key is new
   const renamed = decide({ base, change: { home: base.home, now: { gone: true }, 'now-playing': route(5000) }, limits,
-    ownLimits: withRoutes({ home: limits.routes.home, 'now-playing': entry(5100) }) });
+    ownLimits: withRoutes({ home: limits.routes.home, 'now-playing': {} }) });
   assert.deepEqual(renamed.rows.map((r) => [r.route, !!r.isNew, !!r.gone, r.problems.length]), [['home', false, false, 0], ['now', false, true, 0], ['now-playing', true, false, 0]]);
   assert.equal(report(renamed, 'f').ok, true);
 });
@@ -182,15 +190,15 @@ test('abuse: a route removed while its screen exists, or while it grew, or renam
   assert.deepEqual(exists.rows.filter((r) => r.problems.length).map((r) => [r.route, r.problems.map((p) => p.kind)]), [['now', ['removed']]]);
   assert.equal(report(exists, 'f').ok, false);
   assert.match(report(exists, 'f').lines.join('\n'), /now .*REMOVED[\s\S]*its screen still exists/);
-  // removed while it grew: the base's limits judge, and it fails twice over
+  // removed while it grew: the base's limits judge, and it fails
   const grew = decide({ base, change: side(5000, 5800), limits, ownLimits: only({ home: limits.routes.home }) });
   assert.deepEqual(grew.notes, []);
   assert.deepEqual(grew.rows.filter((r) => r.problems.length).map((r) => [r.route, r.problems.map((p) => p.kind)]), [['now', ['removed']]]);
   // the same key renamed while the screen still exists: the old key is still a screen
-  const renamed = decide({ base, change: { home: base.home, now: base.now, 'now-x': route(5000) }, limits, ownLimits: only({ home: limits.routes.home, 'now-x': entry(5100) }) });
+  const renamed = decide({ base, change: { home: base.home, now: base.now, 'now-x': route(5000) }, limits, ownLimits: only({ home: limits.routes.home, 'now-x': {} }) });
   assert.deepEqual(renamed.rows.filter((r) => r.problems.length).map((r) => r.route), ['now']);
-  // growth elsewhere with the limits moved in the same change: the base's limits judge
-  assert.deepEqual(kinds({ base, change: side(5600, 5000), ownLimits: only({ home: entry(99_999), now: limits.routes.now }) }), [['home', ['growth']]]);
+  // growth elsewhere with the allowance raised in the same change: the base's limits judge
+  assert.deepEqual(kinds({ base, change: side(5600, 5000), ownLimits: withRoutes({ home: {}, now: limits.routes.now }, { bytes: 99_999, why: 'loosened' }) }), [['home', ['growth']]]);
 });
 
 test('the report says what grew, by how much, against which allowance, and what to do', () => {
@@ -204,12 +212,14 @@ test('the report says what grew, by how much, against which allowance, and what 
   assert.match(text, /impact note/);
   assert.match(text, /never passes/);
   assert.match(text, /scripts\/budgets\/shipped-bytes\.json/);
+  assert.doesNotMatch(text, /ceiling/);
   assert.equal(report(decide({ base, change: base, limits }), 'f').ok, true);
   // Routes that grew the same way are one entry in the message.
   const both = { home: change.home, now: { ...change.home } };
-  const twins = { ...limits, routes: { home: limits.routes.home, now: { ceiling: limits.routes.home.ceiling } } };
+  const twins = { ...limits, routes: { home: {}, now: {} } };
   assert.match(report(decide({ base: { home: base.home, now: base.home }, change: both, limits: twins }), 'f').lines.join('\n'), /budgets: home, now: grew 1,000 B/);
 });
+
 
 test('changedFiles lists additions, growth and removals, biggest growth first', () => {
   const before = { files: [{ path: 'a.js', bytes: 10 }, { path: 'gone.js', bytes: 30 }, { path: 'same.js', bytes: 5 }] };

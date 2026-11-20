@@ -1,45 +1,15 @@
 {
-  "note": "What each route's start ships: a real browser lists the files a first load fetches (scripts/budgets/list.mjs), and each counts at the bytes the hub sends for it, from the build (measure.mjs; response headers not counted). `mise run budgets`, the `budgets` job of check.yml. A change may grow a route by its allowance over its merge-base and may never take it past its ceiling. The check reads these limits from the merge-base, never from the change, so raising one, or dropping a route, is its own commit, with the owner's yes: docs/context/quality.md#budgets-check. Every limit is PROPOSED until the owner confirms it: they were set from the data below, not by the owner. allowance 500 B: the 20 newest commits that touched web/ or scripts/web-dist (11-12 to 11-13), each built and listed by the browser on its parent and itself, grew home by -40 to +356 B each (median +19 B, 90th percentile +181 B), +1,169 B in all. Each ceiling is what the route ships on the merge-base this was written on (a1dc2448: home, search, library/albums and now 328,750 B, settings/playback 331,840 B) + 1,000 B, the room the Lighthouse budgets (tests/ui/budgets.json) keep over main today; those are Lighthouse's own figures, which count response headers and the hub's covers.",
+  "note": "What each route's start ships: a real browser lists the files a first load fetches (scripts/budgets/list.mjs), and each counts at the bytes the hub sends for it, from the build (measure.mjs; response headers not counted). `mise run budgets`, the `budgets` job of check.yml. A change may grow a route by the allowance over its merge-base, and no route has a fixed ceiling (a ceiling a little above today's size would trip every few days, since 20 web commits grew home by +1,169 B in two days; total growth is read in the release draft against the last release). The check reads these limits from the merge-base, never from the change, so raising the allowance, or dropping a route, is its own commit, with the owner's yes: docs/context/quality.md#budgets-check. The allowance is PROPOSED until the owner confirms it: it was set from the data below, not by the owner. Allowance 500 B: the 20 newest commits that touched web/ or scripts/web-dist (11-12 to 11-13), each built and listed by the browser on its parent and itself, grew home by -40 to +356 B each (median +19 B, 90th percentile +181 B). Each route's entry is empty, or names an allowance of its own.",
   "allowance": {
     "bytes": 500,
     "status": "proposed",
     "why": "Room for an ordinary change: 20 of the last 20 web commits grew a start by 356 B or less, and too little for a script, a font or a stylesheet to slip into the start. Growth beyond it goes to the owner with an impact note."
   },
   "routes": {
-    "home": {
-      "ceiling": {
-        "bytes": 329750,
-        "status": "proposed",
-        "why": "What home's start ships on a1dc2448 (328,750 B) + 1,000 B, as tests/ui/budgets.json keeps room over main. Home, Search and Now Playing are the shell and the start's scripts; their own screens' code is part of it."
-      }
-    },
-    "search": {
-      "ceiling": {
-        "bytes": 329750,
-        "status": "proposed",
-        "why": "What search's start ships on a1dc2448 (328,750 B) + 1,000 B: the same files as home."
-      }
-    },
-    "library/albums": {
-      "ceiling": {
-        "bytes": 329750,
-        "status": "proposed",
-        "why": "What library/albums' start ships on a1dc2448 (328,750 B) + 1,000 B. Its album covers (about 16 KB in Lighthouse's runs) are the hub's answers, not files of the build, and aren't counted."
-      }
-    },
-    "now": {
-      "ceiling": {
-        "bytes": 329750,
-        "status": "proposed",
-        "why": "What now's start ships on a1dc2448 (328,750 B) + 1,000 B: the same files as home."
-      }
-    },
-    "settings/playback": {
-      "ceiling": {
-        "bytes": 332840,
-        "status": "proposed",
-        "why": "What settings/playback's start ships on a1dc2448 (331,840 B) + 1,000 B: home's files plus Settings' own code (screens/settings-fit.js and the equaliser's screens/eq.js)."
-      }
-    }
+    "home": {},
+    "search": {},
+    "library/albums": {},
+    "now": {},
+    "settings/playback": {}
   }
 }

@@ -287,7 +287,7 @@ jobs:
 
   # What each route's start ships: a real browser (headless Chromium on the fixture hub, as the gates run it) lists the files a
   # first load fetches from the build, on this change and on its merge-base, and their sizes are summed from the built
-  # files. The change's growth over the merge-base is held to an allowance, and the route to a ceiling (scripts/budgets,
+  # files. The change's growth over the merge-base is held to an allowance (scripts/budgets,
   # docs/context/quality.md). It builds web/ twice, so it needs the history. The browser comes from the cache main saves (the
   # same `ui-browsers-...` key as the gates' Chromium-only machines) and is never saved from here. Lighthouse still
   # measures bytes in the queue's `ui` shards; this runs beside it and is not part of the queue's workflows.
