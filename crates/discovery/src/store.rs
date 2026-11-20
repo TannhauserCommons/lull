@@ -355,6 +355,55 @@ impl Store {
         Ok(counts.into_iter().collect())
     }
 
+    /// Every saved song with its album's artist (personal search's index; the `Library` seam
+    /// lists no songs, only albums and their songs).
+    pub async fn library_songs(&self) -> Result<Vec<(Track, String)>> {
+        let mut songs = Vec::new();
+        for album in self.library.albums(None).await? {
+            if let Some((album, tracks)) = self.library.album(&album.id).await? {
+                songs.extend(tracks.into_iter().map(|t| (t, album.artist.clone())));
+            }
+        }
+        Ok(songs)
+    }
+
+    /// The catalog's record of each of these songs it holds.
+    pub async fn catalog_songs(&self, ids: Vec<TrackId>) -> Result<Vec<Track>> {
+        self.db
+            .call(move |c| {
+                let mut found = Vec::with_capacity(ids.len());
+                for id in &ids {
+                    found.extend(catalog::track(c, id)?);
+                }
+                Ok(found)
+            })
+            .await
+    }
+
+    /// The songs in any of the listener's playlists. Read from collection's table, as plays and
+    /// likes are read from core's: the `Collection` seam isn't wired into discovery.
+    pub async fn playlisted(&self) -> Result<HashSet<TrackId>> {
+        self.db
+            .call(|c| {
+                Ok(
+                    rows(c, "SELECT DISTINCT track_id FROM collection_playlist_items", [], |r| {
+                        Ok(TrackId(r.get(0)?))
+                    })?
+                    .into_iter()
+                    .collect(),
+                )
+            })
+            .await
+    }
+
+    /// The catalog ids lull holds for each artist the listener's own evidence stands behind
+    /// (`trusted`).
+    pub async fn listener_artist_ids(
+        &self,
+    ) -> Result<HashMap<ArtistId, Vec<crate::search::personal::score::CatalogId>>> {
+        self.db.call(|c| trusted_artist_ids(c)).await
+    }
+
     /// The library's artists, each with the MBID its saved files' tags give, if any.
     pub async fn library_artists(&self) -> Result<Vec<Artist>> {
         self.library.artists().await
@@ -784,6 +833,53 @@ fn artist_ids(c: &Connection, id: &ArtistId) -> Result<Ids> {
         }
     }
     Ok(ids)
+}
+
+/// Each artist's ids from `discovery_artist_ids` that stand on the listener's own evidence. An
+/// artist counts only when a song of theirs or the saved library gave an id (`Evidence::Song`,
+/// `Library`); then its links and ISRC credits count too. An id a search row or a recommender
+/// seeded never counts: `seed_from_search` files a row's id under the artist the row's name
+/// hashes to, so a namesake's id could sit on the listener's artist, and lifting it would lift
+/// the namesake (docs/context/taste.md#search-affinity).
+fn trusted_artist_ids(c: &Connection) -> Result<HashMap<ArtistId, Vec<crate::search::personal::score::CatalogId>>> {
+    let all = rows(
+        c,
+        "SELECT artist_id, source, id, evidence FROM discovery_artist_ids",
+        [],
+        |r| {
+            Ok((
+                ArtistId(r.get(0)?),
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        },
+    )?;
+    let mut by_artist: HashMap<ArtistId, Vec<(Source, String, Evidence)>> = HashMap::new();
+    for (artist, source, id, evidence) in all {
+        // A row an older build wrote that no longer parses is left out.
+        if let (Ok(source), Ok(evidence)) = (
+            serde_json::from_value::<Source>(serde_json::Value::String(source)),
+            serde_json::from_str::<Evidence>(&evidence),
+        ) {
+            by_artist.entry(artist).or_default().push((source, id, evidence));
+        }
+    }
+    Ok(by_artist
+        .into_iter()
+        .filter(|(_, rows)| {
+            rows.iter()
+                .any(|(_, _, e)| matches!(e, Evidence::Song { .. } | Evidence::Library))
+        })
+        .map(|(artist, rows)| {
+            let ids = rows
+                .into_iter()
+                .filter(|(_, _, e)| !matches!(e, Evidence::Recommended { .. } | Evidence::Searched))
+                .map(|(source, id, _)| (source, id))
+                .collect();
+            (artist, ids)
+        })
+        .collect())
 }
 
 fn replace_ids(c: &mut Connection, id: &ArtistId, ids: &Ids, checked: i64) -> Result<()> {
@@ -1220,7 +1316,7 @@ mod tests {
 
     use super::{
         Store, artist, artist_ids, put_artists, recent_plays, remember_pick_seeds, replace_ids, seed_from_search,
-        seed_outcomes,
+        seed_outcomes, trusted_artist_ids,
     };
     use crate::artist::identity::{Evidence, IdRow, Ids, Source};
     use crate::sources::{ArtistInfo, ArtistSource};
@@ -1395,6 +1491,50 @@ mod tests {
             "the listener's evidence decided: none"
         );
         assert_eq!(artist_ids(&c, &held)?, ids, "what lull holds stays");
+        Ok(())
+    }
+
+    #[test]
+    fn search_never_lends_an_artist_an_id_that_search_lifts_by() -> Result<()> {
+        // A namesake's search row seeds its id on the liked artist of that name (`seed_from_search`):
+        // personal search must not lift by it. Only ids the listener's own evidence stands behind count.
+        let mut c = discovery_db()?;
+        let (heard, seeded, linked) = (ArtistId::of("Ra"), ArtistId::of("Muse"), ArtistId::of("Glow Tape"));
+        let song = |source, id: &str| IdRow {
+            source,
+            id: id.into(),
+            evidence: Evidence::Song {
+                track: TrackId("t-1".into()),
+            },
+        };
+        let mut ids = Ids::default();
+        ids.set(song(Source::Deezer, "64816272"));
+        ids.set(IdRow::recommended(Source::Itunes, 99, "listenbrainz"));
+        replace_ids(&mut c, &heard, &ids, 100)?;
+        seed_from_search(&mut c, vec![(seeded.clone(), ArtistSource::Deezer(5_548_712))])?;
+        let mut ids = Ids::default();
+        ids.set(IdRow {
+            source: Source::Musicbrainz,
+            id: "mb-1".into(),
+            evidence: Evidence::Library,
+        });
+        ids.set(IdRow {
+            source: Source::Itunes,
+            id: "5".into(),
+            evidence: Evidence::Link {
+                source: Source::Musicbrainz,
+            },
+        });
+        replace_ids(&mut c, &linked, &ids, 100)?;
+
+        let trusted = trusted_artist_ids(&c)?;
+        assert_eq!(
+            trusted[&heard],
+            [(Source::Deezer, "64816272".to_owned())],
+            "a recommender's id is left out"
+        );
+        assert!(!trusted.contains_key(&seeded), "a search row's id is nobody's evidence");
+        assert!(trusted.contains_key(&linked));
         Ok(())
     }
 

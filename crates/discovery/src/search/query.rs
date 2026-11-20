@@ -112,6 +112,11 @@ impl Query {
             })
     }
 
+    /// The words typed, accents folded.
+    pub fn words(&self) -> &[String] {
+        &self.words
+    }
+
     /// Every word typed starts one of `have` (folded words), or is one with a typo: what "all the
     /// words" means for a row, and for any text that is searched with the same rule.
     pub fn holds_every_word(&self, have: &[String]) -> bool {
@@ -239,7 +244,12 @@ fn forms(names: &[String], title: &str) -> (Vec<String>, Vec<String>) {
 
 /// A typed word starts one of `have`, or is one with a typo.
 fn holds(have: &[String], word: &str) -> bool {
-    have.iter().any(|h| h.starts_with(word) || misspelt_word(word, h))
+    have.iter().any(|h| word_fits(word, h))
+}
+
+/// A typed word starts `have`, or is it with a typo: the one rule of "holds", for a single word.
+pub fn word_fits(typed: &str, have: &str) -> bool {
+    have.starts_with(typed) || misspelt_word(typed, have)
 }
 
 /// A word that counts toward "most of the words": a number, or four letters or more.
@@ -362,10 +372,11 @@ fn without_from_notes(s: &str) -> String {
 /// Edits between two strings, a swap of neighbours counting as one ("indain", "indian").
 /// Lengths more than two apart count as three, as no rule allows more.
 pub(super) fn edits(a: &str, b: &str) -> usize {
-    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
-    if a.len().abs_diff(b.len()) > 2 {
+    // Most pairs are far apart in length: say so before any allocation (an index of 50,000 songs asks).
+    if a.chars().count().abs_diff(b.chars().count()) > 2 {
         return 3;
     }
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
     // Rows i-2, i-1 and i of the table.
     let mut before: Vec<usize> = vec![0; b.len() + 1];
     let mut last: Vec<usize> = (0..=b.len()).collect();
