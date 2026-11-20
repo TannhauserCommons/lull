@@ -112,6 +112,12 @@ impl Query {
             })
     }
 
+    /// Every word typed starts one of `have` (folded words), or is one with a typo: what "all the
+    /// words" means for a row, and for any text that is searched with the same rule.
+    pub fn holds_every_word(&self, have: &[String]) -> bool {
+        !self.words.is_empty() && self.words.iter().all(|w| holds(have, w))
+    }
+
     /// `exact`: the forms that fit exactly when they are the words typed; `titled`: the forms
     /// that also fit exactly when they begin with them.
     fn fit(&self, exact: &[String], titled: &[String], text: &[&str]) -> Fit {
@@ -120,16 +126,15 @@ impl Query {
         }
         let own: Vec<String> = text.iter().flat_map(|t| folded_words(&without_from_notes(t))).collect();
         let all: Vec<String> = text.iter().flat_map(|t| folded_words(t)).collect();
-        let holds = |have: &[String], w: &str| have.iter().any(|h| h.starts_with(w) || misspelt_word(w, h));
         if self.words.is_empty() {
             return Fit::Loose;
         }
-        if self.words.iter().all(|w| holds(&own, w)) {
+        if self.holds_every_word(&own) {
             return Fit::Words;
         }
         let significant: Vec<&String> = self.words.iter().filter(|w| is_significant(w)).collect();
         let held = significant.iter().filter(|w| holds(&all, w)).count();
-        if self.words.iter().all(|w| holds(&all, w)) || (held >= 2 && held * 3 >= significant.len() * 2) {
+        if self.holds_every_word(&all) || (held >= 2 && held * 3 >= significant.len() * 2) {
             Fit::Most
         } else if held >= 1 {
             Fit::Partly
@@ -230,6 +235,11 @@ fn forms(names: &[String], title: &str) -> (Vec<String>, Vec<String>) {
         exact.push(name.clone());
     }
     (exact, titled)
+}
+
+/// A typed word starts one of `have`, or is one with a typo.
+fn holds(have: &[String], word: &str) -> bool {
+    have.iter().any(|h| h.starts_with(word) || misspelt_word(word, h))
 }
 
 /// A word that counts toward "most of the words": a number, or four letters or more.

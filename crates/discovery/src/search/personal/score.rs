@@ -97,18 +97,27 @@ pub fn album(songs: impl IntoIterator<Item = f64>) -> f64 {
     1.0 - songs.into_iter().fold(1.0, |rest, s| rest * (1.0 - s))
 }
 
-/// An artist's score, by each catalog id lull holds for the artist (`ids`, per artist).
-pub fn artists(taste: &Taste, ids: &HashMap<ArtistId, Vec<CatalogId>>) -> HashMap<CatalogId, f64> {
-    let mut scores: HashMap<CatalogId, f64> = HashMap::new();
-    for a in taste
+/// Each artist's score from taste's weight; a hidden artist, and one the listener only skipped, has none.
+pub fn artists(taste: &Taste) -> HashMap<ArtistId, f64> {
+    taste
         .artists
         .iter()
         .filter(|a| a.weight > 0.0 && !taste.hidden.contains(&a.id))
-    {
-        let score = saturate(a.weight, ARTIST_HALF);
-        for id in ids.get(&a.id).into_iter().flatten() {
+        .map(|a| (a.id.clone(), saturate(a.weight, ARTIST_HALF)))
+        .collect()
+}
+
+/// The artists' scores by each catalog id lull holds for them (`ids`, per artist): the only way
+/// a search row's artist is reached. The best score wins where two artists hold one id.
+pub fn by_catalog_id(
+    artists: &HashMap<ArtistId, f64>,
+    ids: &HashMap<ArtistId, Vec<CatalogId>>,
+) -> HashMap<CatalogId, f64> {
+    let mut scores: HashMap<CatalogId, f64> = HashMap::new();
+    for (artist, score) in artists {
+        for id in ids.get(artist).into_iter().flatten() {
             let best = scores.entry(id.clone()).or_default();
-            *best = best.max(score);
+            *best = best.max(*score);
         }
     }
     scores
@@ -259,7 +268,7 @@ mod tests {
             (ArtistId::of("Ra"), vec![ra.clone()]),
             (ArtistId::of("Hidden"), vec![(Source::Itunes, "5".into())]),
         ]);
-        let scores = artists(&taste, &ids);
+        let scores = by_catalog_id(&artists(&taste), &ids);
         assert!((scores[&ra] - 0.5).abs() < 1e-9, "a follow is a half");
         assert!(
             !scores.contains_key(&namesake),
@@ -269,7 +278,10 @@ mod tests {
             scores.len() == 1,
             "no hidden artist, and nothing for an artist with no ids: {scores:?}"
         );
-        assert!(artists(&taste, &HashMap::new()).is_empty(), "no ids, no lift");
+        assert!(
+            by_catalog_id(&artists(&taste), &HashMap::new()).is_empty(),
+            "no ids, no lift"
+        );
     }
 
     #[test]
