@@ -19,6 +19,8 @@ pub mod catalog;
 mod matching;
 pub mod merge;
 pub mod personal;
+#[cfg(test)]
+mod personal_set;
 mod playlists;
 mod previews;
 pub mod query;
@@ -49,6 +51,7 @@ use crate::sources::ArtistSource;
 use crate::store::{self, entities};
 use catalog::Choice;
 use merge::{ArtistHit, Found, Kind, Merged, Score, SongHit, Source, Touched};
+use personal::snapshot::Snapshot;
 use query::{Fit, Query};
 
 /// The longest the first answer waits for the fast sources.
@@ -342,10 +345,14 @@ async fn fetch(svc: &Service, source: Source, q: &str) -> Result<Found> {
             }
             found
         }
-        Source::Library => Ok(Found {
-            songs: svc.store.search_saved(q, SAVED).await?.into_iter().map(saved).collect(),
-            ..Found::default()
-        }),
+        Source::Library => match svc.personal.as_ref().and_then(personal::Personal::snapshot) {
+            // The listener's index answers from memory, with no call to the library or the database.
+            Some(snapshot) => Ok(snapshot.found(&Query::new(q))),
+            None => Ok(Found {
+                songs: svc.store.search_saved(q, SAVED).await?.into_iter().map(saved).collect(),
+                ..Found::default()
+            }),
+        },
         Source::MusicBrainz => Ok(recordings_kept(q, svc.mb.search(q).await?)),
         Source::MusicBrainzAlbums => Ok(release_groups_kept(q, svc.mb.search_releases(q).await?)),
         Source::DeezerPlaylists => Ok(Found {
@@ -524,8 +531,9 @@ async fn arrive(svc: &Arc<Service>, run: &Arc<Run>, source: Source, found: Resul
 
 /// `search.catalog`: the query's best tracks, for Soulseek's pre-warming.
 fn publish_catalog(svc: &Service, query: &str, merged: &Merged) {
-    let fits = song_scores(&Query::new(query), merged);
-    let track_ids = merge::rank(&fits, |i| merged.songs[i].saved.is_some())
+    let personal = svc.personal.as_ref().and_then(personal::Personal::snapshot);
+    let fits = song_scores(&Query::new(query), merged, personal.as_deref());
+    let track_ids = order(&fits, personal.as_deref(), |i| merged.songs[i].saved.is_some())
         .into_iter()
         .take(CATALOG_TRACKS)
         .map(|i| merged.songs[i].id())
@@ -554,17 +562,27 @@ async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&To
     let rows = match (board.as_ref(), touched) {
         (Some(shown), None) => shown.clone(),
         _ => {
-            let (liked, mut followed) = svc.store.own().await?;
+            // With the switch on, the snapshot holds the listener's own: no database call per search.
+            let personal = svc.personal.as_ref().and_then(personal::Personal::snapshot);
+            let (liked, mut followed) = match personal {
+                Some(_) => Default::default(),
+                None => svc.store.own().await?,
+            };
             if m.namesakes {
                 crate::namesakes::place_rows(svc, m).await?;
-                followed = crate::namesakes::followed(svc, followed).await?;
+                if personal.is_none() {
+                    followed = crate::namesakes::followed(svc, followed).await?;
+                }
             }
             let q = Query::new(query);
+            let own = Own {
+                liked: &liked,
+                followed: &followed,
+                personal: personal.as_deref(),
+            };
             match board {
-                Some(shown) => shown.add(rank_rows(&q, m, &liked, &followed)),
-                None => board
-                    .insert(first_board(&q, m, std::mem::take(held), &liked, &followed))
-                    .clone(),
+                Some(shown) => shown.add(rank_own(&q, m, &own)),
+                None => board.insert(first_board(&q, m, std::mem::take(held), &own)).clone(),
             }
         }
     };
@@ -616,20 +634,14 @@ async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&To
 /// for a day), so the same words searched again have it at once; ranked in with the rest, it
 /// gave a repeat search another top result and order than the first ("nevermind": Nirvana's
 /// album first only on the second search).
-fn first_board(
-    q: &Query,
-    m: &mut Merged,
-    held: Vec<Found>,
-    liked: &HashSet<TrackId>,
-    followed: &HashSet<ArtistId>,
-) -> Board {
-    let mut board = Board::first(rank_rows(q, m, liked, followed));
+fn first_board(q: &Query, m: &mut Merged, held: Vec<Found>, own: &Own) -> Board {
+    let mut board = Board::first(rank_own(q, m, own));
     if !held.is_empty() {
         m.freeze();
         for found in held {
             m.absorb(found);
         }
-        board.add(rank_rows(q, m, liked, followed));
+        board.add(rank_own(q, m, own));
     }
     board
 }
@@ -646,28 +658,81 @@ struct Ranked {
     playlists: Vec<usize>,
 }
 
+/// The listener's own, which lifts their rows: liked songs and followed artists break ties
+/// (`merge::rank`), or, with `personal-search` on, their snapshot lifts each row by how much it is
+/// theirs (`merge::rank_blended`).
+struct Own<'a> {
+    liked: &'a HashSet<TrackId>,
+    followed: &'a HashSet<ArtistId>,
+    personal: Option<&'a Snapshot>,
+}
+
 /// Ranks the merged rows for the query; `liked` and `followed` are the listener's own, which
 /// break ties (`merge`). Artists borrowing another's name are left out.
+#[cfg(test)]
 fn rank_rows(q: &Query, m: &Merged, liked: &HashSet<TrackId>, followed: &HashSet<ArtistId>) -> Ranked {
-    let fits = song_scores(q, m);
-    let songs = merge::rank(&fits, |i| {
+    rank_own(
+        q,
+        m,
+        &Own {
+            liked,
+            followed,
+            personal: None,
+        },
+    )
+}
+
+/// `rank_rows` with the listener's snapshot (the personal-search switch on): what the eval reads.
+#[cfg(test)]
+fn rank_personal(q: &Query, m: &Merged, snapshot: &Snapshot) -> Ranked {
+    let none = HashSet::new();
+    let none_followed = HashSet::new();
+    rank_own(
+        q,
+        m,
+        &Own {
+            liked: &none,
+            followed: &none_followed,
+            personal: Some(snapshot),
+        },
+    )
+}
+
+fn rank_own(q: &Query, m: &Merged, own: &Own) -> Ranked {
+    let fits = song_scores(q, m, own.personal);
+    let songs = order(&fits, own.personal, |i| {
         let s = &m.songs[i];
-        s.saved.is_some() || liked.contains(&s.id()) || followed.contains(&s.artist_id())
+        s.saved.is_some() || own.liked.contains(&s.id()) || own.followed.contains(&s.artist_id())
     });
     let album_fits: Vec<Score> = m
         .albums
         .iter()
         .enumerate()
-        .map(|(i, a)| Score {
-            filler: m.filler_album(i),
-            ..Score::album(q, a)
+        .map(|(i, a)| {
+            let score = Score {
+                filler: m.filler_album(i),
+                ..Score::album(q, a)
+            };
+            match own.personal {
+                Some(p) => score.with_affinity(p.album(a)),
+                None => score,
+            }
         })
         .collect();
-    let albums = merge::rank(&album_fits, |i| followed.contains(&m.albums[i].artist_id()));
+    let albums = order(&album_fits, own.personal, |i| {
+        own.followed.contains(&m.albums[i].artist_id())
+    });
     let mut artist_fits: Vec<Score> = m.artists.iter().map(|a| Score::artist(q, a)).collect();
     merge::overshadow(&m.artists, &mut artist_fits);
+    if let Some(p) = own.personal {
+        for (score, a) in artist_fits.iter_mut().zip(&m.artists) {
+            *score = score.with_affinity(p.artist(a));
+        }
+    }
     let borrowed = merge::borrowed(&m.artists);
-    let mut artists = merge::rank(&artist_fits, |i| followed.contains(&m.artists[i].id()));
+    let mut artists = order(&artist_fits, own.personal, |i| {
+        own.followed.contains(&m.artists[i].id())
+    });
     artists.retain(|&i| !borrowed[i]);
 
     // A query that names a film, show or game: its soundtrack, album or playlist, leads.
@@ -715,8 +780,9 @@ fn rank_rows(q: &Query, m: &Merged, liked: &HashSet<TrackId>, followed: &HashSet
     }
 }
 
-/// The songs' scores, their popularity raised by their other takes (`merge::known`).
-fn song_scores(q: &Query, m: &Merged) -> Vec<Score> {
+/// The songs' scores, their popularity raised by their other takes (`merge::known`), and with
+/// the listener's snapshot, by how much each is theirs.
+fn song_scores(q: &Query, m: &Merged, personal: Option<&Snapshot>) -> Vec<Score> {
     let mut scores: Vec<Score> = m
         .songs
         .iter()
@@ -727,7 +793,21 @@ fn song_scores(q: &Query, m: &Merged) -> Vec<Score> {
         })
         .collect();
     merge::known(m, &mut scores);
+    if let Some(p) = personal {
+        for (score, s) in scores.iter_mut().zip(&m.songs) {
+            *score = score.with_affinity(p.song(s));
+        }
+    }
     scores
+}
+
+/// Positions of the rows best first: by the snapshot's blend, or, without one, the old order in
+/// which `own` (the listener's own) breaks ties.
+fn order(scores: &[Score], personal: Option<&Snapshot>, own: impl Fn(usize) -> bool) -> Vec<usize> {
+    match personal {
+        Some(_) => merge::rank_blended(scores),
+        None => merge::rank(scores, own),
+    }
 }
 
 /// The rows a run has shown (positions in `Merged`) in the order shown: the first answer's best,
