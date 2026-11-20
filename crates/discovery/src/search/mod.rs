@@ -20,6 +20,7 @@ mod matching;
 pub mod merge;
 mod playlists;
 mod previews;
+pub mod query;
 #[cfg(test)]
 mod query_set;
 pub mod resolve;
@@ -46,7 +47,8 @@ use crate::art::{self, Pictured};
 use crate::sources::ArtistSource;
 use crate::store::{self, entities};
 use catalog::Choice;
-use merge::{ArtistHit, Fit, Found, Kind, Merged, Query, Score, SongHit, Source, Touched};
+use merge::{ArtistHit, Found, Kind, Merged, Score, SongHit, Source, Touched};
+use query::{Fit, Query};
 
 /// The longest the first answer waits for the fast sources.
 const FIRST_ANSWER: Duration = Duration::from_millis(1500);

@@ -17,7 +17,8 @@
 
 use lull_core::ids::normalize;
 
-use super::merge::{AlbumHit, Fit, PlaylistHit, Query};
+use super::merge::{AlbumHit, PlaylistHit};
+use super::query::{Fit, Query};
 
 /// Playlists listed in an answer.
 pub const LISTED: usize = 12;

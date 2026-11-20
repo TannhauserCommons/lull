@@ -11,7 +11,8 @@ use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use super::Board;
-use super::merge::{self, AlbumHit, ArtistHit, Fit, Found, Kind, Merged, Query, Score, SongHit};
+use super::merge::{self, AlbumHit, ArtistHit, Found, Kind, Merged, Score, SongHit};
+use super::query::{Fit, Query};
 use crate::sources::{AlbumSource, ArtistSource, deezer, itunes, lastfm, musicbrainz};
 
 fn fixture(name: &str) -> Value {

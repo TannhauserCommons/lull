@@ -137,7 +137,7 @@ Code: `src/artist/` (`mod.rs` the page, `discography.rs`, `popular.rs`, `photo.r
 
 ## Search (`GET /api/search`, ADR-0008)
 
-Code: `src/search/` (`mod.rs` runs a query, `merge.rs` merges and ranks), `src/art.rs` (pictures).
+Code: `src/search/` (`mod.rs` runs a query, `query.rs` matches words, `merge.rs` merges and ranks), `src/art.rs` (pictures).
 
 - **The fast catalog is chosen per hub** (`search/catalog.rs`): Deezer's `/infos` is asked at start and daily (hourly after a failure).
   - Where Deezer is open (`open: true`, and until it has answered), Deezer answers tracks, albums and artists.

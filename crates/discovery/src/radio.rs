@@ -644,9 +644,9 @@ async fn by_artist(svc: &Service, seed: &Known, steer: f64, pop: Popularity) -> 
 /// Whether a title names another take of a song: a remix, live, sped-up, slowed, acoustic or
 /// instrumental take, edit, mix, mashup, demo, version or dub in its brackets or " - " suffix
 /// ("Talamak (Tom Lown Remix)", "So Many Details - Live", "Drift (sped up)").
-/// Search's list of version words is the one list (`merge::names_a_version`).
+/// Search's list of version words is the one list (`query::names_a_version`).
 pub fn is_version(title: &str) -> bool {
-    crate::search::merge::names_a_version(title)
+    crate::search::query::names_a_version(title)
 }
 
 /// The artists in a credit, best first: the whole credit, the part before "feat.", "ft.",
