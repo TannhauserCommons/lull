@@ -25,6 +25,7 @@ use lull_core::ids::{AlbumId, ArtistId, TrackId, loose_artist, loose_title, norm
 use lull_core::model::Track;
 use serde::{Deserialize, Serialize};
 
+use super::personal::score::Affinity;
 use super::query::{Fit, Query, edits, names_a_version, release_versions, version_words, without_versions};
 use crate::sources::{AlbumSource, ArtistInfo, ArtistSource, Release, Song};
 use crate::store;
@@ -611,6 +612,42 @@ impl Score {
             lean: LEAN_ARTIST,
         }
     }
+}
+
+/// How far the listener's own music lifts a row's popularity (`Score::with_affinity`), per unit of
+/// affinity (0 to 1). Chosen by the personal case set and the query set (docs/context/discovery.md).
+pub const AFFINITY_WEIGHT: f64 = 0.5;
+
+impl Score {
+    /// The row as the listener's music lifts it: popularity plus `AFFINITY_WEIGHT` of its affinity
+    /// (so the top result, which weighs popularity, leans the same way), and a take they have
+    /// counts as the song itself, not another version of it ("Creep (Acoustic)" for a listener
+    /// who plays it).
+    pub fn with_affinity(self, a: Affinity) -> Score {
+        Score {
+            version: self.version && !a.own,
+            popularity: self.popularity + AFFINITY_WEIGHT * a.score,
+            ..self
+        }
+    }
+}
+
+/// Positions of `rows` best first when their popularity already holds the listener's affinity
+/// (`Score::with_affinity`): fit, then the song before its other versions, then the catalog's
+/// rows before a gap-filler's, then that one blended value. With no affinity anywhere this is
+/// `rank`'s order, as popularity in tenths then exact popularity is popularity.
+pub fn rank_blended(rows: &[Score]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..rows.len()).collect();
+    order.sort_by(|&a, &b| {
+        let key = |i: usize| (rows[i].fit, !rows[i].version, !rows[i].filler);
+        key(b).cmp(&key(a)).then_with(|| {
+            rows[b]
+                .popularity
+                .partial_cmp(&rows[a].popularity)
+                .unwrap_or(Ordering::Equal)
+        })
+    });
+    order
 }
 
 /// Positions of `rows` best first. `own` says whether a row is the listener's (saved, liked,
