@@ -803,7 +803,7 @@
       case 'transferring': return { meta: html`${icon('soulseek', null, 'ic-16')}<span>${j.peer}, ${mbps(j.speed)}, ${pct}%</span>`, extra: html`<div class="progress progress--xfer" style="--p:${pct / 100}"><i></i></div>`, acts: cancel };
       case 'queued': return { meta: html`${icon('clock', null, 'ic-16')}<span>Queued at ${j.peer}${j.queuePos ? ', position ' + j.queuePos : ''}</span>`, extra: html`<div class="progress" style="--p:0"><i></i></div>`, acts: cancel };
       case 'stalled': return { meta: html`${icon('refresh', null, 'ic-16')}<span>${j.peer} stalled at ${pct}%</span>`, extra: html`<div class="progress" style="--p:${pct / 100}"><i></i></div>`, acts: cancel };
-      case 'failed': return { meta: html`${ui.statusGlyph('down', 'Failed')}<span>${j.error || ''}</span>`, extra: html`<div class="progress progress--failed" style="--p:${pct / 100}"><i></i></div>`,
+      case 'failed': return { meta: html`${ui.statusGlyph('down', 'Failed')}<span>${App.fmt.reason(j.error)}</span>`, extra: html`<div class="progress progress--failed" style="--p:${pct / 100}"><i></i></div>`,
         acts: html`${actBtn('refresh', 'Retry transfer', 'now-job-retry', j)}${j.trackId ? actBtn('soulseek', 'Pick another source', 'show-sources', j, 'data-id="' + App.esc(j.trackId) + '"') : ''}` };
       case 'cancelled': return { meta: html`${icon('close', null, 'ic-16')}<span>Cancelled at ${pct}%</span>`, extra: '', acts: actBtn('refresh', 'Start again', 'now-job-retry', j) };
       default: return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>${j.peer ? 'Transferred from ' + j.peer : 'Transferred'}</span>`, extra: '', acts: '' };
@@ -817,7 +817,7 @@
     return { meta: j.belowMinimum ? ui.belowBadge() : '', extra: ui.pipeline(j.step || 1, j.status, j.error), acts: acts || '' };
   }
   function otherParts(j, st) {
-    if (st === 'failed') return { meta: html`${ui.statusGlyph('down', 'Failed')}<span>${j.error || ''}</span>`, extra: '', acts: '' };
+    if (st === 'failed') return { meta: html`${ui.statusGlyph('down', 'Failed')}<span>${App.fmt.reason(j.error)}</span>`, extra: '', acts: '' };
     if (st === 'active') return { meta: html`<span class="spin-ring" aria-hidden="true"></span><span>${j.detail || (j.pct != null ? 'Importing, ' + Math.round(j.pct * (j.pct <= 1 ? 100 : 1)) + '%' : 'Running')}</span>`, extra: '', acts: '' };
     if (j.kind === 'import' && 'added' in j) {        // listening history (POST /api/import/history)
       return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>${j.added || 0} plays added${j.duplicates ? ', ' + j.duplicates + ' already there' : ''}${j.invalid ? ', ' + j.invalid + ' unreadable' : ''}</span>`, extra: '', acts: '' };

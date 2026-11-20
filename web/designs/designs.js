@@ -459,7 +459,7 @@
       repeatOn: isOn(rep !== 'off'), repeatLabel: { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' }[rep] || 'Repeat off',
       repeatIcon: rep === 'one' ? 'repeat-one' : 'repeat', status: p.status || 'idle',
       liked: isOn(liked), likeClass: liked ? 'is-liked' : '', likeIcon: liked ? 'heart-fill' : 'heart',
-      error: p.status === 'failed' && p.error ? p.error : 'Couldn\'t play this song',
+      error: p.status === 'failed' && p.error ? (window.App ? App.fmt.reason(p.error) : p.error) : 'Couldn\'t play this song',
       radio: p.radio ? p.radio.name : '', from: playingFrom()
     };
   }
