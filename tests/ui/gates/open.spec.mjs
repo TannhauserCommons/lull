@@ -37,6 +37,8 @@ test('while another of the listener\'s devices plays, the song joins that device
   const headers = { 'x-fixture-client': `${test.info().testId}:${test.info().repeatEachIndex}` };
   await page.context().setExtraHTTPHeaders(headers);
   await openScreen(page, screens.settings);
+  // The phone opens its event stream (the hub's word that it is online), then reports; a state alone doesn't make it so.
+  await request.post('/__fixture/emit', { headers, data: { topic: 'device.online', data: { deviceId: 'd-phone', online: true } } });
   await request.post('/__fixture/emit', { headers, data: { topic: 'device.state', data: { deviceId: 'd-phone', trackId: null, position: 0, playing: true } } });
   await expect.poll(() => page.evaluate(() => App.connect.byId('d-phone')?.state?.playing ?? false)).toBe(true);
 

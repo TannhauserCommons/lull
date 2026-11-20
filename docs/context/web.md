@@ -404,7 +404,7 @@ level, not the system's.
 
 `connect.js` (`App.connect`) owns the device list: store `devices` `{ items, me, loading, error }` from
 `GET /api/devices`, kept current by `device.online` / `device.state` (an unknown device id rereads the list).
-Settings > Devices renders from it.
+Settings > Devices renders from it. A device is online only when `device.online` / the list say so; a `device.state` never makes it so.
 
 - **Reporting**: `POST /api/devices/me/state` at once on a new song and on every new player view whose `activity`
   changed (so a failure, an end or a pause the system made reaches the others). `playing` is the listener's intent,
@@ -412,14 +412,20 @@ Settings > Devices renders from it.
   while playing. A state identical to the last one sent is skipped
   (except the heartbeat, a takeover and the first report after a reconnect). One start runs at a time, however
   often `server` fires while the device list loads. A 404 (a hub without Connect) stops it until the next resync or
-  hub restart.
+  hub restart. The report is the whole queue with shuffle, repeat, each entry's group and place before shuffling,
+  and the radio (api.md); a 409 (no event stream yet) is sent again when this device's own `device.online` arrives.
+- **One tab acts** per browser: its tabs share one device (one cookie), so the tab holding the Web Lock
+  `lull-connect-device` reports and obeys commands, the others wait for it to close, and a tab where the listener
+  starts playing takes the lock. Web Locks need a secure context (HTTPS or localhost): on a hub's plain-http address every tab acts, as before.
+  A reconnected event stream rereads the list and reports again (`C.resume`), since it may have missed a `device.online`.
 - **Commands**: `device.command` for this device runs `play pause next prev seek volume`; `takeover` reports
   at once, pauses and says who took over; `enqueue` reads the songs it hasn't seen and adds them to next up without
   interrupting. `C.playingElsewhere()` and `C.enqueue(d, ids)` send one (a share page's Add to queue, discover.js).
 - **Picker** (`data-act="connect"`: the player bar, Now's action row): a popover, a sheet on phones. Picking a
   device opens its controls (play/pause, skip, seek, volume; positions move by the time since its report).
   **Play here** sends `takeover`, waits up to 3 s for the fresh `device.state`, reads tracks this device hasn't
-  seen (`GET /api/tracks/{id}`), and plays that queue here from the same position.
+  seen (`GET /api/tracks/{id}`), and the whole queue continues here (`P.adopt`) from the same position, with its
+  shuffle, repeat, groups and radio. The place it played from and a picked source aren't in the state: none here.
 
 ## Offline downloads and outbox
 

@@ -65,6 +65,8 @@ export default defineConfig({
     // what loading Classic mode on first use must keep (a browser) and not change (the desktop app)
     { name: 'on-use', testMatch: 'on-use.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'open', testMatch: 'open.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
+    // one tab of a browser acts as its device (Web Locks)
+    { name: 'connect-tabs', testMatch: 'connect-tabs.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'now', testMatch: 'now.spec.mjs', fullyParallel: true },
     // the source details of a stream no peer has answered for say Soulseek, not the library, and draw no empty chip
     { name: 'source-details', testMatch: 'source-details.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },

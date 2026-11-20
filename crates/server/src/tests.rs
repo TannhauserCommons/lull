@@ -661,6 +661,168 @@ async fn enqueue_hands_the_songs_to_the_device_named_and_only_enqueue_carries_so
     Ok(())
 }
 
+/// The laptop claims the hub and pairs a phone: the laptop's cookie token, the phone's bearer token and id.
+async fn laptop_and_phone(hub: &Arc<Hub>) -> Result<(String, String, String), BoxError> {
+    let claim = json!({ "code": SETUP_CODE, "name": "Laptop" });
+    let (_, cookie, _) = call(hub, send("POST", "/api/setup/claim", Auth::None, claim)?).await?;
+    let laptop = cookie_token(cookie);
+    let (_, _, issued) = call(hub, send("POST", "/api/pair/codes", Auth::Cookie(&laptop), json!({}))?).await?;
+    let pair = json!({ "code": issued["code"], "name": "Phone", "kind": "app" });
+    let (_, _, phone) = call(hub, send("POST", "/api/pair", Auth::None, pair)?).await?;
+    let token = phone["token"].as_str().unwrap_or_default().to_owned();
+    let id = phone["device"]["id"].as_str().unwrap_or_default().to_owned();
+    Ok((laptop, token, id))
+}
+
+/// What a player reports (`POST /api/devices/me/state`): a song, its queue, and the listener's modes.
+fn reported(extra: Value) -> Value {
+    let mut state = json!({
+        "trackId": "t-a", "position": 12.5, "playing": true, "volume": 0.7,
+        "queue": ["t-a", "t-b", "t-c"], "queueIndex": 0,
+    });
+    if let (Some(state), Some(extra)) = (state.as_object_mut(), extra.as_object()) {
+        state.extend(extra.clone());
+    }
+    state
+}
+
+/// The `device.state` events on the bus so far. The bus also carries what the crates publish by themselves as
+/// they start (the catalog's status once Deezer answers), at a moment the network decides.
+fn states_heard(events: &mut tokio::sync::broadcast::Receiver<lull_core::events::Event>) -> Vec<Value> {
+    let mut heard = Vec::new();
+    while let Ok(e) = events.try_recv() {
+        if e.topic == "device.state" {
+            heard.push(e.data);
+        }
+    }
+    heard
+}
+
+#[tokio::test]
+async fn a_device_with_no_event_stream_is_not_online_whatever_it_reports() -> Result<(), BoxError> {
+    let (hub, dir) = test_hub().await?;
+    let (laptop, phone, phone_id) = laptop_and_phone(&hub).await?;
+    let bus = hub.ctx().await.bus.clone();
+    let mut events = bus.subscribe();
+    let listed = || get("/api/devices", Auth::Cookie(&laptop));
+    let phone_row = |items: &Value| {
+        items["items"]
+            .as_array()
+            .and_then(|a| a.iter().find(|d| d["id"] == json!(phone_id)))
+            .cloned()
+    };
+
+    // A state from a phone that holds no stream (its app closed, a late request) is refused and told to nobody.
+    let refused = call(
+        &hub,
+        send(
+            "POST",
+            "/api/devices/me/state",
+            Auth::Bearer(&phone),
+            reported(json!({})),
+        )?,
+    )
+    .await?;
+    assert_eq!(refused.0, StatusCode::CONFLICT);
+    assert!(
+        states_heard(&mut events).is_empty(),
+        "a device with no stream was told to the others"
+    );
+    let (_, _, items) = call(&hub, listed()?).await?;
+    let row = phone_row(&items).ok_or("the phone is listed")?;
+    assert_eq!((row["online"].clone(), row.get("state").cloned()), (json!(false), None));
+
+    // Once it holds a stream, the same report is accepted, told and kept for the list.
+    let _stream = hub.online.join(&phone_id, &bus);
+    let accepted = call(
+        &hub,
+        send(
+            "POST",
+            "/api/devices/me/state",
+            Auth::Bearer(&phone),
+            reported(json!({})),
+        )?,
+    )
+    .await?;
+    assert_eq!(accepted.0, StatusCode::NO_CONTENT);
+    assert_eq!(states_heard(&mut events).len(), 1);
+    let (_, _, items) = call(&hub, listed()?).await?;
+    let row = phone_row(&items).ok_or("the phone is listed")?;
+    assert_eq!(
+        (row["online"].clone(), row["state"]["trackId"].clone()),
+        (json!(true), json!("t-a"))
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_reported_state_carries_the_modes_groups_and_radio_with_the_whole_queue() -> Result<(), BoxError> {
+    let (hub, dir) = test_hub().await?;
+    let (laptop, phone, phone_id) = laptop_and_phone(&hub).await?;
+    let bus = hub.ctx().await.bus.clone();
+    let _stream = hub.online.join(&phone_id, &bus);
+    let mut events = bus.subscribe();
+    let report = |extra: Value| send("POST", "/api/devices/me/state", Auth::Bearer(&phone), reported(extra));
+
+    // A queue past what "Play here" once cut (50 before the song, 150 after) arrives whole, with what the other
+    // device's queue said about each entry: its group, and its place before shuffling.
+    let queue: Vec<String> = (0..400).map(|i| format!("t-{i:04}")).collect();
+    let groups: Vec<&str> = (0..400)
+        .map(|i| {
+            if i < 3 {
+                "next"
+            } else if i < 350 {
+                "context"
+            } else {
+                "radio"
+            }
+        })
+        .collect();
+    let order: Vec<Option<usize>> = (0..400).map(|i| (i % 7 != 0).then_some(399 - i)).collect();
+    let radio =
+        json!({ "name": "Sade", "seed": { "kind": "artist", "id": "ar-sade" }, "keepsAdding": true, "steer": 0.4 });
+    let state = json!({
+        "queue": queue, "queueIndex": 200, "shuffle": true, "repeat": "all",
+        "groups": groups, "order": order, "radio": radio,
+    });
+    assert_eq!(call(&hub, report(state.clone())?).await?.0, StatusCode::NO_CONTENT);
+    let heard = states_heard(&mut events).pop().ok_or("no device.state")?;
+    for key in ["queue", "queueIndex", "shuffle", "repeat", "groups", "order", "radio"] {
+        assert_eq!(heard[key], state[key], "{key}");
+    }
+    let (_, _, items) = call(&hub, get("/api/devices", Auth::Cookie(&laptop))?).await?;
+    let row = items["items"]
+        .as_array()
+        .and_then(|a| a.iter().find(|d| d["id"] == json!(phone_id)));
+    assert_eq!(row.map(|d| d["state"]["repeat"].clone()), Some(json!("all")));
+
+    // A player that says nothing of them (an older app) is a queue played in order, as before.
+    assert_eq!(call(&hub, report(json!({}))?).await?.0, StatusCode::NO_CONTENT);
+    let heard = states_heard(&mut events).pop().ok_or("no device.state")?;
+    assert_eq!((&heard["shuffle"], &heard["repeat"]), (&json!(false), &json!("off")));
+
+    // What doesn't fit is refused whole: a list that isn't the queue's length, a group or mode nobody knows.
+    for extra in [
+        json!({ "groups": ["context"] }),
+        json!({ "order": [0] }),
+        json!({ "groups": ["context", "context", "elsewhere"] }),
+        json!({ "repeat": "twice" }),
+        json!({ "radio": { "name": "x", "seed": { "kind": "year", "id": "1999" }, "keepsAdding": true, "steer": 0.4 } }),
+    ] {
+        assert_eq!(
+            call(&hub, report(extra.clone())?).await?.0,
+            StatusCode::BAD_REQUEST,
+            "{extra}"
+        );
+    }
+    assert!(states_heard(&mut events).is_empty(), "a refused state was told");
+
+    let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}
+
 #[tokio::test]
 async fn the_built_in_packs_are_served_as_sound_and_json_and_the_sounds_as_they_are() -> Result<(), BoxError> {
     let (hub, dir) = test_hub().await?;
