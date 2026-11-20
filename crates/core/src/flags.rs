@@ -44,7 +44,7 @@ pub const NAMESAKES: Flag = Flag {
 };
 
 /// Search learns from the listener's own music: a cached index of what they keep, play and like answers it first,
-/// and one score from their listening lifts their rows among equally good matches (ADR-0034).
+/// and one score from their listening lifts their rows among equally good matches (ADR-0036).
 pub const PERSONAL_SEARCH: Flag = Flag {
     name: "personal-search",
     about: "Search is led by the listener's own music: an index of their songs and a score from their listening",
