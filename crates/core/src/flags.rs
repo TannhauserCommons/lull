@@ -43,6 +43,15 @@ pub const NAMESAKES: Flag = Flag {
     area: "search",
 };
 
+/// Search learns from the listener's own music: a cached index of what they keep, play and like answers it first,
+/// and one score from their listening lifts their rows among equally good matches (ADR-0034).
+pub const PERSONAL_SEARCH: Flag = Flag {
+    name: "personal-search",
+    about: "Search is led by the listener's own music: an index of their songs and a score from their listening",
+    owner: "discovery",
+    area: "search",
+};
+
 /// The listener's credentials live in the system keyring or a file only lull's user can read, never in the
 /// database (ADR-0091).
 pub const SECRETS: Flag = Flag {
@@ -53,7 +62,7 @@ pub const SECRETS: Flag = Flag {
 };
 
 /// Every switch there is. Empty while nothing is unfinished.
-pub const FLAGS: &[&Flag] = &[&HUB_SELF_UPDATE, &KEEP_RUNNING, &NAMESAKES, &SECRETS];
+pub const FLAGS: &[&Flag] = &[&HUB_SELF_UPDATE, &KEEP_RUNNING, &NAMESAKES, &PERSONAL_SEARCH, &SECRETS];
 
 /// The switches that are on.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
