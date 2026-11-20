@@ -641,7 +641,7 @@ function chunk(type, data) {
 }
 
 // The hub's own reason for a song no peer delivers, YouTube's part included (fetch.rs).
-const FAIL_REASON = 'no peer shares this song right now; YouTube: no YouTube upload matches this song';
+const FAIL_REASON = 'no peer shares this song right now, and no YouTube upload matches this song';
 /* POST /api/stream/<id>/switch { peer, path }: the better copy on its way becomes the song's stream (soulseek/src/fetch.rs,
    Fetcher::adopt): its own job's event answers, naming the job it replaces, and goes out on the event stream too */
 function switchCopy(req, res, id, b) {
