@@ -61,7 +61,7 @@ run = [
 ]
 
 [tasks.budgets]
-description = "Shipped bytes of each route's start (a browser lists the files, their sizes come from the build) against the merge-base's allowance and the ceilings: budgets [base rev]"
+description = "Shipped bytes of each route's start (a browser lists the files, their sizes come from the build) against the merge-base's allowance:budgets [base rev]"
 usage = 'arg "[base]" help="a revision to measure against; the merge-base with origin/main when left out"'
 run = ["sh tests/ui/setup.sh chromium", "node scripts/budgets/run.mjs"]
 
