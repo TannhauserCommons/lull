@@ -53,7 +53,7 @@
 ## lull Connect
 
 - A device is online while it holds at least one `/api/events` stream. `device.online` fires on its first stream and after its last one closes.
-- `POST /api/devices/me/state` publishes `device.state` and keeps it for `GET /api/devices` while the device stays online.
+- `POST /api/devices/me/state` publishes `device.state` and keeps it for `GET /api/devices` while the device stays online. From a device with no stream it is refused (409) and nothing is published or kept: a state never makes a device online. It carries the whole queue and the listener's modes (api.md), so "Play here" needs nothing else. The hub holds no queue for an offline device, by design.
 - `POST /api/devices/{id}/command` needs the target online and publishes `device.command` to every stream. Only the named device acts on it; `takeover` is played out by the two clients.
 - Unpairing cancels the device's streams at once.
 

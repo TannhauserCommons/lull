@@ -89,10 +89,14 @@ impl Online {
         self.lock().contains_key(device)
     }
 
-    fn set_state(&self, device: &str, state: Value) {
-        if let Some(presence) = self.lock().get_mut(device) {
-            presence.state = Some(state);
-        }
+    /// Keeps what an online device reported; false when it holds no stream, so there is nothing to keep.
+    fn set_state(&self, device: &str, state: Value) -> bool {
+        let mut map = self.lock();
+        let Some(presence) = map.get_mut(device) else {
+            return false;
+        };
+        presence.state = Some(state);
+        true
     }
 
     /// Online device -> its last reported state.
@@ -199,6 +203,8 @@ async fn subsonic(State(hub): State<Arc<Hub>>, body: Result<Json<NameBody>, Json
     ))
 }
 
+/// What a player reports. The queue is whole, with the listener's modes and what each entry is, so another of
+/// their devices can play on from it ("Play here") as this one would: nothing is cut or reshuffled.
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PlayerState {
@@ -208,21 +214,100 @@ struct PlayerState {
     volume: f64,
     queue: Vec<String>,
     queue_index: Option<usize>,
+    /// Shuffle is an order the queue already shows; this says it is on, so turning it off puts the rest back.
+    #[serde(default)]
+    shuffle: bool,
+    #[serde(default)]
+    repeat: Repeat,
+    /// Each queue entry's group, in the queue's order. Left out by a player that has none: all `context`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    groups: Option<Vec<Group>>,
+    /// Each entry's place before shuffling, `null` for one added since. Left out when the player has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    order: Option<Vec<Option<usize>>>,
+    /// The radio that keeps topping the queue up, if one does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    radio: Option<Radio>,
 }
 
-/// `POST /api/devices/me/state`: republished as `device.state`.
+#[derive(Deserialize, Serialize, Default, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum Repeat {
+    #[default]
+    Off,
+    All,
+    One,
+}
+
+/// Why an entry is in the queue: a place's songs, the listener's own "next up", or a radio's.
+#[derive(Deserialize, Serialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum Group {
+    Context,
+    Next,
+    Radio,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Radio {
+    name: String,
+    seed: RadioSeed,
+    keeps_adding: bool,
+    steer: f64,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct RadioSeed {
+    kind: SeedKind,
+    id: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum SeedKind {
+    Track,
+    Artist,
+    Tag,
+}
+
+impl PlayerState {
+    /// Lists that say something about each queue entry have one item per entry.
+    fn check(&self) -> Result<()> {
+        let per_entry = [
+            ("groups", self.groups.as_ref().map(Vec::len)),
+            ("order", self.order.as_ref().map(Vec::len)),
+        ];
+        match per_entry
+            .into_iter()
+            .find(|(_, len)| len.is_some_and(|len| len != self.queue.len()))
+        {
+            Some((list, _)) => Err(Error::BadRequest(format!(
+                "{list} needs one item for each song in the queue."
+            ))),
+            None => Ok(()),
+        }
+    }
+}
+
+/// `POST /api/devices/me/state`: republished as `device.state`. A device with no event stream isn't online, so
+/// nothing it reports is told or kept: a state would show it playing while no command could reach it.
 async fn report_state(
     State(hub): State<Arc<Hub>>,
     Extension(me): Extension<Device>,
     body: Result<Json<PlayerState>, JsonRejection>,
 ) -> Result<StatusCode> {
     let Json(state) = body.map_err(bad_json)?;
+    state.check()?;
     let mut event = serde_json::to_value(state).map_err(|e| Error::internal(e.to_string()))?;
     if let Some(fields) = event.as_object_mut() {
         fields.insert("deviceId".into(), me.id.clone().into());
         fields.insert("at".into(), lull_core::now().into());
     }
-    hub.online.set_state(&me.id, event.clone());
+    if !hub.online.set_state(&me.id, event.clone()) {
+        return Err(Error::Conflict("That device isn't connected.".into()));
+    }
     hub.ctx().await.bus.publish("device.state", event);
     Ok(StatusCode::NO_CONTENT)
 }
