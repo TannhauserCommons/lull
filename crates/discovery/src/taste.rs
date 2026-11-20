@@ -71,7 +71,7 @@ pub struct Placed {
 
 impl Signals {
     /// The artist a signal is about: its song's placement, else its name's.
-    fn who(&self, artist: &str, track: Option<&TrackId>) -> Option<ArtistId> {
+    pub(crate) fn who(&self, artist: &str, track: Option<&TrackId>) -> Option<ArtistId> {
         // "Various Artists" and the like are a filing, not someone the listener can like. A signal
         // on one, old data included, weighs no artist (its songs' tags still count).
         if artist.is_empty() || is_pseudo_artist(artist) {
@@ -600,7 +600,8 @@ impl<'a> Accumulator<'a> {
     }
 }
 
-fn play_weight(p: &Play) -> f64 {
+/// What one play is worth at full strength (`weight`): the end, past half, or a skip.
+pub(crate) fn play_weight(p: &Play) -> f64 {
     if p.completed {
         weight::COMPLETED
     } else if p.skipped {
