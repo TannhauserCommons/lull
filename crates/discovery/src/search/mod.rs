@@ -18,6 +18,7 @@
 pub mod catalog;
 mod matching;
 pub mod merge;
+pub mod personal;
 mod playlists;
 mod previews;
 pub mod query;

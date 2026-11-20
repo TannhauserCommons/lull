@@ -37,6 +37,19 @@ Owner: Discovery session (`crates/discovery/src/taste.rs`). Small, on-device and
 - **Radio:** taste nudges liked artists up (familiar) or down (adventurous).
 - **Stats:** `GET /api/taste` returns `{ artists: [[artistId, w]], tags: [[tag, w]], entities }`. These are the positive weights only, scaled so the strongest is 1 and rounded to 2 places.
 
+## Search affinity
+
+Behind the `personal-search` switch (ADR-0036), search lifts the listener's own music with one number from 0 to 1 per song, album and artist (`search/personal/score.rs`, a pure function of the signals above). It reads taste's weights and fade, adds no signal of its own except playlists, and never falls below 0, so it never hides what the words match.
+
+| Row | Score |
+|---|---|
+| Song | `s / (s + 3)` where `s` is the sum of its own signals: plays (+1.0 to the end, +0.5 past half, −0.5 skipped, each faded as above), a like (+3.0, faded), saved in the library now (+2.0) and each playlist it is in (+2.0). A like alone is 0.5; a sum of 0 or less is 0. Songs of a hidden artist are 0. |
+| Album | `1 − ∏(1 − song)` over the album's songs the listener has |
+| Artist | `w / (w + 4)` for taste's artist weight `w` (a follow alone is 0.5), reached **only through ids**: a search row's catalog artist id (Apple's, Deezer's, MusicBrainz's) equal to an id `discovery_artist_ids` holds for a listener's artist. Only ids the listener's own evidence or an exact link gave count (a song of theirs, the library's MBID, a MusicBrainz link, an ISRC); an id a search row or a recommender seeded does not, as a namesake's id could have been seeded onto the artist. No ids, no lift; a hidden artist has none. |
+| A song's or album's row | `1 − (1 − own)(1 − ½ × artist)`: a song of an artist they love lifts a little even if never played |
+
+A take is a song under its loose artist and title and the version words in its title ("Creep (Acoustic)" is not "Creep"), as `merge::same_take` judges it; playing one take lifts that take, not the other.
+
 ## Reset
 
 `POST /api/taste/reset` stores `taste_reset_at = now`, deletes saves and feedback, and ignores plays and likes from before it. Follows, hidden artists, the Last.fm history and the saved library stay. They are standing choices, undone where they are made: unfollow, Settings > Last.fm "use my history".
