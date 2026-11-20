@@ -4964,7 +4964,7 @@
   function refetchAll() {
     forgetArtWaits();
     M.invalidate();
-    loadHealth(); loadCollections();
+    loadHealth(); loadCollections(); App.connect.resume();
     if (booted) renderRoute(true);
   }
   var events = null, connectedOnce = false;

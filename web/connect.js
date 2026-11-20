@@ -5,7 +5,10 @@
      player's view changes what it is doing (its `activity`, so a failure, an end or a pause the system made reaches
      the others), otherwise at most once a second; an unchanged state is sent again only as the slow heartbeat, while it
      plays. `playing` is the listener's intent (every terminal state clears it), so a device taking over a song that
-     was still loading plays it on.
+     was still loading plays it on. The report carries the whole queue and what "Play here" needs to play it as it was:
+     shuffle, repeat, each entry's group and place before shuffling, and the radio.
+   - A device is online only when the hub says so (`device.online`, the device list): a state alone never makes it so.
+   - One tab of a browser acts as this device (they share its cookie): it reports and obeys, the others don't (below).
    - `device.command` events for this device drive the engine; `takeover` reports at once and pauses; `enqueue` adds
      songs to next up without interrupting (a share page's Add to queue, opened on another of the listener's devices).
    - The picker (App.connect.open(anchor)): the devices, a remote's controls, and "Play here" (takeover). */
@@ -36,10 +39,13 @@
     Object.assign(d, patch);
     App.store.set('devices', s);
   }
-  App.on('server:device.online', function (e) { patchDevice(e.deviceId, { online: e.online }); });
+  App.on('server:device.online', function (e) {
+    patchDevice(e.deviceId, { online: e.online });
+    if (e.online && e.deviceId === devices().me) reportAfresh();   // the hub takes a state only once this device holds a stream
+  });
   App.on('server:device.state', function (e) {
     if (e.deviceId === devices().me) return;
-    patchDevice(e.deviceId, { state: Object.assign({}, e, { recv: Date.now() }), online: true });
+    patchDevice(e.deviceId, { state: Object.assign({}, e, { recv: Date.now() }) });
   });
   /* a remote's position now: what it reported plus the time since, while it plays */
   C.position = function (st) {
@@ -51,8 +57,12 @@
   /* ---------- reporting this device's state ---------- */
   var HEARTBEAT = 30000, sendTimer = null, lastSent = 0, lastBody = null, reporting = true;
   function stateBody() {
+    var r = ps.radio;
     return { trackId: P.currentId(), position: Math.round(ps.pos * 10) / 10, playing: ps.playing, volume: ps.muted ? 0 : ps.volume,
-      queue: ps.queue.map(function (q) { return q.trackId; }), queueIndex: ps.index };
+      queue: ps.queue.map(function (q) { return q.trackId; }), queueIndex: ps.index, shuffle: !!ps.shuffle, repeat: ps.repeat,
+      groups: ps.queue.map(function (q) { return q.group; }), order: ps.queue.map(function (q) { return q.orig == null ? null : q.orig; }),
+      radio: r && r.seed ? { name: r.name, seed: { kind: r.seed.kind, id: r.seed.id }, keepsAdding: !!r.keepsAdding,
+        steer: r.steer == null ? LullRules.RADIO_STEER : r.steer } : null };
   }
   /* force: a takeover waits for this device's state event, so it is sent even when unchanged */
   function send(force) {
@@ -63,25 +73,43 @@
     lastSent = Date.now(); lastBody = key;
     M.api(DEVICES + '/me/state', { method: 'POST', body: body }).catch(function (err) {
       if (err.status === 404) reporting = false;           // a hub without Connect: stop asking until it restarts
+      else if (err.status !== 409) console.warn('The hub refused this device\'s state:', err.message);   // 409: no event stream yet, see `device.online`
     });
   }
   function report(now) {
-    if (!reporting || !App.server.authorized || !devices().me) return;
+    if (!acting || !reporting || !App.server.authorized || !devices().me) return;
     if (now || Date.now() - lastSent > 1000) { send(); return; }
     if (!sendTimer) sendTimer = setTimeout(send, 1000 - (Date.now() - lastSent));
   }
   App.on('handover:done', function () { report(true); });
+  function reportAfresh() { lastBody = null; report(true); }
   App.on('player', function (kind) {
+    if ((kind === 'track' || kind === 'play') && ps.playing && !acting) actAsDevice(true);
     if (kind === 'track') report(true);
-    else if (kind === 'seek' || kind === 'volume' || kind === 'queue') report(false);
+    else if (kind === 'seek' || kind === 'volume' || kind === 'queue' || kind === 'mode') report(false);
   });
   var activityWas = null;
   App.on('view', function (v) { if (v.activity !== activityWas) { activityWas = v.activity; report(true); } });
   setInterval(function () { if (ps.playing) report(false); }, HEARTBEAT);
 
+  /* ---------- one tab acts as this device ----------
+     Every tab of a browser is the same device (one cookie, one event stream each), so each would report over the
+     others' state and obey every command. The tab holding the Web Lock acts. The others wait for it to close; a tab
+     where the listener starts playing takes the lock, so the device is the tab they are using. A browser without
+     Web Locks has no other way to tell, so its tabs all act. */
+  var LOCK = 'lull-connect-device', acting = typeof navigator === 'undefined' || !navigator.locks;
+  function actAsDevice(steal) {
+    navigator.locks.request(LOCK, steal ? { steal: true } : {}, function () {
+      if (acting) return undefined;                        // an earlier wait of this tab, held after a steal: let it go
+      acting = true; reportAfresh();
+      return new Promise(function () {});                  // held until the tab closes
+    }).catch(function () { acting = false; actAsDevice(false); });   // another tab took it: wait to be next
+  }
+  if (!acting) actAsDevice(false);
+
   /* ---------- commands for this device ---------- */
   App.on('server:device.command', function (e) {
-    if (e.deviceId !== devices().me) return;
+    if (e.deviceId !== devices().me || !acting) return;
     var from = C.byId(e.from), name = from ? from.name : 'Another device';
     switch (e.action) {
       case 'play': P.play(); break;
@@ -113,6 +141,7 @@
   }
   App.on('server', function (srv) { if (srv.authorized && srv.checked && devices().loading) start(); });
   App.on('server:resync', start);
+  C.resume = start;                                        // a reconnected stream may have missed `device.online`: app.js's refetchAll
   App.on('server:hub.restarting', function () { reporting = true; });
 
   /* ---------- controlling another device ---------- */
@@ -126,7 +155,7 @@
     var unknown = ids.filter(function (id, i) { return !M.track(id) && ids.indexOf(id) === i; });
     return Promise.all(unknown.map(function (id) { return M.api('/api/tracks/' + encodeURIComponent(id)).catch(function () { return null; }); }));
   }
-  /* "Play here": the other device sends its state and pauses; its queue and position continue on this one */
+  /* "Play here": the other device sends its state and pauses; its whole queue, modes and position continue on this one */
   C.takeover = function (d) {
     var waited = new Promise(function (resolve) {
       var off = App.on('server:device.state', function (e) { if (e.deviceId === d.id) { off(); resolve(); } });
@@ -135,13 +164,18 @@
     return command(d, 'takeover').then(function () { return waited; }).then(function () {
       var st = C.byId(d.id).state;
       if (!st || !st.queue || !st.queue.length) { App.toast(d.name + ' had nothing queued', { icon: 'info' }); return; }
-      var at = C.position(st), queue = st.queue.slice(Math.max(0, st.queueIndex - 50), st.queueIndex + 150);
-      var index = st.queueIndex - Math.max(0, st.queueIndex - 50);
-      return learnTracks(queue).then(function () {
-        // the reported entry's place among the songs this device can read (a song in the queue twice is two entries)
-        var known = queue.filter(function (id) { return M.track(id); }), start = queue.slice(0, index).filter(function (id) { return M.track(id); }).length;
-        if (!M.track(queue[index])) { App.toast('Couldn\'t read the song ' + d.name + ' was playing', { kind: 'error' }); return; }
-        P.playList(known, start, { at: at, autoplay: !!st.playing, context: null });   // the state doesn't say where it played from
+      var groups = st.groups || [], order = st.order || [];
+      return learnTracks(st.queue).then(function () {
+        // the entries this device can read, and the reported entry's place among them (a song in the queue twice is two entries)
+        var queue = [], start = -1;
+        st.queue.forEach(function (id, i) {
+          if (!M.track(id)) return;
+          if (i === st.queueIndex) start = queue.length;
+          queue.push({ trackId: id, group: groups[i] || 'context', orig: order[i] });
+        });
+        if (start < 0) { App.toast('Couldn\'t read the song ' + d.name + ' was playing', { kind: 'error' }); return; }
+        // the state doesn't say where it played from, nor which copy of a song was picked: no place, no source
+        P.adopt({ queue: queue, tracks: {}, index: start, pos: C.position(st), shuffle: st.shuffle, repeat: st.repeat, radio: st.radio }, !!st.playing);
         App.toast('Playing here, from ' + d.name, { kind: 'ok', icon: 'connect' });
       });
     }).catch(function () {});
