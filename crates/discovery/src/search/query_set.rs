@@ -13,7 +13,8 @@ use std::collections::HashSet;
 use lull_core::ids::{loose_title, normalize};
 use serde_json::Value;
 
-use super::merge::{self, Found, Merged, Query};
+use super::merge::{self, Found, Merged};
+use super::query::Query;
 use super::{Board, Ranked, rank_rows};
 use crate::sources::{deezer, itunes, musicbrainz};
 

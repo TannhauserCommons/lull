@@ -737,7 +737,7 @@ pub fn answer(q: &str, songs: Found, albums: Result<Found>) -> Found {
         Ok(albums) => found.albums.extend(albums.albums),
         Err(e) => found.problem = Some(format!("its album search failed: {e}")),
     }
-    merge::credit_albums(&merge::Query::new(q), &mut found);
+    merge::credit_albums(&crate::search::query::Query::new(q), &mut found);
     found
 }
 
