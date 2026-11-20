@@ -7,13 +7,13 @@
 //! (year, genre): "1997" or "trip hop" find the listener's songs from then or of that kind. A
 //! row found only by its facts is kept below the rows found by name (`Match`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use lull_core::ids::{ArtistId, TrackId, loose_artist, loose_title};
+use lull_core::ids::{loose_artist, loose_title};
 use lull_core::model::Track;
 
 use crate::search::merge::{AlbumHit, SongHit};
-use crate::search::query::{Query, folded_words, version_words};
+use crate::search::query::{Query, folded_words, version_words, word_fits};
 
 /// A song as one take of itself: its loose artist and title and the version words of its title
 /// (`merge::same_take`'s rule), so "Creep (Acoustic)" is not "Creep" and a remaster is.
@@ -38,26 +38,63 @@ pub enum Match {
     Name,
 }
 
-/// The folded words a row is searched by: its names first, then its facts.
+/// Every distinct word of the index once, so a query judges each word typed against each word
+/// there is once (one edit-distance table per distinct word, not per song).
+#[derive(Default)]
+struct Vocabulary {
+    ids: HashMap<String, u32>,
+    words: Vec<String>,
+}
+
+impl Vocabulary {
+    fn id(&mut self, word: String) -> u32 {
+        if let Some(&id) = self.ids.get(&word) {
+            return id;
+        }
+        let id = u32::try_from(self.words.len()).unwrap_or(u32::MAX);
+        self.ids.insert(word.clone(), id);
+        self.words.push(word);
+        id
+    }
+
+    /// For each word typed, which words of the index it fits (`word_fits`).
+    fn fits(&self, q: &Query) -> Vec<Vec<bool>> {
+        q.words()
+            .iter()
+            .map(|typed| self.words.iter().map(|w| word_fits(typed, w)).collect())
+            .collect()
+    }
+}
+
+/// The words a row is searched by: its names first, then its facts.
 #[derive(Debug, Default)]
 struct Words {
-    all: Vec<String>,
+    all: Vec<u32>,
     names: usize,
 }
 
 impl Words {
-    fn of(names: &[&str], facts: &[String]) -> Words {
-        let mut all: Vec<String> = names.iter().flat_map(|n| folded_words(n)).collect();
+    fn of(vocabulary: &mut Vocabulary, names: &[&str], facts: &[String]) -> Words {
+        let mut all: Vec<u32> = names
+            .iter()
+            .flat_map(|n| folded_words(n))
+            .map(|w| vocabulary.id(w))
+            .collect();
         let names = all.len();
-        all.extend(facts.iter().flat_map(|f| folded_words(f)));
+        all.extend(facts.iter().flat_map(|f| folded_words(f)).map(|w| vocabulary.id(w)));
         Words { all, names }
     }
 
-    fn matched_by(&self, q: &Query) -> Option<Match> {
-        if q.holds_every_word(&self.all[..self.names]) {
+    /// Every word typed fits one of `have` (`Query::holds_every_word`'s rule).
+    fn holds_every(fits: &[Vec<bool>], have: &[u32]) -> bool {
+        !fits.is_empty() && fits.iter().all(|f| have.iter().any(|&w| f[w as usize]))
+    }
+
+    fn matched_by(&self, fits: &[Vec<bool>]) -> Option<Match> {
+        if Words::holds_every(fits, &self.all[..self.names]) {
             Some(Match::Name)
         } else {
-            q.holds_every_word(&self.all).then_some(Match::Facts)
+            Words::holds_every(fits, &self.all).then_some(Match::Facts)
         }
     }
 }
@@ -73,8 +110,6 @@ pub struct Song {
 
 pub struct Entry {
     pub hit: SongHit,
-    pub id: TrackId,
-    pub artist_id: ArtistId,
     pub take: Take,
     words: Words,
 }
@@ -91,45 +126,49 @@ pub struct AlbumEntry {
 pub struct Index {
     pub songs: Vec<Entry>,
     pub albums: Vec<AlbumEntry>,
+    vocabulary: Vocabulary,
 }
 
 impl Index {
-    /// The index of `songs` (a song held twice is one, the saved copy first). It holds no artist
+    /// The index of `songs` (a take held twice is one, the saved copy first). It holds no artist
     /// rows: an artist is reached through a catalog's row and its ids (`score::by_catalog_id`),
     /// never by a name this index could lend to a namesake's row.
     pub fn build(songs: Vec<Song>) -> Index {
         let mut index = Index::default();
-        let mut at: HashMap<TrackId, usize> = HashMap::new();
+        let mut at: HashSet<Take> = HashSet::new();
         let mut songs = songs;
         songs.sort_by_key(|s| !s.saved);
         for song in songs {
-            if at.contains_key(&song.track.id) {
-                continue;
+            let entry = entry(song, &mut index.vocabulary);
+            if at.insert(entry.take.clone()) {
+                index.songs.push(entry);
             }
-            at.insert(song.track.id.clone(), index.songs.len());
-            index.songs.push(entry(song));
         }
-        index.albums = albums(&index.songs);
+        index.albums = albums(&index.songs, &mut index.vocabulary);
         index
     }
 
     /// The songs the query matches (positions in `songs`), and how.
-    pub fn songs(&self, q: &Query) -> impl Iterator<Item = (usize, Match)> {
+    pub fn songs(&self, q: &Query) -> Vec<(usize, Match)> {
+        let fits = self.vocabulary.fits(q);
         self.songs
             .iter()
             .enumerate()
-            .filter_map(|(i, e)| Some((i, e.words.matched_by(q)?)))
+            .filter_map(|(i, e)| Some((i, e.words.matched_by(&fits)?)))
+            .collect()
     }
 
-    pub fn albums(&self, q: &Query) -> impl Iterator<Item = (usize, Match)> {
+    pub fn albums(&self, q: &Query) -> Vec<(usize, Match)> {
+        let fits = self.vocabulary.fits(q);
         self.albums
             .iter()
             .enumerate()
-            .filter_map(|(i, e)| Some((i, e.words.matched_by(q)?)))
+            .filter_map(|(i, e)| Some((i, e.words.matched_by(&fits)?)))
+            .collect()
     }
 }
 
-fn entry(song: Song) -> Entry {
+fn entry(song: Song, vocabulary: &mut Vocabulary) -> Entry {
     let Song {
         track,
         saved,
@@ -142,6 +181,7 @@ fn entry(song: Song) -> Entry {
         .chain(track.tags.clone())
         .collect();
     let words = Words::of(
+        vocabulary,
         &[
             &track.artist,
             &track.title,
@@ -161,8 +201,6 @@ fn entry(song: Song) -> Entry {
         ..SongHit::default()
     };
     Entry {
-        id: track.id.clone(),
-        artist_id: track.artist_id.clone(),
         take: take_of(&track.artist, &track.title),
         hit,
         words,
@@ -170,7 +208,7 @@ fn entry(song: Song) -> Entry {
 }
 
 /// The albums the songs are on, each with the songs of it the listener has.
-fn albums(songs: &[Entry]) -> Vec<AlbumEntry> {
+fn albums(songs: &[Entry], vocabulary: &mut Vocabulary) -> Vec<AlbumEntry> {
     let mut found: Vec<AlbumEntry> = Vec::new();
     let mut at: HashMap<AlbumKey, usize> = HashMap::new();
     for (i, s) in songs.iter().enumerate().filter(|(_, s)| !s.hit.album.is_empty()) {
@@ -194,7 +232,7 @@ fn albums(songs: &[Entry]) -> Vec<AlbumEntry> {
                     },
                     key,
                     songs: vec![i],
-                    words: Words::of(&[artist, &s.hit.album], &facts),
+                    words: Words::of(vocabulary, &[artist, &s.hit.album], &facts),
                 });
             }
         }
@@ -203,9 +241,9 @@ fn albums(songs: &[Entry]) -> Vec<AlbumEntry> {
 }
 
 #[cfg(test)]
-pub(super) mod tests {
+pub(in crate::search) mod tests {
     use super::*;
-    use lull_core::ids::AlbumId;
+    use lull_core::ids::{AlbumId, ArtistId, TrackId};
 
     pub fn track(artist: &str, title: &str, album: &str, year: Option<u16>, tags: &[&str]) -> Track {
         Track {
@@ -237,6 +275,7 @@ pub(super) mod tests {
         let q = Query::new(q);
         index
             .songs(&q)
+            .into_iter()
             .map(|(i, m)| (index.songs[i].hit.title.clone(), m))
             .collect()
     }
@@ -296,9 +335,10 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn a_song_held_twice_is_one_and_the_saved_copy_is_kept() {
+    fn a_take_held_twice_is_one_and_the_saved_copy_is_kept() {
         let t = track("Radiohead", "Karma Police", "OK Computer", Some(1997), &[]);
-        let index = Index::build(vec![song(t.clone(), false), song(t, true)]);
+        let single = track("Radiohead", "Karma Police", "Karma Police", Some(1997), &[]);
+        let index = Index::build(vec![song(single, false), song(t, true)]);
         assert_eq!(index.songs.len(), 1);
         assert!(index.songs[0].hit.saved.is_some());
     }
@@ -313,7 +353,7 @@ pub(super) mod tests {
             .map(|a| (a.songs.len(), a.hit.artist.clone(), a.hit.date.clone()));
         assert_eq!(ok, Some((2, "Radiohead".into(), Some("1997".into()))));
         let q = Query::new("ok computer");
-        assert_eq!(index.albums(&q).count(), 1);
+        assert_eq!(index.albums(&q).len(), 1);
     }
 
     #[test]

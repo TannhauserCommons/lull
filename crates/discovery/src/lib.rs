@@ -193,6 +193,8 @@ pub struct Service {
     adventurousness: RwLock<f64>,
     /// How page sections that failed went, so a page read again says so (`pages::Unfinished`).
     unfinished: pages::Unfinished,
+    /// The listener's own music for search, with the `personal-search` switch on only.
+    personal: Option<search::personal::Personal>,
 }
 
 pub async fn start(
@@ -239,6 +241,7 @@ pub async fn start(
         resolver: search::resolve::Queue::default(),
         adventurousness: RwLock::new(DEFAULT_STEER),
         unfinished: pages::Unfinished::default(),
+        personal: search::personal::Personal::when(&ctx.config.flags),
         ctx: ctx.clone(),
     });
     ctx.pictures.set_finder(Arc::new(art::Covers(Arc::downgrade(&svc))));
@@ -253,6 +256,9 @@ pub async fn start(
     ctx.spawn(search::catalog::keep_choosing(svc.clone()));
     ctx.spawn(search::resolve::work(svc.clone()));
     ctx.spawn(search::resolve::news(svc.clone()));
+    if svc.personal.is_some() {
+        ctx.spawn(search::personal::keep_fresh(svc.clone()));
+    }
     Ok(svc)
 }
 
@@ -288,6 +294,11 @@ impl Service {
     }
 
     async fn taste(&self) -> Result<Taste> {
+        Ok(Taste::build(&self.taste_signals().await?, lull_core::now()))
+    }
+
+    /// What the taste model learns from, as of now (`taste`, and personal search's index).
+    async fn taste_signals(&self) -> Result<taste::Signals> {
         let mut signals = self.ctx.db.call(|c| store::signals(c, lull_core::now())).await?;
         // A library that can't be read now (Jellyfin away) only leaves its seeds out this once.
         signals.library = match self.store.library_albums().await {
@@ -305,7 +316,14 @@ impl Service {
             signals.namesakes = Some(placed);
             signals.hidden = hidden;
         }
-        Ok(Taste::build(&signals, lull_core::now()))
+        Ok(signals)
+    }
+
+    /// Something personal search's snapshot holds changed (a no-op with the switch off).
+    fn personal_changed(&self) {
+        if let Some(personal) = &self.personal {
+            personal.changed();
+        }
     }
 }
 
@@ -319,6 +337,9 @@ async fn listen(svc: Arc<Service>, mut rx: broadcast::Receiver<Event>) {
             Err(broadcast::error::RecvError::Lagged(_)) => continue,
             Err(broadcast::error::RecvError::Closed) => return,
         };
+        if search::personal::is_change(&event.topic) {
+            svc.personal_changed();
+        }
         let outcome = match event.topic.as_str() {
             "save" => saved(&svc, event.data).await,
             "lastfm.history" => history(&svc, event.data).await,
@@ -494,6 +515,7 @@ async fn feedback(State(svc): State<Arc<Service>>, Json(body): Json<FeedbackBody
         })
         .await?;
     feed::refresh_soon(&svc);
+    svc.personal_changed();
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -516,6 +538,7 @@ async fn reset(State(svc): State<Arc<Service>>) -> Result<StatusCode> {
         })
         .await?;
     feed::refresh_soon(&svc);
+    svc.personal_changed();
     Ok(StatusCode::NO_CONTENT)
 }
 
