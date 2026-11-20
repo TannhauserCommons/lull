@@ -16,6 +16,8 @@
 //! - **`search.catalog`** names the best tracks once every source is in, for Soulseek.
 
 pub mod catalog;
+#[cfg(test)]
+mod eval;
 mod matching;
 pub mod merge;
 pub mod personal;
