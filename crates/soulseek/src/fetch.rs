@@ -1539,7 +1539,7 @@ impl Fetcher {
             Err(Stop::Failed(e)) => {
                 p.status = Status::Failed;
                 p.error = Some(match youtube_failed {
-                    Some(yt) => format!("{e}; YouTube: {yt}"),
+                    Some(yt) => both(&e, &yt),
                     None => e,
                 });
             }
@@ -1711,7 +1711,7 @@ impl Fetcher {
                 f.on_youtube.store(false, Ordering::Relaxed);
                 self.drop_upgrade(&key(f));
                 match self.soulseek_then_youtube(f, None, false, stop).await {
-                    Err(Stop::Failed(why)) => Err(Stop::Failed(format!("{why}; YouTube: {yt}"))),
+                    Err(Stop::Failed(why)) => Err(Stop::Failed(both(&why, &yt))),
                     other => other,
                 }
             }
@@ -1956,7 +1956,7 @@ impl Fetcher {
         tracing::info!(track = %f.track.id, why, "playing from YouTube instead");
         let copy = match self.youtube_copy(f, stop).await {
             Ok(copy) => copy,
-            Err(Stop::Failed(yt)) => return Err(Stop::Failed(format!("{why}; YouTube: {yt}"))),
+            Err(Stop::Failed(yt)) => return Err(Stop::Failed(both(&why, &yt))),
             Err(other) => return Err(other),
         };
         // YouTube's copy is judged as any (`policy`): one below the minimum plays only under
@@ -1971,14 +1971,17 @@ impl Fetcher {
             }
             return match rules.stream.below {
                 StreamBelow::Ask => self.ask_among(f, Some(&copy), stop).await,
-                _ => Err(Stop::Failed(format!(
-                    "{why}; YouTube's copy is below your streaming minimum ({})",
-                    rules.stream.minimum
+                _ => Err(Stop::Failed(both(
+                    &why,
+                    &format!(
+                        "YouTube's copy is below your streaming minimum ({})",
+                        rules.stream.minimum
+                    ),
                 ))),
             };
         }
         match self.youtube_plays(f, copy, stop).await {
-            Err(Stop::Failed(yt)) => Err(Stop::Failed(format!("{why}; YouTube: {yt}"))),
+            Err(Stop::Failed(yt)) => Err(Stop::Failed(both(&why, &yt))),
             other => other,
         }
     }
@@ -2631,6 +2634,17 @@ fn below(purpose: Purpose, rules: &Rules, prefetch_only: bool) -> Below {
     }
 }
 
+/// Why neither Soulseek nor YouTube played the song, as one clause the player shows whole: "no
+/// peer shares this song right now, and no YouTube upload matches this song". A YouTube reason
+/// that doesn't name YouTube ("rate limited") is said as YouTube's.
+fn both(soulseek: &str, youtube: &str) -> String {
+    if youtube.contains("YouTube") {
+        format!("{soulseek}, and {youtube}")
+    } else {
+        format!("{soulseek}, and YouTube: {youtube}")
+    }
+}
+
 /// An error as the fetch's `error`: the bare reason. "soulseek failed: " is added once, where
 /// the error leaves this crate (the stream response, a save), never twice.
 pub(crate) fn reason(e: &Error) -> String {
@@ -2886,6 +2900,21 @@ mod tests {
         assert_eq!(shown, "soulseek failed: answered 500 Internal Server Error");
         let disk = Error::unavailable("soulseek", "the transfers disk is full");
         assert_eq!(reason(&disk), "the transfers disk is full");
+    }
+
+    #[test]
+    fn both_sources_failing_reads_as_one_clause() {
+        assert_eq!(
+            both(
+                "no peer shares this song right now",
+                "no YouTube upload matches this song"
+            ),
+            "no peer shares this song right now, and no YouTube upload matches this song"
+        );
+        assert_eq!(
+            both("no peer shares this song right now", "rate limited"),
+            "no peer shares this song right now, and YouTube: rate limited"
+        );
     }
 
     #[test]
@@ -4516,7 +4545,9 @@ mod tests {
             assert_eq!(answer["status"], "failed");
             assert_eq!(answer["error"], serde_json::json!(p.error));
             assert!(
-                answer["error"].as_str().is_some_and(|e| e.contains("YouTube:")),
+                answer["error"]
+                    .as_str()
+                    .is_some_and(|e| e.contains("no YouTube upload matches")),
                 "{answer}"
             );
             assert_eq!(answer["unplayable"], serde_json::Value::Null);
@@ -4561,10 +4592,7 @@ mod tests {
             let p = ended(&f).await?;
             assert_eq!(p.status, Status::Failed);
             let error = p.error.unwrap_or_default();
-            assert!(
-                error.ends_with("; YouTube: no YouTube upload matches this song"),
-                "{error}"
-            );
+            assert!(error.ends_with(", and no YouTube upload matches this song"), "{error}");
             Ok(())
         }
 
