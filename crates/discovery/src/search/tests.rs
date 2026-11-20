@@ -944,3 +944,43 @@ fn a_search_hands_each_rows_catalog_id_to_the_artist_it_stored_for_the_row() {
     want.push((song_rows[0].artist_id.clone(), ArtistSource::Itunes(657_515)));
     assert_eq!(ids, want, "artist rows first; a row without its catalog's id adds none");
 }
+
+#[test]
+fn with_no_affinity_the_blended_order_is_the_order_without_the_listeners_own() {
+    use super::personal::score::Affinity;
+    let mut rows = Vec::new();
+    for fit in [Fit::Exact, Fit::Words, Fit::Partly] {
+        for (version, filler) in [(false, false), (true, false), (false, true)] {
+            for popularity in [0.0, 0.04, 0.09, 0.1, 0.55, 0.57, 0.99] {
+                rows.push(Score {
+                    version,
+                    filler,
+                    ..score(fit, popularity)
+                });
+            }
+        }
+    }
+    let lifted: Vec<Score> = rows.iter().map(|r| r.with_affinity(Affinity::default())).collect();
+    assert_eq!(merge::rank_blended(&lifted), merge::rank(&rows, |_| false));
+}
+
+#[test]
+fn a_take_the_listener_has_is_the_song_itself_and_their_score_adds_to_its_popularity() {
+    use super::personal::score::Affinity;
+    let other_version = Score {
+        version: true,
+        ..score(Fit::Exact, 0.5)
+    };
+    let theirs = other_version.with_affinity(Affinity { score: 0.4, own: true });
+    assert!(!theirs.version, "a version they play is their song");
+    assert!((theirs.popularity - (0.5 + 0.4 * merge::AFFINITY_WEIGHT)).abs() < 1e-12);
+    let not_theirs = other_version.with_affinity(Affinity { score: 0.2, own: false });
+    assert!(
+        not_theirs.version,
+        "an artist's lift alone doesn't make a version the original"
+    );
+    // Fit still comes first: no score lifts a worse match over a better one.
+    let better = score(Fit::Exact, 0.0);
+    let worse = score(Fit::Words, 0.99).with_affinity(Affinity { score: 1.0, own: true });
+    assert_eq!(merge::rank_blended(&[worse, better]), [1, 0]);
+}

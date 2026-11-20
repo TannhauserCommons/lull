@@ -19,7 +19,7 @@ use super::{Board, Ranked, rank_rows};
 use crate::sources::{deezer, itunes, musicbrainz};
 
 /// Each query, and the top results that are what the listener meant ("kind: artist - title").
-const CASES: &[(&str, &[&str])] = &[
+pub(super) const CASES: &[(&str, &[&str])] = &[
     // Misspelt.
     (
         "radiohed creep",
@@ -146,13 +146,13 @@ const VERSION_WORDS: &[&str] = &[
     "edit",
 ];
 
-fn recorded() -> Value {
+pub(super) fn recorded() -> Value {
     serde_json::from_str(include_str!("fixtures/query-set.json")).unwrap_or(Value::Null)
 }
 
 /// The fast sources' answers merged in the order they arrive from the homelab: Deezer's
 /// artists (about 0.6 s), iTunes's songs and albums (0.6-1 s), Deezer's playlists.
-fn merged(q: &str, answers: &Value) -> Merged {
+pub(super) fn merged(q: &str, answers: &Value) -> Merged {
     let mut m = Merged::default();
     m.add(Found {
         artists: deezer::artists_of(answers["deezer-artist"].clone()).unwrap_or_default(),
@@ -172,12 +172,12 @@ fn merged(q: &str, answers: &Value) -> Merged {
     m
 }
 
-fn ranked(q: &str, m: &Merged) -> Ranked {
+pub(super) fn ranked(q: &str, m: &Merged) -> Ranked {
     rank_rows(&Query::new(q), m, &HashSet::new(), &HashSet::new())
 }
 
 /// "kind: artist - title" of the top result.
-fn top_line(r: &Ranked, m: &Merged) -> String {
+pub(super) fn top_line(r: &Ranked, m: &Merged) -> String {
     let Some(top) = &r.top else {
         return "none".into();
     };
@@ -324,7 +324,12 @@ fn a_search_and_its_repeat_show_one_list() {
 
     // The repeat: MusicBrainz's kept answer is in before the first answer.
     let mut again = merged(q, &recorded[q]);
-    let repeat = super::first_board(&query, &mut again, vec![musicbrainz()], &liked, &followed);
+    let own = super::Own {
+        liked: &liked,
+        followed: &followed,
+        personal: None,
+    };
+    let repeat = super::first_board(&query, &mut again, vec![musicbrainz()], &own);
     assert_eq!(repeat, shown);
 
     // Ranked in with the rest, as before, the repeat showed another list.
