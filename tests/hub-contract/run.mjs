@@ -155,8 +155,8 @@ if (flag('youtube')) {
 
 if (flag('mdns')) {
   await check('the hub answers _lull._tcp on this network', async () => {
-    const answered = await mdnsQuery('_lull._tcp.local', 5000);
-    expect(answered, 'no answer within 5 s');
+    const answered = await mdnsQuery('_lull._tcp.local', 30_000);
+    expect(answered, 'no answer within 30 s');
   });
 }
 
@@ -170,7 +170,11 @@ if (token) {
 console.log(failed ? `\n${failed} failed` : '\nthe hub keeps the contract');
 process.exit(failed ? 1 : 0);
 
-/** One multicast PTR query; true when an answer names the service. */
+/**
+ * Asks for `name` on the local network as a browser does (RFC 6762 §5.2): a multicast PTR query, asked again after 1 s,
+ * 2 s, 4 s and so on while nothing answers, since a responder only answers once its own probing is done, which a hub
+ * started a moment ago may not be. True when an answer names the service within `ms`.
+ */
 function mdnsQuery(name, ms) {
   const labels = name.split('.').flatMap((l) => [Buffer.from([l.length]), Buffer.from(l)]);
   const query = Buffer.concat([
@@ -180,19 +184,25 @@ function mdnsQuery(name, ms) {
   ]);
   return new Promise((resolve) => {
     const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+    let asked;
     const done = (ok) => {
       clearTimeout(timer);
+      clearTimeout(asked);
       socket.close();
       resolve(ok);
     };
     const timer = setTimeout(() => done(false), ms);
+    const ask = (wait) => {
+      socket.send(query, 5353, '224.0.0.251');
+      asked = setTimeout(() => ask(wait * 2), wait);
+    };
     socket.on('message', (msg) => {
       const answers = msg.readUInt16BE(6);
       if ((msg[2] & 0x80) && answers > 0 && msg.includes(Buffer.from('_lull'))) done(true);
     });
     socket.bind(5353, () => {
       socket.addMembership('224.0.0.251');
-      socket.send(query, 5353, '224.0.0.251');
+      ask(1000);
     });
   });
 }
