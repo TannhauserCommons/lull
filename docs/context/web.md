@@ -437,7 +437,9 @@ ADR-0005, `offline.js`. One IndexedDB database `lull` (stores `outbox`, `downloa
 
 **Outbox** (`App.outbox`): likes, follows, plays and playlist changes go through `App.outbox.call(path, opts, op)`:
 sent at once when the hub answers, queued with a client uuid and `at` when it can't (`App.server.reachable` false,
-the browser offline, or a request that got no answer). The queue goes to `POST /api/sync` in order, 200 ops a batch,
+the browser offline, or a request that got no answer). While older changes wait or a flush is sending, a new one queues
+behind them (and starts a flush) so the hub applies likes and unlikes in the order they were made; a flush re-runs for
+changes queued while it ran. The queue goes to `POST /api/sync` in order, 200 ops a batch,
 when the hub is reachable again (the `server` event, `resync`, the browser's `online`); applied and refused ops leave
 the queue, refusals are named in one toast, and collections reload. A play started offline is queued whole when it
 ends, with its real `startedAt`. A playlist made offline gets a `pl-tmp-…` id (`tempId` in its ops) until the hub

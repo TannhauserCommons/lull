@@ -46,7 +46,7 @@
   /* =====================================================================
      1. Outbox
      ===================================================================== */
-  var OB = App.outbox = {}, waiting = 0, flushing = null, told = false;
+  var OB = App.outbox = {}, waiting = 0, unsaved = 0, flushing = null, told = false;
   /* the hub is out of reach: no answer last time, or the browser says it's offline */
   OB.offline = function () { return App.server.reachable === false || navigator.onLine === false; };
   function count() { return all('outbox').then(function (ops) { waiting = ops.length; App.emit('outbox', waiting); return ops; }, function () { return []; }); }
@@ -55,19 +55,27 @@
   OB.add = function (op) {
     var rec = Object.assign({ id: uuid(), at: now() }, op);
     if (!told) { told = true; App.toast('Kept on this device. It reaches your hub when it can.', { confirms: true, icon: 'offline' }); }
-    return tx('outbox', 'readwrite', function (s) { return s.add(rec); }).then(count).then(function () { return { queued: true, id: rec.id }; });
+    unsaved++;                                           // counted at once, so a call made before the write lands still queues behind it
+    return tx('outbox', 'readwrite', function (s) { return s.add(rec); }).then(count).then(function () { unsaved--; return { queued: true, id: rec.id }; },
+      function (err) { unsaved--; throw err; });
   };
-  /* a change for the hub: sent now when it can be, else queued. Resolves to the server's answer, or
-     { queued: true } when it waits in the outbox; rejects only when the hub answered with a refusal. */
+  /* ops are applied in the order they reach the hub, so a change never overtakes an older one still waiting */
+  function behind() { return waiting > 0 || unsaved > 0 || !!flushing; }
+  /* a change for the hub: sent now when it can be, else queued. With older changes waiting (or being sent) it queues
+     behind them and a flush takes the lot in order. Resolves to the server's answer, or { queued: true } when it waits
+     in the outbox; rejects only when the hub answered with a refusal. */
   OB.call = function (path, opts, op) {
     if (OB.offline()) return OB.add(op);
+    if (behind()) return OB.add(op).then(function (r) { tryFlush(); return r; });
     return M.api(path, opts).then(null, function (err) { if (err.status === 0) return OB.add(op); throw err; });
   };
   /* send everything waiting, in order, in batches; ops the hub refuses are dropped and named */
   OB.flush = function () {
     if (flushing) return flushing;
+    var last = 0;                                        // the newest op this flush takes; later ones wait for the next
     flushing = all('outbox').then(function (ops) {
       if (!ops.length) return 0;
+      last = ops[ops.length - 1].seq;
       return sendBatches(ops, 0, { applied: 0, rejected: [], playlists: {} }).then(function (res) {
         /* a playlist made offline has its real id now: a page showing it follows */
         var m = /^\/playlist\/(pl-tmp-[^/]+)$/.exec(App.current.path);
@@ -78,7 +86,11 @@
         if (res.applied) { App.toast('Changes made offline reached your hub', { kind: 'ok', icon: 'check' }); App.reloadCollections(); M.invalidate(['/api/history', '/api/stats', '/api/likes', '/api/playlists']); App.refresh(); }
         return res.applied;
       });
-    }).then(function (n) { flushing = null; count(); return n; }, function (err) { flushing = null; count(); throw err; });
+    }).then(function (n) {
+      flushing = null;
+      /* changes queued behind this flush are not in it: send them now rather than when something else wakes the queue */
+      return count().then(function (rest) { if (rest.some(function (o) { return o.seq > last; })) tryFlush(); return n; });
+    }, function (err) { flushing = null; count(); throw err; });
     return flushing;
   };
   function sendBatches(ops, from, res) {
