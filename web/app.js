@@ -3221,13 +3221,17 @@
           throw stop('mismatch');
         });
       }
-      /* the copy a little ahead (a seek can't land to the sample), so its delay can hold it back exactly */
+      /* the copy a little ahead (a seek can't land to the sample), so its delay can hold it back exactly; answers by how
+         much. Its delay is set to the seek first: a hiccup of the decks' output costs a measurement as much mismatch as
+         the two sit apart (0.5 at 150 ms, 0.9+ near 0), so it is taken with only the landing error between them */
       function ahead(m) {
-        if (m.lag <= -.002 && m.lag >= -MAX_DELAY_S) return m;
+        if (m.lag <= -.002 && m.lag >= -MAX_DELAY_S) return Promise.resolve(-m.lag);
+        setLag(b, AHEAD_S);
         return place(b.el.currentTime + m.lag + AHEAD_S).then(function () { return measure(.5); }).then(function (m2) {
           if (!LullAlign.similar(m2)) throw stop(m2.quiet ? 'quiet' : 'mismatch');
-          if (m2.lag > -.002 || m2.lag < -MAX_DELAY_S) throw stop('mismatch');
-          return m2;
+          var held = b.lag - m2.lag;
+          if (held < .002 || held > MAX_DELAY_S) throw stop('mismatch');
+          return held;
         });
       }
       /* held back by what was measured, then measured again: what is left must be under TOLERANCE_S */
@@ -3244,7 +3248,7 @@
       hold(b, it); b.norm = a.norm; b.sw.gain.value = 0;
       return start(b).then(function () { return find(false); })
         .then(ahead)
-        .then(function (m) { setLag(b, -m.lag); return verify(2); })
+        .then(function (held) { setLag(b, held); return verify(2); })
         .then(function (m) {
           sw.residual = m.lag;
           sw.match = LullRules.levelMatch(m.levels[0], m.levels[1]);
