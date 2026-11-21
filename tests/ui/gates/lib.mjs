@@ -87,6 +87,10 @@ const CATEGORIES = ['devtools.timeline', 'disabled-by-default-devtools.timeline'
 //              and those a compositor-only animation draws with no main-thread work at all
 //   layouts    Layout passes; forcedLayouts: those run inside script (a read after a write)
 //   restyled   elements restyled by each style pass, largest first
+//   refits     the passes that fitted the header and bar's rows again for the page around them changing (layout.js: ready, a
+//              font, a sheet, the design), each stamped console.timeStamp('lull:fit-again')
+//   refits     the passes that fitted the rows again for the page around them changing (layout.js: ready, a font, a
+//              sheet, the design), each stamped console.timeStamp('lull:fit-again')
 //   marked     the same restyle counts between console.timeStamp('gate-start') and ('gate-end'), when present (not
 //              performance.mark: the fixed clock the gates install replaces `performance`)
 // With { why: true } it also traces animations and invalidations, and keeps every event (`events`) with the page's
@@ -140,6 +144,8 @@ export function summarise(json) {
     drawn: events.filter((e) => e.name === 'DrawFrame' && page && String(e.pid) === page.split(':')[0]).length,
     layouts: layouts.length,
     forcedLayouts: layouts.filter(inScript).length,
+    refits: events.filter((e) => e.name === 'TimeStamp' && e.args?.data?.message === 'lull:fit-again').length,
+    refits: events.filter((e) => e.name === 'TimeStamp' && e.args?.data?.message === 'lull:fit-again').length,
     restyled: styles.map(count).sort((a, b) => b - a),
     marked: marks.length >= 2 ? styles.filter((e) => e.ts >= marks[0] && e.ts <= marks[marks.length - 1]).map(count).sort((a, b) => b - a) : [],
   };

@@ -130,6 +130,8 @@ test.describe('lull', () => {
     const s = await S.startup(browser, page, o);
     expect(s.longestMs, 'longest task while starting (ms)').toBeLessThanOrEqual(B.startupLongestMs);
     expect(s.busyMs, 'main-thread ms until Home has rendered').toBeLessThanOrEqual(B.startupBusyMs);
+    // the page becoming ready, its fonts and sheets arriving: one pass over the rows, not one for each (layout.js refitSoon)
+    expect(s.refits, 'passes that fit the rows again for the page around them').toBe(1);
     expect(s.domNodes, 'elements on Home').toBeLessThanOrEqual(B.homeDomNodes);
   });
 

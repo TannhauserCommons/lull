@@ -535,7 +535,9 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     fit would: rows fitted one at a time, frames apart, settled differently by the path taken, or a frame late. A
     ResizeObserver re-fits a row when it resizes and when its children or parts do without it (a label that grew),
     every font that finishes loading re-fits them all (a part that gave way shows no box to tell the observer that
-    narrower letters would let it back), so does every stylesheet that changes in `<head>` (a theme reloaded or
+    narrower letters would let it back; the page becoming ready, a font and a sheet arriving each only mark the rows
+    out of date, and one pass follows in the next frame: a start fits once for them, `lull:fit-again`, which the startup
+    gate counts), so does every stylesheet that changes in `<head>` (a theme reloaded or
     edited, Theme Studio's draft: wider words inside boxes that keep their size, beside sides the fitter sized, resize
     nothing the observer watches), and `App.layout.refit()` runs after its content changes (renderBar,
     renderTray), watching what was drawn since. `[data-fit-out]` is the fitter's: `App.patch` leaves it on a part

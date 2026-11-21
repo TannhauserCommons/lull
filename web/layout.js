@@ -480,23 +480,43 @@
     $$('[data-fit-row]').forEach(function (r) { watch(r); Array.prototype.forEach.call(r.children, watch); $$('[data-fit]', r).forEach(watch); });
     $$('[data-fit-row]').filter(function (r) { return rootOf(r) === r; }).forEach(settle);
   };
-  App.on('ready', App.layout.refit);
-  App.on('design', function () { fitting.disconnect(); watched = new WeakSet(); App.layout.refit(); });
+  /* The page around the rows changes in steps (it is ready, a font arrives, a sheet loads, the design changes), and each
+     used to fit every row from all shown: about 150 forced layouts apiece, four or more in one start. Each now only says
+     the rows are out of date, and one pass follows in the next frame for everything that arrived by then. The start's
+     own pass waits until the page is ready and no font is still loading (the rows were fitted already with the
+     fallback's widths as their content was drawn: renderTray, renderBar); a later change (a design's font on first use,
+     a sheet edited live) fits at the next frame, never waiting on a font. `lull:fit-again` stamps each pass in a trace,
+     for the gates to count (a timeStamp: they replace `performance`). App.layout.refit() is still at once, for a
+     content change (renderTray, renderBar) and for the resize observer, which fits in the frame it saw (its comment). */
+  var stale = false, fitFrame = 0, ready = false, fitted = false;
+  function refitSoon() {
+    stale = true;
+    if (fitFrame) return;
+    fitFrame = requestAnimationFrame(function () {
+      fitFrame = 0;
+      if (!stale || !ready || (!fitted && document.fonts && document.fonts.status === 'loading')) return;   // what completes the start asks again
+      stale = false; fitted = true;
+      console.timeStamp('lull:fit-again');
+      App.layout.refit();
+    });
+  }
+  App.on('ready', function () { ready = true; refitSoon(); });
+  App.on('design', function () { fitting.disconnect(); watched = new WeakSet(); refitSoon(); });
   /* a font that arrives changes the words' widths in place, and a part that gave way shows no box to tell the observer it
      would fit now: every font that loads (a design's own, on first use) fits the rows again */
-  if (document.fonts) { document.fonts.ready.then(App.layout.refit); document.fonts.addEventListener('loadingdone', App.layout.refit); }
+  if (document.fonts) ['loadingdone', 'loadingerror'].forEach(function (n) { document.fonts.addEventListener(n, refitSoon); });
   /* a stylesheet that changes (a theme reloaded or edited live, Theme Studio's draft, a screen's sheet arriving) can
      widen the words inside boxes that keep their size: a cut part's or a kept line's, beside sides the fitter sized
      itself. No box the observer watches resizes, so every row fits again once the sheet is in: at once for a sheet's
      text, on load for what it imports. Only <head> holds the sheets, so nothing else on the page pays. The sheet may set
      the layout switches too (a theme edited live), so they are read again first */
   function sheet(n) { return n && (n.nodeName === 'STYLE' || n.nodeName === 'LINK'); }
-  function sheetIn() { if (readSwitches()) switched(); App.layout.refit(); }
+  function sheetIn() { if (readSwitches()) switched(); refitSoon(); }
   if (window.MutationObserver && document.head) new MutationObserver(function (records) {
     if (records.some(function (r) { return sheet(r.target) || sheet(r.target.parentNode) || [].some.call(r.addedNodes, sheet) || [].some.call(r.removedNodes, sheet); })) sheetIn();
   }).observe(document.head, { childList: true, subtree: true, characterData: true });
   document.addEventListener('load', function (e) { if (sheet(e.target)) sheetIn(); }, true);
-  App.layout.refit();
+  refitSoon();
 
   apply();
 })();
