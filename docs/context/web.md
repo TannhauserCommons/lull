@@ -176,7 +176,10 @@ page's files with `/health`'s; an answer with no version says nothing). A page t
 its worker kept, so its version is that worker's (`sw.js?v=`), and the newer hub is offered when it answers. Reload installs the worker for the new version,
 takes it over and reloads, so one press finishes it. A page that has just started already runs the hub's version (sw.js is
 network first), so a worker installing then is not news and takes over quietly. Closing the note needs no memory: the same
-change is not offered again, and a reload runs the new version. Gate: `tests/ui/gates/update-prompt.spec.mjs`.
+change is not offered again, and a reload runs the new version. The hand-over stops the old worker, and anything the page sends it
+while it stops (a message, a request) starts it again and leaves the new worker installed for good (Chrome), so the page sends
+the old worker nothing then: its list of loaded files goes to the worker of its own version once that is active, and the screen
+report (`PUT /api/pictures/screen`) waits for `controllerchange`. Gate: `tests/ui/gates/update-prompt.spec.mjs`.
 
 ### Pairing and first run (ADR-0002)
 

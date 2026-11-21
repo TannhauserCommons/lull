@@ -1038,6 +1038,7 @@
   var SHOWN = 'img[data-pic], [data-wait-pic], [data-want-photo]', SCREEN_EVERY = 250, SCREEN_MAX = 400;
   var shownVisible = new Set(), shownNear = new Set(), screenGen = Date.now() * 1000, screenSent = '', screenTimer = null, screenLast = 0;
   var shownWatchers = new Map();   // scroll container (null: the page) -> { visible, near } observers
+  App.on('handover:done', reportScreen);
   function shownWatcher(into, root, margin) {
     return new IntersectionObserver(function (entries) {
       entries.forEach(function (e) { if (e.isIntersecting && e.target.isConnected) into.add(e.target); else into.delete(e.target); });
@@ -1074,7 +1075,7 @@
   }
   function sendScreen() {
     screenTimer = null;
-    if (document.hidden) return;   // reported again when the page shows
+    if (document.hidden || App.handingOver) return;   // reported again when the page shows, and when the hand-over is done
     var visible = shownList(shownVisible), seen = {};
     visible.forEach(function (p) { seen[p[0]] = 1; });
     var near = shownList(shownNear).filter(function (p) { return !seen[p[0]]; });
@@ -5005,15 +5006,46 @@
      (before 2026-11-13 it only reloaded, the reload found a waiting worker and offered the same update a second time). */
   var worker = null, updating = false;
   function swUrl() { return 'sw.js?v=' + encodeURIComponent(App.server.version); }
-  function takeOver(w) { try { w.postMessage({ type: 'skip-waiting' }); } catch (e) { /* gone already */ } }
+  /* The hand-over to a new worker stops the old one, and any request of the page's own that lands then starts it again
+     and leaves the new one installed for good (Chrome; the update-prompt gate hung one run in five on the screen report
+     alone, then on the device's state report). So the page's own background reports (the screen's, the device's state: both
+     sent again when it is done) wait while App.handingOver, until the new worker has taken the page over
+     (controllerchange) or failed to (redundant). Only what is safe to leave unsent waits: never an API call a listener
+     is waiting for. */
+  App.handingOver = false;
+  function takeOver(w) {
+    App.handingOver = true;
+    function done() {
+      if (!App.handingOver) return;
+      App.handingOver = false;
+      navigator.serviceWorker.removeEventListener('controllerchange', done);
+      w.removeEventListener('statechange', failed);
+      App.emit('handover:done');
+    }
+    function failed() { if (w.state === 'redundant') done(); }
+    navigator.serviceWorker.addEventListener('controllerchange', done);
+    w.addEventListener('statechange', failed);
+    try { w.postMessage({ type: 'skip-waiting' }); } catch (e) { done(); /* gone already */ }
+  }
+  /* what this page loaded (shell, design, fonts) goes to the worker of its own version once that one is active, never to
+     the older one it replaces: Chrome stops the old worker for the hand-over, and a message landing then starts it again,
+     which leaves the new worker installed for good (the update-prompt gate hung one run in five on it) */
+  function keepLoaded(reg) {
+    var mine = new URL(swUrl(), location.href).href;
+    var w = [reg.installing, reg.waiting, reg.active].filter(function (x) { return x && x.scriptURL === mine; })[0];
+    if (!w) return;
+    function send() {
+      var urls = performance.getEntriesByType('resource').map(function (x) { return x.name; }).concat([location.href.split('#')[0]]);
+      w.postMessage({ type: 'cache', urls: urls });
+    }
+    if (w.state === 'activated') send();
+    else w.addEventListener('statechange', function () { if (w.state === 'activated') send(); });
+  }
   function registerWorker() {
     if (!('serviceWorker' in navigator) || location.protocol === 'file:' || !App.server.version) return;   // no version: a cache named for nothing
     navigator.serviceWorker.register(swUrl()).then(function (reg) {
       worker = reg;
-      navigator.serviceWorker.ready.then(function (r) {          // keep what this page loaded (shell, design, fonts)
-        var urls = performance.getEntriesByType('resource').map(function (x) { return x.name; }).concat([location.href.split('#')[0]]);
-        if (r.active) r.active.postMessage({ type: 'cache', urls: urls });
-      });
+      keepLoaded(reg);
       if (reg.waiting) takeOver(reg.waiting);                     // left waiting by an earlier visit
       reg.addEventListener('updatefound', function () {
         var w = reg.installing;

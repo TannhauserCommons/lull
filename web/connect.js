@@ -57,6 +57,7 @@
   /* force: a takeover waits for this device's state event, so it is sent even when unchanged */
   function send(force) {
     clearTimeout(sendTimer); sendTimer = null;
+    if (App.handingOver && !force) return;   // the service worker's hand-over: sent when it is done (below)
     var body = stateBody(), key = JSON.stringify(body);
     if (!force && key === lastBody && Date.now() - lastSent < HEARTBEAT - 1000) return;   // nothing new since the last report
     lastSent = Date.now(); lastBody = key;
@@ -69,6 +70,7 @@
     if (now || Date.now() - lastSent > 1000) { send(); return; }
     if (!sendTimer) sendTimer = setTimeout(send, 1000 - (Date.now() - lastSent));
   }
+  App.on('handover:done', function () { report(true); });
   App.on('player', function (kind) {
     if (kind === 'track') report(true);
     else if (kind === 'seek' || kind === 'volume' || kind === 'queue') report(false);
