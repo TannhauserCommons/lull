@@ -73,7 +73,8 @@ pub enum Standing {
     Current,
     /// A newer release is out.
     Available,
-    /// Everything in the newest release and changes since: it follows lull's main.
+    /// Newer than the newest release: everything in it and changes since (a release candidate, or an install
+    /// that follows lull's main).
     Ahead,
     /// The newest release isn't known (GitHub didn't answer).
     Unknown,
@@ -452,14 +453,16 @@ fn io(e: std::io::Error) -> Error {
     Error::internal(e.to_string())
 }
 
-/// Where a build stands against the newest release.
+/// Where a build stands against the newest release. A build on a version no release has yet is ahead (`main`
+/// carries the next version); so is one with changes counted on top of a release (main.yml's builds, while
+/// `main` still carries the released version).
 pub fn standing(release: &str, changes: u32, latest: Option<&str>) -> Standing {
     let (Some(have), Some(newest)) = (build::parse_release(release), latest.and_then(build::parse_release)) else {
         return Standing::Unknown;
     };
     if newest > have {
         Standing::Available
-    } else if changes > 0 {
+    } else if have > newest || changes > 0 {
         Standing::Ahead
     } else {
         Standing::Current
@@ -477,8 +480,10 @@ mod tests {
         assert_eq!(standing("0.2.4", 12, Some("0.2.4")), Standing::Ahead);
         // main from before 0.2.5: behind it, changes or not
         assert_eq!(standing("0.2.4", 12, Some("0.2.5")), Standing::Available);
-        // a build newer than any release (the release commit landed before the release was published)
-        assert_eq!(standing("0.2.5", 0, Some("0.2.4")), Standing::Current);
+        // a release candidate: main on the next version, which no release has yet
+        assert_eq!(standing("0.2.5", 0, Some("0.2.4")), Standing::Ahead);
+        // once that version is released, the same bytes are the newest release
+        assert_eq!(standing("0.2.5", 0, Some("0.2.5")), Standing::Current);
         assert_eq!(standing("0.2.4", 0, None), Standing::Unknown);
         assert_eq!(standing("0.2.4", 0, Some("nightly")), Standing::Unknown);
     }

@@ -1,7 +1,9 @@
-//! What this build of the hub is, said honestly between releases: the release it holds, and how many
-//! changes landed on top of it. main.yml builds main's image with `LULL_BUILD_RELEASE`, `LULL_BUILD_CHANGES`
-//! and `LULL_BUILD_COMMIT`, worked out from git (`scripts/image-save.sh`). Any other build,
-//! a release's included, is the version in `Cargo.toml` with no changes on top.
+//! What this build of the hub is: its version and, when the build said, the commit it was built from. The web
+//! UI shows both ("0.2.16 (abc1234)"), and `/api/updates` says when the version is newer than the newest release.
+//! Any build is the version in `Cargo.toml` unless it says otherwise. main.yml builds main's image with
+//! `LULL_BUILD_RELEASE`, `LULL_BUILD_CHANGES` and `LULL_BUILD_COMMIT`, worked out from git
+//! (`scripts/image-save.sh`): while main carries the released version, the count of changes on top is what tells
+//! its builds from the release's. It goes once main carries the next version.
 //!
 //! `LULL_BUILD_INSTALL` says how the hub was installed (`docker` for the image, `package` for the Linux
 //! package); the desktop app's
@@ -78,7 +80,7 @@ pub fn version() -> String {
     }
 }
 
-/// What `/health` says about the build: the web UI words it ("0.2.4 + 12 changes").
+/// What `/health` says about the build: the web UI words it ("0.2.4 (abc1234)").
 #[derive(Debug, Clone, Serialize)]
 pub struct Build {
     pub release: &'static str,
