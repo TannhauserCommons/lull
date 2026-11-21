@@ -95,7 +95,7 @@ Only lull and `init` start.
 
 `IMAGE_TAG=latest`, the default, follows lull's releases (from 0.2.4; `release-image.yml` publishes it for every release tag), and `X.Y.Z` pins one; `main` follows every change merged into main, and `sha-<commit>` pins one of those. The slskd and gluetun images are pinned in `compose.yaml` and move with lull's releases, because lull reads slskd's file layout (`crates/soulseek/src/layout.rs`).
 
-Settings › App shows the server's version and whether a newer release is out. An image from `main` says what it holds, for example **lull 0.2.4 + 12 changes (abc1234)**, and that it follows the latest changes; `main.yml` works this out from git when it builds the image (`scripts/image-save.sh`, `lull_core::build`). Updating is `docker compose pull` and `docker compose up -d` where the server runs.
+Settings › App shows the server's version and whether a newer release is out. An image from `main` says its version and the commit it was built from, for example **lull 0.2.4 (abc1234)**, and that it is newer than the newest release; `main.yml` works this out from git when it builds the image (`scripts/image-save.sh`, `lull_core::build`). Updating is `docker compose pull` and `docker compose up -d` where the server runs.
 
 **Updating from any paired device** (ADR-0090, behind the `hub-self-update` switch while it is finished):
 - **Update in Settings › App,** or `sudo lull update` on the server. The hub of the Linux package or the image downloads the newest release's hub kit for its machine, checks its signature and files, and copies its database. Then it restarts on the new version.
