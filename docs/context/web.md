@@ -178,8 +178,9 @@ takes it over and reloads, so one press finishes it. A page that has just starte
 network first), so a worker installing then is not news and takes over quietly. Closing the note needs no memory: the same
 change is not offered again, and a reload runs the new version. The hand-over stops the old worker, and anything the page sends it
 while it stops (a message, a request) starts it again and leaves the new worker installed for good (Chrome), so the page sends
-the old worker nothing then: its list of loaded files goes to the worker of its own version once that is active, and the screen
-report (`PUT /api/pictures/screen`) waits for `controllerchange`. Gate: `tests/ui/gates/update-prompt.spec.mjs`.
+the old worker nothing then: its list of loaded files goes to the worker of its own version once that is active, and the page's
+own background reports (the screen's, `PUT /api/pictures/screen`, and the device's state, `POST /api/devices/me/state`) wait
+while `App.handingOver`, for `controllerchange`. Gate: `tests/ui/gates/update-prompt.spec.mjs`.
 
 ### Pairing and first run (ADR-0002)
 
