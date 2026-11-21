@@ -3645,6 +3645,18 @@ mod tests {
             Ok((chunk.to_vec(), t0.elapsed()))
         }
 
+        /// `f`'s copy once it has one. Soulseek's side is registered while it still looks for a
+        /// copy, so a test that reads the copy right after finding it there races the pick.
+        async fn picked(f: &Arc<Fetch>) -> Result<super::super::Progress> {
+            let mut rx = f.progress();
+            let p = tokio::time::timeout(Duration::from_secs(30), rx.wait_for(|p| p.source.is_some()))
+                .await
+                .map_err(|_| Error::internal("no copy was picked"))?
+                .map_err(|_| Error::internal("gone"))?
+                .clone();
+            Ok(p)
+        }
+
         async fn racing(
             files: HashMap<String, Vec<u8>>,
             rules: Rules,
@@ -3880,9 +3892,7 @@ mod tests {
             let up = fetcher
                 .upgrade(&(track().id, fetcher.rules.get().stream))
                 .ok_or_else(|| Error::internal("Soulseek's copy stopped"))?;
-            let mut rx = up.progress();
-            let _ = tokio::time::timeout(Duration::from_secs(30), rx.wait_for(|p| p.source.is_some())).await;
-            assert_eq!(up.now().source.map(|s| s.ext).unwrap_or_default(), "flac");
+            assert_eq!(picked(&up).await?.source.map(|s| s.ext).unwrap_or_default(), "flac");
             for _ in 0..20 {
                 assert!(fetcher.event(&yt)["upgrade"].is_null(), "offered a copy above the cap");
                 tokio::time::sleep(Duration::from_millis(100)).await;
@@ -4284,7 +4294,7 @@ mod tests {
             let up = fetcher
                 .upgrade(&(track().id, fetcher.rules.get().stream))
                 .ok_or_else(|| Error::internal("Soulseek's copy stopped"))?;
-            assert_eq!(up.now().source.map(|s| s.user).as_deref(), Some("remasterer"));
+            assert_eq!(picked(&up).await?.source.map(|s| s.user).as_deref(), Some("remasterer"));
             assert_eq!(ended(&up).await?.status, Status::Done);
 
             let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
