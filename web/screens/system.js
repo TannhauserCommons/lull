@@ -739,10 +739,9 @@
     return M.api('/api/updates' + (check ? '?check=true' : '')).then(function (r) { srvUpd = { data: r }; },
       function (err) { srvUpd = { error: errText(err) }; }).then(function () { repaint('#sys-server-update', serverUpdateBody()); });
   }
-  /* "0.2.4", or between releases "0.2.4 + 12 changes (abc1234)": what the build says it holds */
+  /* "0.2.4 (abc1234)": the build's version and the commit it was built from, when the build said */
   function buildName(b) {
-    if (!b || !b.changes) return App.product + ' ' + (b ? b.release : App.server.version);
-    return App.product + ' ' + b.release + ' + ' + b.changes + (b.changes === 1 ? ' change' : ' changes') + (b.commit ? ' (' + b.commit + ')' : '');
+    return App.product + ' ' + (b ? b.release + (b.commit ? ' (' + b.commit + ')' : '') : App.server.version);
   }
   App.action('sys-update-check', function (el) {
     el.disabled = true;
@@ -750,7 +749,7 @@
       var r = srvUpd.data;
       if (srvUpd.error) App.toast('Couldn\'t reach your server to check for updates', { kind: 'error' });
       else if (r.state === 'unknown') App.toast('Couldn\'t check for updates: ' + (r.error || 'GitHub didn\'t answer'), { kind: 'error' });
-      else App.announce({ current: 'Your server is up to date', ahead: 'Your server follows the latest changes', available: App.product + ' ' + (r.latest && r.latest.version) + ' is out' }[r.state] || '');
+      else App.announce({ current: 'Your server is up to date', ahead: 'Your server is newer than the newest release', available: App.product + ' ' + (r.latest && r.latest.version) + ' is out' }[r.state] || '');
     });
   });
   function serverUpdateBody() {
@@ -765,7 +764,7 @@
     }[b.install] || '';
     var state = {
       current: function () { return statusLine('ok', 'Up to date'); },
-      ahead: function () { return html`${statusLine('ok', 'Follows the latest changes')}<span class="sys-row__help">It has everything in ${App.product} ${latest} and what landed since.</span>`; },
+      ahead: function () { return html`${statusLine('ok', 'Newer than the newest release')}<span class="sys-row__help">It has everything in ${App.product} ${latest} and changes since.</span>`; },
       available: function () {
         return html`${statusLine('warn', App.product + ' ' + latest + ' is out')}${how ? html`<span class="sys-row__help">${how}</span>` : ''}<a class="btn btn--sm" href="${r.latest.url}" target="_blank" rel="noopener">${icon('external', null, 'ic-16')}What's new</a>`;
       },
