@@ -8,3 +8,5 @@
 # Third-party moodboard images: reference only, never published with the repo.
 /design/inspo
 /flakes/
+# Python bytecode that scripts and tools leave behind.
+__pycache__/
