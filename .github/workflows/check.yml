@@ -285,6 +285,35 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # What each route's start ships: a real browser (headless Chromium on the fixture hub, as the gates run it) lists the files a
+  # first load fetches from the build, on this change and on its merge-base, and their sizes are summed from the built
+  # files. The change's growth over the merge-base is held to an allowance (scripts/budgets,
+  # docs/context/quality.md). It builds web/ twice, so it needs the history. The browser comes from the cache main saves (the
+  # same `ui-browsers-...` key as the gates' Chromium-only machines) and is never saved from here. Lighthouse still
+  # measures bytes in the queue's `ui` shards; this runs beside it and is not part of the queue's workflows.
+  budgets:
+    needs: changes
+    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'budgets') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/apt-cache/*.deb
+            ~/.cache/ms-playwright
+          key: ui-browsers-${{ runner.os }}-${{ runner.arch }}-chromium--${{ hashFiles('tests/ui/package-lock.json') }}
+          restore-keys: ui-browsers-${{ runner.os }}-${{ runner.arch }}-chromium--
+      - name: mise run budgets
+        run: mise run budgets
+
   # --- The app and contract checks the merge queue runs today (app.yml,
   # server-package.yml, slskd-contract.yml, slskd-windows.yml, share.yml,
   # aur.yml), each a path-gated job: `if:` reads the `changes` output and the
@@ -649,7 +678,7 @@ jobs:
     needs:
       [
         changes, check, privacy,
-        image, ui, gates,
+        image, ui, gates, budgets,
         app, keyring, android, android-compare, slskd, slskd-windows, slskd-build,
         package, package-contract, package-jellyfin, package-self-update, package-secrets-update,
         share, aur,
