@@ -140,7 +140,7 @@ jobs:
           name: lull-server-linux-x64
           path: ${{ runner.temp }}/packages
       - name: ffmpeg, for the fixture library
-        run: sudo apt-get install -y -qq ffmpeg >/dev/null
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
       - name: lull uses the listener's Jellyfin
         run: |
           tar -C "$RUNNER_TEMP" -xzf "$RUNNER_TEMP"/packages/lull-server_*_linux-x64.tar.gz
