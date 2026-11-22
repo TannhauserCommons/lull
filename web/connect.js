@@ -102,10 +102,14 @@
     navigator.locks.request(LOCK, steal ? { steal: true } : {}, function () {
       if (acting) return undefined;                        // an earlier wait of this tab, held after a steal: let it go
       acting = true; reportAfresh();
-      return new Promise(function () {});                  // held until the tab closes
+      // held until the page goes: WebKit's reload (with a service worker) never finishes while the tab still holds it
+      return new Promise(function (release) { addEventListener('pagehide', function () { acting = false; release(); }, { once: true }); });
     }).catch(function () { acting = false; actAsDevice(false); });   // another tab took it: wait to be next
   }
-  if (!acting) actAsDevice(false);
+  if (!acting) {
+    actAsDevice(false);
+    addEventListener('pageshow', function (e) { if (e.persisted && !acting) actAsDevice(false); });   // back from the back-forward cache: the lock was let go
+  }
 
   /* ---------- commands for this device ---------- */
   App.on('server:device.command', function (e) {
