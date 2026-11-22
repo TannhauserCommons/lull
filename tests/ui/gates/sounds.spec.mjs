@@ -103,12 +103,14 @@ test('the buffering loop plays only in silence and is gone the moment the song s
   await page.waitForFunction(() => window.__heard.some((h) => h.v), null, { timeout: 20000 });
   const r = await page.evaluate(() => {
     const heard = window.__heard.find((h) => h.v).at;
-    const stop = window.__stops.find((s) => s.loop && s.at >= heard - 1);
+    const stop = window.__stops.find((s) => s.loop);   // the one loop this test starts
     const startedOverMusic = window.__sounds.filter((s) => s.loop).some((s) => window.__heard.some((h, i, all) => h.v && h.at <= s.at && !(all[i + 1] && all[i + 1].at <= s.at)));
     return { stopAfter: stop ? stop.at - heard : null, within: stop ? stop.within : null, startedOverMusic };
   });
   expect(r.stopAfter, 'the loop is told to stop as the song sounds (ms)').not.toBeNull();
-  expect(r.stopAfter).toBeLessThan(100);
+  // the stop (sounds.js, on `view`) and `heard` come from one synchronous change, the stop first by however long the other
+  // `view` listeners take in between (a slow CI machine: a millisecond or more), so a stop just before `heard` is on time
+  expect(Math.abs(r.stopAfter)).toBeLessThan(100);
   expect(r.within, 'and fades out at once (s)').toBeLessThan(0.08);
   expect(r.startedOverMusic, 'a loop started while music played').toBe(false);
 });

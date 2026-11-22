@@ -82,7 +82,7 @@ export function connectPage({ known = [], items = [], me = 'me', locks, post } =
   };
   const unref = (f, ms) => { const t = setTimeout(f, ms); t.unref(); return t; };
   const ctx = vm.createContext({
-    App, document: { addEventListener() {} }, navigator: locks ? { locks } : {}, setTimeout: unref, clearTimeout,
+    App, document: { addEventListener() {} }, addEventListener() {}, navigator: locks ? { locks } : {}, setTimeout: unref, clearTimeout,
     LullRules: { RADIO_STEER: 0.4 }, console, setInterval() {}, Date, Math, JSON, Object, Promise, Error,
   });
   vm.runInContext(SRC, ctx);

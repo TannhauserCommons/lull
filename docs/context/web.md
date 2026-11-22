@@ -420,7 +420,7 @@ Settings > Devices renders from it. A device is online only when `device.online`
   and the radio (api.md); a 409 (no event stream yet) is sent again when this device's own `device.online` arrives.
 - **One tab acts** per browser: its tabs share one device (one cookie), so the tab holding the Web Lock
   `lull-connect-device` reports and obeys commands, the others wait for it to close, and a tab where the listener
-  starts playing takes the lock. Web Locks need a secure context (HTTPS or localhost): on a hub's plain-http address every tab acts, as before.
+  starts playing takes the lock. The lock is let go on `pagehide` (WebKit's reload with a service worker never finishes while it is held) and taken again on a back-forward-cache restore. Web Locks need a secure context (HTTPS or localhost): on a hub's plain-http address every tab acts, as before.
   A reconnected event stream rereads the list and reports again (`C.resume`), since it may have missed a `device.online`.
 - **Commands**: `device.command` for this device runs `play pause next prev seek volume`; `takeover` reports
   at once, pauses and says who took over; `enqueue` reads the songs it hasn't seen and adds them to next up without
