@@ -25,7 +25,7 @@ export default defineConfig({
   snapshotPathTemplate: '{testDir}/goldens/{platform}/{arg}{ext}',
   // Linux without goldens is CI before the first capture: fail rather than pass on pictures nobody approved.
   updateSnapshots: capture ? 'all' : process.platform === 'linux' ? 'none' : 'missing',
-  // results.json: which tests were flaky (failed, then passed on the retry), for scripts/flaky.mjs.
+  // results.json: which tests were flaky (failed, then passed on the retry), for scripts/playwright-flakes.mjs.
   reporter: [
     ['list'],
     ['html', { outputFolder: join(here, '..', 'report', 'gates'), open: 'never' }],

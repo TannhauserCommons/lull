@@ -1,56 +1,23 @@
 name: share
-# lull's share links (share/, ADR-0034): a Cloudflare Worker. `test` runs it as it deploys, in Cloudflare's local
-# runtime with every outside service faked, and checks the Android app claims every share host. `deploy` publishes
-# main's Worker when the queue lands a change to it (or by hand); it waits for the Cloudflare account's secrets
+# lull's share links (share/, ADR-0034): a Cloudflare Worker. check.yml's `share` tests it as it deploys, in
+# Cloudflare's local runtime with every outside service faked, and checks the Android app claims every share host.
+# `deploy` publishes main's Worker when main.yml lands a change to it (or by hand); it waits for the Cloudflare account's secrets
 # (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, from Bitwarden's lull/ items) and says so until they exist.
 on:
-  pull_request:
-    paths:
-      - "share/**"
-      - "site/**"
-      - "packaging/android/assetlinks.json"
-      - ".github/workflows/share.yml"
-  # On main: test, then deploy. On another branch: test only.
+  # On main, after main.yml's check passed on the commit.
   workflow_dispatch:
-  # The queue (ADR-0095) runs the tests on its candidate.
-  workflow_call:
-    inputs:
-      ref:
-        description: The commit to check
-        type: string
-        required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: share-${{ inputs.ref || github.ref }}
+  group: share-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  test:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: share
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.ref }}
-      - uses: actions/setup-node@v5
-        with:
-          node-version: "24.11"
-          cache: npm
-          cache-dependency-path: share/package-lock.json
-      - run: npm ci --no-audit --no-fund
-      - run: npm test
-
   deploy:
-    needs: test
-    # Dispatched on main by hand or by the queue after landing; never when the queue calls the tests (a call runs in
-    # the caller's context, which is a dispatch on main too, but has a ref to check).
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && !inputs.ref
+    # Dispatched on main by hand or by main.yml after its check passed.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     concurrency:

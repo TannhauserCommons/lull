@@ -21,7 +21,7 @@ export default defineConfig({
   snapshotPathTemplate: '{testDir}/goldens/{projectName}/{arg}{ext}',
   updateSnapshots: capture ? 'all' : 'none',
   outputDir: join(here, 'test-results'),
-  // results.json: which tests were flaky (failed, then passed on the retry), for scripts/flaky.mjs.
+  // results.json: which tests were flaky (failed, then passed on the retry), for scripts/playwright-flakes.mjs.
   reporter: [
     ['list'],
     ['html', { outputFolder: join(here, 'report'), open: 'never' }],

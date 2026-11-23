@@ -2,36 +2,23 @@ name: ui-gates
 # The UI gates on the fixture hub (tests/ui/fixture-hub, Node only, no image): performance budgets under a 4x CPU
 # slowdown, the key screens against their goldens in every design, theme and size, accessibility, and the chrome
 # fitting at every width.
-# `mise run check:ui` runs the same; docs/context/quality.md#ui-gates. `capture` (by hand, or while no goldens are
-# committed) writes the screens' pictures instead of comparing: `mise run ui:approve` takes them from the run.
+# check.yml's `gates` runs them on every pull request and on main; this run, by hand on a branch, is the one that
+# takes the screens' pictures: `capture` writes them instead of comparing, and `mise run ui:approve` takes them from
+# the run. docs/context/quality.md#ui-gates.
 on:
-  pull_request:
-    paths:
-      - "web/**"
-      - "tests/ui/**"
-      - ".github/workflows/ui-gates.yml"
   workflow_dispatch:
     inputs:
       capture:
         description: "Write the screens' goldens instead of comparing against them"
         type: boolean
         default: false
-  # The queue (ADR-0095) runs these checks on its candidate.
-  workflow_call:
-    inputs:
-      ref:
-        description: The commit to check
-        type: string
-        required: true
 
 permissions:
   contents: read
-  # scripts/flaky.mjs files an issue for each flaky test.
-  issues: write
 
 concurrency:
-  group: ui-gates-${{ inputs.ref || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !inputs.ref }}
+  group: ui-gates-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Seven machines at once: performance split two ways, each machine running one test at a time (its task lengths must
@@ -56,8 +43,6 @@ jobs:
       GATES: ${{ matrix.gates }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v5
         with:
           node-version: "24.11"
@@ -93,11 +78,6 @@ jobs:
       - name: Gates (${{ matrix.part }})
         working-directory: tests/ui
         run: npx playwright test -c gates/playwright.config.mjs ${{ matrix.args }}
-      - name: Flaky tests
-        if: ${{ !cancelled() }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/flaky.mjs tests/ui/report/gates/results.json "ui-gates (${{ matrix.part }})"
 
       - uses: actions/upload-artifact@v4
         if: ${{ always() && steps.mode.outputs.capture == 'true' && matrix.gates != 'perf' }}

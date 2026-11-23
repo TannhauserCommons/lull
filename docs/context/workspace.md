@@ -28,7 +28,7 @@ Each area has one owner at a time. Edit only what your brief says you own.
 | `app/src/` shared files (`lib.rs`, `main.rs`, pairing, discovery), `app/Cargo.toml`, `app/tauri.conf.json` | Shared app code and manifests | Desktop session; Mobile adds only under `[target.'cfg(target_os = "android")'.dependencies]` and its own modules' `mod` lines |
 | `tests/ui/`, `.github/workflows/ui.yml`, the Dockerfile web stage | Minify + compression, fixture library, visual matrix, Lighthouse budgets | Quality session |
 | `deploy/` | Compose kit (plain, VPN, existing slskd). `deploy/.env.example` keys mirror `core::config` | Soulseek session (env keys: whoever adds the key in core) |
-| `Cargo.toml` (root), `Dockerfile` (except its web stage), `.github/workflows/ci.yml`, `mise.toml`, `AGENTS.md`, `PROJECT.md`, `README.md`, `docs/context/{INDEX,workspace,api}.md` (except your own api.md section) | Shared files | integrator |
+| `Cargo.toml` (root), `Dockerfile` (except its web stage), `.github/workflows/check.yml`, `mise.toml`, `AGENTS.md`, `PROJECT.md`, `README.md`, `docs/context/{INDEX,workspace,api}.md` (except your own api.md section) | Shared files | integrator |
 | `design/` | Frozen design reference | nobody (read only) |
 
 `docs/context/<page>.md` belongs to the area it describes (see INDEX.md). Each backend owner edits only its own section of `api.md`.
@@ -80,7 +80,7 @@ Each area has one owner at a time. Edit only what your brief says you own.
 
 ## Local development
 
-- **Testing on a real install:** what the queue lands is published as the image `:main`, and an install that follows it (`IMAGE_TAG=main`; the owner's own hub does) runs it within minutes. Every other listener gets it in a release (ADR-0098): build for every setup, not one hub. On this workstation the only local builds are `mise run check` and the Windows desktop wrapper; don't run a local server or slskd.
+- **Testing on a real install:** what merges into main is published as the image `:main` once main's check passes, and an install that follows it (`IMAGE_TAG=main`; the owner's own hub does) runs it within minutes. Every other listener gets it in a release (ADR-0098): build for every setup, not one hub. On this workstation the only local builds are `mise run check` and the Windows desktop wrapper; don't run a local server or slskd.
 - **Windows:** set `CARGO_TARGET_DIR` outside `Desktop` (see AGENTS.md), one per worktree, and reuse it.
 - **`mise run dev`** (for contributors elsewhere) reads `.env` (copy `deploy/.env.example`). In debug builds the UI is served from `web/` on disk, so a page reload picks up edits.
 - **Soulseek allows one login per account.** A local slskd with the homelab's account logs the homelab out.

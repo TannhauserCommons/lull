@@ -1,7 +1,7 @@
 name: slskd-windows-publish
 # Builds lull's slskd for Windows (slskd-windows, ADR-0062) and attaches the zips to a pre-release, slskd-<build>,
 # where app/build.rs downloads them. Run by hand on main only; it refuses a release that exists. Its own workflow,
-# never called: it needs to write, and the queue (which calls slskd-windows) grants only read.
+# never called: it needs to write, which no caller of slskd-windows grants.
 on:
   workflow_dispatch:
 

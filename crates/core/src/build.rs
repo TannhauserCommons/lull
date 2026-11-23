@@ -1,6 +1,6 @@
 //! What this build of the hub is, said honestly between releases: the release it holds, and how many
-//! changes landed on top of it. The queue builds main's image with `LULL_BUILD_RELEASE`, `LULL_BUILD_CHANGES`
-//! and `LULL_BUILD_COMMIT`, worked out from git (`scripts/queue.sh`'s `build_version`). Any other build,
+//! changes landed on top of it. main.yml builds main's image with `LULL_BUILD_RELEASE`, `LULL_BUILD_CHANGES`
+//! and `LULL_BUILD_COMMIT`, worked out from git (`scripts/image-save.sh`). Any other build,
 //! a release's included, is the version in `Cargo.toml` with no changes on top.
 //!
 //! `LULL_BUILD_INSTALL` says how the hub was installed (`docker` for the image, `package` for the Linux

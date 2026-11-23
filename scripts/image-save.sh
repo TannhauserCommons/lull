@@ -18,7 +18,7 @@ commit=$(git rev-parse HEAD)
 # What the image says it is (lull_core::build): the newest release it holds everything of, and the changes since. A
 # release's tag is its version commit on top of the green commit it was cut from, and that version commit reaches main
 # later, rebased, so the tag itself is seldom in main's history: the commit it was cut from is. Release version commits
-# aren't counted as changes. The same as queue.sh's build_version; one copy goes when the queue does.
+# aren't counted as changes. scripts/ci/package-build.sh says the same for the Linux package.
 release= changes=
 git fetch -q --tags origin || true
 for tag in $(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname); do
