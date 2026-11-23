@@ -24,15 +24,16 @@ export async function withSong(page, design, route = `/album/${ids.album}`) {
 }
 
 /* another screen, as a tap on a link reaches it, once it has settled and arrived: Now Playing and sheets slide up, and
-   mid-way they are still below the screen. Every animation that ends has ended (loops and scroll-driven ones never
-   do): a fixed wait isn't enough, as Linux's WebKit can hold a page's animations unstarted for 2 s before it draws */
+   mid-way they are still below the screen, and a screen's device powers on (it lifts in at 98% of its size, `.is-power-on`),
+   so a control measured then is smaller than drawn and off its place (a 42 px key reads 41, every tap probe misses: #22).
+   Arrived is read from the page: nothing the screen runs that ends is still running (loops and scroll-driven ones never end,
+   a paused one isn't running), and no device is powering on. Linux's WebKit can hold a page's animations unstarted for 2 s
+   before it draws, and they are pending, not running, until then. A screen that never arrives fails here, naming it. */
 export async function go(page, route) {
   await page.evaluate((r) => { location.hash = '#' + r; }, route);
   await settle(page);
-  await page.evaluate(() => Promise.race([
-    Promise.all(document.getAnimations().filter((a) => Number.isFinite(a.effect?.getComputedTiming().endTime)).map((a) => a.finished.catch(() => {}))),
-    new Promise((r) => setTimeout(r, 5000)),
-  ]));
+  await page.waitForFunction(() => !document.querySelector('.is-power-on')
+    && document.getAnimations().every((a) => !Number.isFinite(a.effect?.getComputedTiming().endTime) || (a.playState !== 'running' && !a.pending)), null, { polling: 'raf' });
 }
 
 /* Chromium takes a notch's insets from the DevTools protocol; WebKit can't be given any from a test */
