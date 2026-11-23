@@ -1,6 +1,6 @@
 # Shared by the scripts in this folder: sourced after `cd` to the repository root, never run. POSIX sh, so it also runs
 # in Git's sh on Windows. The scripts are what the `mise run` tasks of .github/workflows/check.yml call, and what an
-# agent runs locally to get the same verdict (docs/context/quality.md, Check in shadow).
+# agent runs locally to get the same verdict (docs/context/quality.md, The check).
 
 # Tauri's documented Linux build prerequisites (WebKitGTK 4.1, AppIndicator, rsvg for icons, xdo), and ALSA's headers for
 # native Classic's sound (cpal; libopus builds with the runner's CMake).

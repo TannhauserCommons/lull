@@ -1,9 +1,11 @@
-"""After a `check` or `main` run: one infra rerun, flake issues, the red-`main` issue.
+"""After a `check` or `main` run: one infra rerun, flake issues, red-`main` issues.
 
 Run as `python .github/ci/after.py <run_id>`. The order is fixed by the contract
 (docs/context/contract.md, section `after.py`): cancelled runs are ignored, an
 infra-only failure is rerun once, flakes are filed for any other run, and a push
-to `main` opens, updates or closes the one `main-red` issue.
+to `main` opens or updates one `main-red` issue per failed check and closes each
+when that check is next green. A run whose code
+came from another repository (a fork's pull request) files no flake issues.
 """
 
 import argparse
@@ -31,8 +33,8 @@ JUNIT_FAILED = {"failure", "error"}
 def branch():
     """The release branch: env `CI_BRANCH`, else `main`. Empty counts as unset.
 
-    The issue title and label stay `main is red` / `main-red` whatever this says:
-    other tools look those up by name.
+    The issue titles and label stay `main is red: <job>` / `main-red` whatever
+    this says: other tools look those up by name.
     """
     return os.environ.get("CI_BRANCH", "").strip() or "main"
 
@@ -77,6 +79,24 @@ def workflow_file(run):
     """
     path = (run.get("path") or "").split("@", 1)[0]
     return path.rsplit("/", 1)[-1]
+
+
+def head_repo(run):
+    """`owner/name` the run's code came from, as the API reports it, or "".
+
+    Empty when the API has none (a deleted fork), which counts as foreign.
+    """
+    return (run.get("head_repository") or {}).get("full_name") or ""
+
+
+def is_foreign(run):
+    """Whether the run's code came from a repository other than this one.
+
+    A fork's pull request runs the fork's own copy of `check.yml`, so whatever
+    that run uploaded is the fork author's text. Decided from the run object
+    GitHub returns, never from anything the run wrote.
+    """
+    return head_repo(run).lower() != ghapi.repo().lower()
 
 
 def get_jobs(run):
@@ -314,23 +334,36 @@ def failed_job_text(failed):
     )
 
 
-def report_red(run, failed):
-    """Open the `main is red` issue, or comment on the open one."""
+def red_title(name):
+    """The issue title for one check, or the bare title when no job is recorded."""
+    return f"{RED_TITLE}: {clean(name)}" if name else RED_TITLE
+
+
+def report_red(run, failed, jobs):
+    """One `main is red: <job>` issue per failed check, opened or commented on.
+
+    Why one per check: two checks that break for different reasons get fixed by
+    different people at different times, and each closes on its own green.
+    """
     rng, lines = commit_range(run, last_green_sha(run))
-    jobs_text = failed_job_text(failed)
     # A commit line starts with a sha, so no line can close the fence.
     commits = "```\n" + "\n".join(lines) + "\n```"
     url = run["html_url"]
-    body = (
-        f"{branch()} is red.\n\n- Run: {url}\n- Failed jobs: {jobs_text}\n- Range: `{rng}`\n\n"
-        f"Commits:\n\n{commits}\n\n{RULE}\n"
-    )
-    comment = (
-        f"Still red: {url}\n\n- Failed jobs: {jobs_text}\n- Range: `{rng}`\n\n"
-        f"Commits:\n\n{commits}\n"
-    )
-    number, created = ghapi.upsert_issue(RED_LABEL, RED_TITLE, body, comment)
-    print(f"main-red: {'opened' if created else 'commented on'} #{number} ({rng})")
+    for group in [[job] for job in causes(failed)] or [[]]:
+        jobs_text = failed_job_text(group)
+        body = (
+            f"{branch()} is red.\n\n- Run: {url}\n- Failed job: {jobs_text}\n- Range: `{rng}`\n\n"
+            f"Commits:\n\n{commits}\n\n{RULE}\n"
+        )
+        comment = (
+            f"Still red: {url}\n\n- Failed job: {jobs_text}\n- Range: `{rng}`\n\n"
+            f"Commits:\n\n{commits}\n"
+        )
+        title = red_title(group[0]["name"] if group else "")
+        number, created = ghapi.upsert_issue(RED_LABEL, title, body, comment)
+        print(f"main-red: {'opened' if created else 'commented on'} #{number} {clean(title)} ({rng})")
+    passed = {red_title(job["name"]) for job in jobs if job.get("conclusion") == "success"}
+    close_red(run, lambda issue: issue["title"] in passed)
 
 
 def is_main_run(run):
@@ -362,15 +395,20 @@ def is_newest_main_run(run):
     return not runs or runs[0]["id"] <= run["id"]
 
 
+def close_red(run, should_close):
+    """Close each open `main-red` issue `should_close` picks, naming the run that fixed it."""
+    for issue in ghapi.find_issues(RED_LABEL):
+        if not should_close(issue):
+            continue
+        ghapi.close_issue(
+            issue["number"], f"{branch()} is green again at {run['head_sha'][:7]}: {run['html_url']}"
+        )
+        print(f"main-red: closed #{issue['number']}")
+
+
 def report_green(run):
-    """Close the open `main-red` issue, naming the commit and run that fixed it."""
-    issue = ghapi.find_issue(RED_LABEL)
-    if not issue:
-        return
-    ghapi.close_issue(
-        issue["number"], f"{branch()} is green again at {run['head_sha'][:7]}: {run['html_url']}"
-    )
-    print(f"main-red: closed #{issue['number']}")
+    """Every check passed: close every open `main-red` issue."""
+    close_red(run, lambda issue: True)
 
 
 # --- entry point -------------------------------------------------------------
@@ -396,7 +434,7 @@ def handle(run_id):
         print(f"after: run {run_id} is {conclusion or 'not finished'}; nothing to do")
         return 0
 
-    failed = []
+    failed, jobs = [], []
     if conclusion == "cancelled":
         # GitHub concludes a run "cancelled" when a job hit its timeout, the
         # same as when someone cancelled it. On a PR the gate's own failed
@@ -409,17 +447,22 @@ def handle(run_id):
             return 0
         conclusion = "failure"
     elif conclusion == "failure":
-        failed = failed_jobs(get_jobs(run))
+        jobs = get_jobs(run)
+        failed = failed_jobs(jobs)
         if rerun_if_infra(run, failed):
             return 0
 
-    flakes = collect_flakes(run_id)
-    if flakes:
-        report_flakes(run, flakes)
+    if is_foreign(run):
+        print(f"flakes: run {run_id} is from {clean(head_repo(run)) or 'an unknown repository'}, "
+              f"not {ghapi.repo()}; its artifacts are not read")
+    else:
+        flakes = collect_flakes(run_id)
+        if flakes:
+            report_flakes(run, flakes)
 
     if is_main_run(run) and is_newest_main_run(run):
         if conclusion == "failure":
-            report_red(run, failed)
+            report_red(run, failed, jobs)
         elif conclusion == "success":
             report_green(run)
     return 0

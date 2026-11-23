@@ -1,0 +1,261 @@
+name: main
+
+# Every push to main: everything check runs, on the merged result, then what
+# the merge brings (the image, Pages, the share Worker, the YouTube Music
+# contract, the release draft, the bundles' caches) and the checks that run
+# only here (graphics, Lighthouse). Blocks nothing; after.yml opens the issue
+# when it is red.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# One run at a time. A newer pending run replaces an older pending one, so
+# merges that land while main is busy are built and tested together.
+concurrency:
+  group: main
+  cancel-in-progress: false
+
+jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+    # A called workflow can use only what its caller grants: this is the most
+    # any job in check.yml asks for.
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      all: true
+    # The privacy list, and Last.fm's app key and secret for the hub's image:
+    # main's check builds the image it tests and this run publishes. A pull
+    # request's check has neither.
+    secrets:
+      PRIVATE_PATTERNS: ${{ secrets.PRIVATE_PATTERNS }}
+      LULL_LASTFM_API_KEY: ${{ secrets.LULL_LASTFM_API_KEY }}
+      LULL_LASTFM_API_SECRET: ${{ secrets.LULL_LASTFM_API_SECRET }}
+
+  # PROJECT: what lull does after a push lands. The queue did these after a
+  # landing (queue.yml `land`); each waits for a green `check`, as the queue
+  # landed only green. The workflows that are not called are dispatched on main
+  # (mise run main:dispatch), as the queue did.
+
+  # Which of them the push needs: from the files and commits it brought.
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      pages: ${{ steps.plan.outputs.pages }}
+      share: ${{ steps.plan.outputs.share }}
+      youtube_contract: ${{ steps.plan.outputs.youtube_contract }}
+      warm: ${{ steps.plan.outputs.warm }}
+      notes: ${{ steps.plan.outputs.notes }}
+    steps:
+      # The push's first parent and its commits' subjects.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - id: plan
+        name: mise run main:plan
+        run: mise run main:plan
+        env:
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+
+  # The image check built and tested, published as it is: `:sha-<short>` for the
+  # commit and `:main`, which an install that follows main pulls. Only a green
+  # check gets here, so no install pulls a red build.
+  image:
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+          path: ${{ runner.temp }}
+      - name: mise run image:publish
+        run: mise run image:publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # lull's open page on GitHub Pages, when site/ changed.
+  pages:
+    needs: [check, plan]
+    if: ${{ needs.plan.outputs.pages == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run main:dispatch
+        run: mise run main:dispatch pages.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # The share Worker's tests and deploy, when it or a file it serves changed.
+  share:
+    needs: [check, plan]
+    if: ${{ needs.plan.outputs.share == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run main:dispatch
+        run: mise run main:dispatch share.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # YouTube Music's live answer, after a change to the reader. It is not a
+  # check: YouTube being down must not hold back a merge, and its own daily run
+  # reports that.
+  youtube-music-contract:
+    needs: [check, plan]
+    if: ${{ needs.plan.outputs.youtube_contract == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run main:dispatch
+        run: mise run main:dispatch youtube-music-contract.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # The release draft is redrawn when the push brought a feat or fix (ADR-0098).
+  release-draft:
+    needs: [check, plan]
+    if: ${{ needs.plan.outputs.notes == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run main:dispatch
+        run: mise run main:dispatch release-draft.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # The bundles are built on main, so their caches are warm for the next tag,
+  # when the lockfiles or the toolchain changed (ADR-0097).
+  warm:
+    needs: [check, plan]
+    if: ${{ needs.plan.outputs.warm == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run main:dispatch
+        run: mise run main:dispatch app.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # The Linux app on a computer with no graphics card (graphics.yml). It needs
+  # no image, so it runs beside check, not after it. A red one turns main red.
+  graphics:
+    uses: ./.github/workflows/graphics.yml
+    with:
+      ref: ${{ github.sha }}
+
+  # Lighthouse's budgets (what `ui` measured in the queue, ui.yml): two
+  # machines, each with its own hub from the image check built. They need that
+  # image, so they wait for check. A red one turns main red.
+  lighthouse:
+    name: lighthouse (${{ matrix.part }})
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { part: "1 of 2", shard: "1/2", slot: 1 }
+          - { part: "2 of 2", shard: "2/2", slot: 2 }
+    env:
+      # The hub in the image listens here (tests/ui/run-hub.sh); the stub slskd next to it on :5030.
+      LULL_URL: http://127.0.0.1:8080
+      LULL_SETUP_CODE: ui-test-setup
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+          path: ${{ runner.temp }}
+      # The key check's `ui` jobs save on main (the same Chromium and ffmpeg).
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/apt-cache/*.deb
+            ~/.cache/ms-playwright
+          key: ui-browsers-${{ runner.os }}-${{ runner.arch }}-chromium-ffmpeg-${{ hashFiles('tests/ui/package-lock.json') }}
+          restore-keys: ui-browsers-${{ runner.os }}-${{ runner.arch }}-chromium-ffmpeg-
+      - name: mise run ui:setup
+        run: mise run ui:setup
+      - name: mise run ui:hub
+        run: mise run ui:hub
+      - name: mise run ui:lighthouse
+        run: mise run ui:lighthouse
+        env:
+          LH_SHARD: ${{ matrix.shard }}
+      - name: mise run ui:stub
+        if: ${{ !cancelled() }}
+        run: mise run ui:stub
+      - name: mise run ui:logs
+        if: ${{ failure() }}
+        run: mise run ui:logs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: lighthouse-${{ matrix.slot }}
+          path: tests/ui/lhci
+          if-no-files-found: ignore
+          retention-days: 7

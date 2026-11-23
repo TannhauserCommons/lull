@@ -1,16 +1,10 @@
 name: check
 
-# Runs in shadow beside the merge queue (docs/context/quality.md, Check in
-# shadow): it blocks nothing and changes nothing about how the queue, `ship` or
-# a release works. The one status of this workflow is `gate` ("check / gate").
-#
-# Agents land through `queue/<topic>` branches, not pull requests, so every
-# topic an agent ships is checked by the `queue/**` push as well as by any pull
-# request. That push trigger goes when the queue does.
+# The one gate (docs/context/quality.md, The check): every pull request, and
+# main.yml with `all: true` on every push to main. The one required status of
+# this workflow is `gate` ("check / gate").
 on:
   pull_request:
-  push:
-    branches: ['queue/**']
   workflow_call:
     inputs:
       all:
@@ -21,20 +15,27 @@ on:
       PRIVATE_PATTERNS:
         description: Patterns the privacy check rejects, one extended regex a line
         required: false
+      # Only main.yml passes these, so the image main publishes carries Last.fm's
+      # app key; a pull request's check runs without them.
+      LULL_LASTFM_API_KEY:
+        description: Last.fm's app key, built into the hub's image
+        required: false
+      LULL_LASTFM_API_SECRET:
+        description: Last.fm's app secret, built into the hub's image
+        required: false
 
 permissions:
   contents: read
 
-# A newer push to a ref cancels the older run of that ref. Cancelled is neither
-# red nor green.
+# A newer push to a pull request cancels the older run of it (main.yml runs one
+# at a time). Cancelled is neither red nor green.
 concurrency:
   group: check-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   # Always runs, so the status never hangs in Pending. Decides which path-gated
-  # jobs run and which of them the gate may see skipped. On a push to a
-  # `queue/**` branch the path filter compares with main.
+  # jobs run and which of them the gate may see skipped.
   changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -67,8 +68,8 @@ jobs:
 
   # fmt, clippy, the Rust and web tests, the release scopes and the lint of
   # this workflow: the same list as `mise run check`. The job id and runner
-  # match ci.yml's `check`, so rust-cache restores the cache that job saves on
-  # main (rust-cache keys on the job id, the OS and the installed toolchains).
+  # match ci.yml's `check` (until the queue goes), so both read and save the same
+  # rust-cache key (it keys on the job id, the OS and the installed toolchains).
   check:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -85,10 +86,10 @@ jobs:
       # first, as ci.yml does.
       - name: mise run toolchain
         run: mise run toolchain
-      # Only main saves (ADR-0097); this workflow reads the cache ci.yml saves.
+      # Only main saves (ADR-0097); a pull request restores main's.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          save-if: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: mise run check
         run: mise run check
 
@@ -109,18 +110,18 @@ jobs:
         env:
           PRIVATE_PATTERNS: ${{ secrets.PRIVATE_PATTERNS }}
 
-  # The web UI, as the queue checks it (scripts/queue.sh `checks` says when). `image` builds the hub's image once;
-  # `ui` runs the functional tests on it, four shards; `gates` runs the behaviour gates on the fixture hub, seven
-  # shards. Their paths are the queue's (.github/ci/paths.yml). A UI test that fails runs once more (`retries` in the
-  # Playwright configs); one that passes on it is written to `flakes/` and uploaded as a `flakes-*` artifact (nothing files
-  # an issue from it yet). These jobs file no issue themselves and have no token to.
-  # The browsers' install is a task; what it downloads comes from the cache main saves (the `ui-browsers-...` keys
-  # are the ones .github/actions/ui-browsers saves there, so they hit) and is never saved from here.
+  # The web UI. `image` builds the hub's image once; `ui` runs the functional tests on it, four shards; `gates` runs
+  # the behaviour gates on the fixture hub, seven shards. A UI test that fails runs once more (`retries` in the
+  # Playwright configs); one that passes on it is written to `flakes/` and uploaded as a `flakes-*` artifact, which
+  # `after` files an issue from. These jobs file no issue themselves and have no token to. Lighthouse and the app's
+  # graphics run after the merge (main.yml).
+  # The browsers' install is a task; what it downloads comes from the cache (the `ui-browsers-...` keys, the ones
+  # .github/actions/ui-browsers saves), which a run on main saves after the install and any other run only reads.
 
-  # The queue builds this image with its repository secrets, Last.fm's app key and secret; `check` has none, so
-  # this image has no built-in Last.fm key (the Dockerfile builds without; a listener then brings their own). It
-  # reads main's build cache and never writes it. The queue also builds the image when only `image`'s paths change;
-  # here that is the check that the image still builds.
+  # Main.yml passes Last.fm's app key and secret, so the image main tests, and then publishes, has them built in. A
+  # pull request's check has none: its image has no built-in key (the Dockerfile builds without; a listener then brings
+  # their own), and the expression below keeps a pull request's own run from reading the repository's secrets. The
+  # build reads main's layer cache; a run on main writes it back.
   image:
     needs: changes
     if: ${{ contains(fromJSON(needs.changes.outputs.run), 'image') || contains(fromJSON(needs.changes.outputs.run), 'ui') }}
@@ -140,6 +141,10 @@ jobs:
       - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
       - name: mise run image:save
         run: mise run image:save
+        env:
+          LULL_LASTFM_API_KEY: ${{ github.event_name != 'pull_request' && secrets.LULL_LASTFM_API_KEY || '' }}
+          LULL_LASTFM_API_SECRET: ${{ github.event_name != 'pull_request' && secrets.LULL_LASTFM_API_SECRET || '' }}
+          LULL_IMAGE_CACHE_SAVE: ${{ github.ref == 'refs/heads/main' && '1' || '' }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: image
@@ -148,8 +153,8 @@ jobs:
 
   # Four machines at once, each with its own hub from the image: the visual matrix split four ways by Playwright's
   # --shard, and on the first the hub contract (the image holds the same contract as the Linux package, ADR-0090).
-  # The queue runs Lighthouse's two shards beside these (ui.yml); they stay there until `main` takes over timing
-  # budgets, since a time measured on a shared runner belongs to `main`, not to a check on a change.
+  # Lighthouse's two shards run in main.yml: a time measured on a shared runner belongs to main, not to a check on a
+  # change.
   ui:
     name: ui (${{ matrix.part }})
     needs: [changes, image]
@@ -178,7 +183,8 @@ jobs:
         with:
           name: image
           path: ${{ runner.temp }}
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - id: browsers
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/apt-cache/*.deb
@@ -187,6 +193,13 @@ jobs:
           restore-keys: ui-browsers-${{ runner.os }}-${{ runner.arch }}-chromium-ffmpeg-
       - name: mise run ui:setup
         run: mise run ui:setup
+      - if: ${{ steps.browsers.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/apt-cache/*.deb
+            ~/.cache/ms-playwright
+          key: ${{ steps.browsers.outputs.cache-primary-key }}
       - name: mise run ui:hub
         run: mise run ui:hub
       - name: mise run ui:matrix
@@ -252,7 +265,8 @@ jobs:
         with:
           version: 2026.10.23
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - id: browsers
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/apt-cache/*.deb
@@ -264,6 +278,13 @@ jobs:
         env:
           GATES: ${{ matrix.gates }}
           SHARD: ${{ matrix.shard }}
+      - if: ${{ steps.browsers.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/apt-cache/*.deb
+            ~/.cache/ms-playwright
+          key: ${{ steps.browsers.outputs.cache-primary-key }}
       - name: mise run flakes:ui
         if: ${{ !cancelled() }}
         run: mise run flakes:ui
@@ -288,9 +309,8 @@ jobs:
   # What each route's start ships: a real browser (headless Chromium on the fixture hub, as the gates run it) lists the files a
   # first load fetches from the build, on this change and on its merge-base, and their sizes are summed from the built
   # files. The change's growth over the merge-base is held to an allowance (scripts/budgets,
-  # docs/context/quality.md). It builds web/ twice, so it needs the history. The browser comes from the cache main saves (the
-  # same `ui-browsers-...` key as the gates' Chromium-only machines) and is never saved from here. Lighthouse still
-  # measures bytes in the queue's `ui` shards; this runs beside it and is not part of the queue's workflows.
+  # docs/context/quality.md). It builds web/ twice, so it needs the history. The browser comes from the cache (the
+  # same `ui-browsers-...` key as the gates' Chromium-only machines), which a run on main saves.
   budgets:
     needs: changes
     if: ${{ contains(fromJSON(needs.changes.outputs.run), 'budgets') }}
@@ -304,7 +324,8 @@ jobs:
         with:
           version: 2026.10.23
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - id: browsers
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/apt-cache/*.deb
@@ -313,15 +334,22 @@ jobs:
           restore-keys: ui-browsers-${{ runner.os }}-${{ runner.arch }}-chromium--
       - name: mise run budgets
         run: mise run budgets
+      - if: ${{ steps.browsers.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/apt-cache/*.deb
+            ~/.cache/ms-playwright
+          key: ${{ steps.browsers.outputs.cache-primary-key }}
 
-  # --- The app and contract checks the merge queue runs today (app.yml,
-  # server-package.yml, slskd-contract.yml, slskd-windows.yml, share.yml,
-  # aur.yml), each a path-gated job: `if:` reads the `changes` output and the
-  # job id is a key in .github/ci/paths.yml. Rust caches are restored, never
-  # saved (the old workflows save them on main): rust-cache keys on the OS, the
-  # installed toolchains and the job id, and these jobs' ids differ from the old
-  # ones', so `shared-key` spells out the old job's key (v0-rust-<shared-key>-
-  # <OS>-<arch>-...) and the old caches hit. Nothing here uses a secret, and
+  # --- The app and contract checks (from app.yml, server-package.yml,
+  # slskd-contract.yml, slskd-windows.yml, share.yml, aur.yml), each a
+  # path-gated job: `if:` reads the `changes` output and the job id is a key in
+  # .github/ci/paths.yml. Rust caches are saved by a run on main and only
+  # restored by any other: rust-cache keys on the OS, the installed toolchains
+  # and the job id, and these jobs' ids differ from the old workflows', so
+  # `shared-key` spells out the old job's key (v0-rust-<shared-key>-<OS>-<arch>-...)
+  # and the caches those saved still hit. Nothing here uses a secret, and
   # nothing publishes or signs.
 
   # The app's checks (app/) on Linux x64 and Windows x64 (app.yml `check`).
@@ -349,7 +377,7 @@ jobs:
         with:
           workspaces: app
           shared-key: check
-          save-if: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # app.yml's `check` saves the sidecars app/build.rs pins on main; restored here, never saved, so a warm run
       # downloads nothing.
       - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -360,8 +388,8 @@ jobs:
       - name: mise run app:check
         run: mise run app:check
 
-  # ADR-0091 on Linux with a Secret Service (app.yml `keyring`). That job's own
-  # cache was never saved by anyone; this one restores the app's.
+  # ADR-0091 on Linux with a Secret Service (app.yml `keyring`). It restores the
+  # app's cache (`app` saves it on main) and saves none of its own.
   keyring:
     needs: changes
     if: ${{ contains(fromJSON(needs.changes.outputs.run), 'keyring') }}
@@ -421,8 +449,10 @@ jobs:
           cache_save: false
       - name: mise run android:sdk
         run: mise run android:sdk
-      # The keys app.yml saves on main, restored here and never saved.
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      # Saved by a run on main, as soon as the Tauri CLI is built and only by the
+      # signed build; any other run restores it.
+      - id: cargo
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             /opt/cargo/registry
@@ -433,7 +463,18 @@ jobs:
           restore-keys: android-cargo-
       - name: mise run android:toolchains
         run: mise run android:toolchains
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - if: ${{ steps.cargo.outputs.cache-hit != 'true' && matrix.build == 'signed' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            /opt/cargo/registry
+            /opt/cargo/bin
+            /opt/cargo/.crates.toml
+            /opt/cargo/.crates2.json
+          key: ${{ steps.cargo.outputs.cache-primary-key }}
+      # Gradle's downloads, never what it built; saved per build by a run on main.
+      - id: gradle
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             /opt/gradle/caches/modules-2
@@ -443,6 +484,14 @@ jobs:
           restore-keys: android-gradle-${{ matrix.build }}-
       - name: mise run android:apk
         run: mise run android:apk ${{ matrix.build }}
+      - if: ${{ steps.gradle.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            /opt/gradle/caches/modules-2
+            /opt/gradle/wrapper/dists
+            /github/home/.cache/gradlew-fdroid
+          key: ${{ steps.gradle.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: android-build-${{ matrix.build }}
@@ -560,7 +609,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: server-package-x64-build
-          save-if: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # server-package.yml's `build` saves the pinned files the package is built with (nfpm, slskd, yt-dlp, Deno) on
       # main; restored here, never saved.
       - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -639,7 +688,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: self-update-self-update
-          save-if: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: mise run package:self-update
         run: mise run package:self-update
 

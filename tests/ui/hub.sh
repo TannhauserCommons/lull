@@ -6,6 +6,8 @@
 #   stub      fail when the hub called a slskd route the stub doesn't answer. It answers what the hub asks slskd in these
 #             tests; a call it doesn't know would be a 404 and show on every page as a Soulseek banner (seen 2026-11-06
 #             as layout shift on every route), so it fails here by name instead
+#   lighthouse  Lighthouse's budgets on that hub, the routes of LH_SHARD (1/2): pairs the hub and measures what the page does
+#             (lighthouse.sh). The visual matrix's global setup pairs it, so a machine that doesn't run the matrix does it here
 #   logs      the hub's log and the stub's, for after a failure
 # Needs Docker and Linux (host networking). Files go in $RUNNER_TEMP, else $TMPDIR.
 set -eu
@@ -34,9 +36,16 @@ case "${1:-}" in
       exit 1
     fi
     ;;
+  lighthouse)
+    # On a shard of its own Lighthouse would measure the unpaired hub's setup screen instead.
+    node -e "import('./global-setup.mjs').then((m) => m.default())"
+    CHROME_PATH=$(node -e "console.log(require('@playwright/test').chromium.executablePath())")
+    export CHROME_PATH
+    exec sh lighthouse.sh
+    ;;
   logs)
     docker logs lull-ui 2>&1 | tail -200
     cat "$stub_log"
     ;;
-  *) echo "usage: hub.sh up|contract|stub|logs" >&2; exit 2 ;;
+  *) echo "usage: hub.sh up|contract|stub|lighthouse|logs" >&2; exit 2 ;;
 esac

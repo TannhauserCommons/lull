@@ -1,14 +1,15 @@
 #!/bin/sh
-# The hub's image, built as the queue builds it and saved as a tar: `sh scripts/image-save.sh [tar]` (`mise run image:save`).
+# The hub's image, built as CI builds it and saved as a tar: `sh scripts/image-save.sh [tar]` (`mise run image:save`).
 # The tar defaults to $RUNNER_TEMP/lull-image.tar, else $TMPDIR; `docker load` brings it back as lull:candidate
 # (tests/ui/hub.sh up does).
 #
-# In CI the layers come from main's build cache (type=gha, the cache the queue's image job keeps on main) and none are
-# written back: only main saves caches. A buildx builder (docker/setup-buildx-action) and the Actions runtime
-# variables in the environment (crazy-max/ghaction-github-runtime) let it read the cache. Elsewhere the build is cold.
+# In CI the layers come from main's build cache (type=gha) and are written back only when LULL_IMAGE_CACHE_SAVE is set,
+# which check.yml does for a run on main: only main saves caches. A buildx builder (docker/setup-buildx-action) and the
+# Actions runtime variables in the environment (crazy-max/ghaction-github-runtime) let it reach the cache. Elsewhere the
+# build is cold.
 #
-# Last.fm's app key and secret are compiled in only when LULL_LASTFM_API_KEY and LULL_LASTFM_API_SECRET are set, as
-# the queue's build does with its repository secrets. `check` has no secrets, so its image has no built-in key.
+# Last.fm's app key and secret are compiled in only when LULL_LASTFM_API_KEY and LULL_LASTFM_API_SECRET are set: main.yml
+# passes its repository secrets down, a pull request's check has none, so its image has no built-in key.
 set -eu
 cd "$(dirname "$0")/.."
 tar=${1:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}/lull-image.tar}
@@ -29,11 +30,16 @@ for tag in $(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname); do
 done
 
 set -- --build-arg "LULL_BUILD_RELEASE=$release" --build-arg "LULL_BUILD_CHANGES=$changes" --build-arg "LULL_BUILD_COMMIT=$commit"
+# What the registry shows and links the package to the repository by (the queue's image job set the same labels).
+set -- "$@" --label "org.opencontainers.image.revision=$commit" --label org.opencontainers.image.title=lull \
+  --label org.opencontainers.image.licenses=AGPL-3.0-only
+[ -z "${GITHUB_REPOSITORY:-}" ] || set -- "$@" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL:-https://github.com}/$GITHUB_REPOSITORY"
 if [ -n "${LULL_LASTFM_API_KEY:-}" ] && [ -n "${LULL_LASTFM_API_SECRET:-}" ]; then
   set -- "$@" --secret id=lastfm_key,env=LULL_LASTFM_API_KEY --secret id=lastfm_secret,env=LULL_LASTFM_API_SECRET
 fi
 if [ -n "${ACTIONS_RUNTIME_TOKEN:-}" ]; then
   set -- "$@" --cache-from type=gha
+  [ -z "${LULL_IMAGE_CACHE_SAVE:-}" ] || set -- "$@" --cache-to type=gha,mode=max
 elif [ "${CI:-}" = true ]; then
   echo "image-save: no ACTIONS_RUNTIME_TOKEN, so main's build cache can't be read: expose the runner's variables first" >&2
   exit 1
