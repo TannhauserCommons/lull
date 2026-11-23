@@ -2,7 +2,7 @@ name: release
 # Cuts a release on the owner's word (ADR-0098): the integrator session runs this when the owner says to release, or the
 # owner runs it from the Actions tab or the GitHub app. scripts/release.sh makes the release commit on main's newest
 # green commit (ADR-0097) with the draft's notes and tags it; then the tag starts app.yml (installers, updater files,
-# APK, the GitHub Release), the version commit goes to the queue, and release-image.yml publishes the hub's image of
+# APK, the GitHub Release), the version commit goes to the branch release-X.Y.Z for a pull request, and release-image.yml publishes the hub's image of
 # the tag as :X.Y.Z and :latest for self-hosters. `rehearse` does everything but push and publish.
 on:
   workflow_dispatch:
@@ -72,18 +72,26 @@ jobs:
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse "v$VERSION^{commit}")" >> "$GITHUB_OUTPUT"
           git log -1 --stat "v$VERSION" >> "$GITHUB_STEP_SUMMARY"
-      - name: Publish the tag, queue the version, build the apps
+      - name: Publish the tag, push the version's branch, build the apps
         if: ${{ !inputs.rehearse }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -eu
-          git push origin "$TAG" "$TAG^{commit}:refs/heads/queue/release-${TAG#v}"
-          # Pushes with the job's token start no workflow: start the three that a person's push would.
+          git push origin "$TAG" "$TAG^{commit}:refs/heads/release-${TAG#v}"
+          # Pushes with the job's token start no workflow: start the two that a person's push would.
           gh workflow run app.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
           gh workflow run release-image.yml --repo "$GITHUB_REPOSITORY" --ref main -f tag="$TAG"
-          gh workflow run queue.yml --repo "$GITHUB_REPOSITORY" --ref main
+          # A pull request opened with this token would start no check either, so the session that ran the release
+          # opens it with the App's token.
+          {
+            echo "### The version for main"
+            echo "Open its pull request with the App's token, so \`check\` runs on it, then merge it as any change:"
+            echo '```'
+            echo "gh pr create --repo $GITHUB_REPOSITORY --base main --head release-${TAG#v} --fill"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
           # The next landing drafts the release after this one.
           id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '[.[] | select(.draft and .name == "Next release")][0].id // empty')
           [ -z "$id" ] || gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
