@@ -85,6 +85,7 @@ const CATEGORIES = ['devtools.timeline', 'disabled-by-default-devtools.timeline'
 //   frames     main-thread frames committed to the compositor
 //   drawn      frames the page's compositor drew (with { drawn: true }: its own trace category), the main thread's
 //              and those a compositor-only animation draws with no main-thread work at all
+//   timers     timers fired; styleRecalcs: style passes; scriptCalls: calls into the page's own scripts
 //   layouts    Layout passes; forcedLayouts: those run inside script (a read after a write)
 //   restyled   elements restyled by each style pass, largest first
 //   refits     the passes that fitted the header and bar's rows again for the page around them changing (layout.js: ready, a
@@ -142,6 +143,10 @@ export function summarise(json) {
     handlersMs: mine.filter((e) => e.name === 'EventDispatch').reduce((a, e) => a + e.dur / 1000, 0),
     frames: mine.filter((e) => e.name === 'Commit').length,
     drawn: events.filter((e) => e.name === 'DrawFrame' && page && String(e.pid) === page.split(':')[0]).length,
+    timers: mine.filter((e) => e.name === 'TimerFire').length,
+    styleRecalcs: styles.length,
+    // calls into the page's own scripts (a call from the harness, the browser or an extension has no script url)
+    scriptCalls: mine.filter((e) => e.name === 'FunctionCall' && e.args?.data?.url).length,
     layouts: layouts.length,
     forcedLayouts: layouts.filter(inScript).length,
     refits: events.filter((e) => e.name === 'TimeStamp' && e.args?.data?.message === 'lull:fit-again').length,

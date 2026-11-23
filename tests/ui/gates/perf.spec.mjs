@@ -78,6 +78,11 @@ for (const design of designs) {
 
     test('playing costs little per second', async ({ browser, page }) => {
       const s = await S.playing(browser, page, opts(design), '/now');
+      // the work, counted: it holds on a busy runner, where the same work takes several times as long (ms/s, below)
+      for (const [what, per] of Object.entries(B.playing)) {
+        expect(s.perSecond[what], `${what} per second while playing, on Now Playing`).toBeLessThanOrEqual(per[design]);
+      }
+      // the backstop: a page that blocks for a noticeable moment, whatever its counts
       expect(s.perSecondMs, 'main-thread ms per second while playing, on Now Playing').toBeLessThanOrEqual(B.playingMsPerSecond);
       expect(s.loops, 'loops drawn dearly while playing, on Now Playing').toEqual([]);
       expect(s.restyled[0] ?? 0, 'most elements restyled by one clock tick').toBeLessThanOrEqual(B.tickRestyleElements);
@@ -187,6 +192,9 @@ test.describe('lull', () => {
 
   test('playing beside a long list', async ({ browser, page }) => {
     const s = await S.playing(browser, page, o, `/playlist/${ids.longPlaylist}`);
+    for (const [what, per] of Object.entries(B.playingBesideList)) {
+      expect(s.perSecond[what], `${what} per second while playing, on a 1,200-song playlist`).toBeLessThanOrEqual(per);
+    }
     expect(s.perSecondMs, 'main-thread ms per second while playing, on a 1,200-song playlist').toBeLessThanOrEqual(B.playingMsPerSecond);
   });
 
