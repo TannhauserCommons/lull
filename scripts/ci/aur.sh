@@ -5,7 +5,9 @@
 # are downloaded and checked too (checksums, minisign). Nothing is pushed to the AUR.
 #
 # Runs as root in an Arch container (the `aur` job of .github/workflows/check.yml). The release is $VERSION (1.2.3 or
-# v1.2.3), else the newest one of $GITHUB_REPOSITORY; $GH_TOKEN, when set, signs the lookup of it.
+# v1.2.3), else the newest one of the repository (scripts/ci/aur-release.sh); $GH_TOKEN, when set, signs the lookup
+# of it. What bundles/ already holds of that release (CI restores it by the release's tag) is not downloaded again;
+# makepkg below still downloads its own sources from the PKGBUILD's URLs and checks them against the sums of these files.
 set -eu
 cd "$(dirname "$0")/../.."
 root=$PWD
@@ -33,12 +35,12 @@ fetch() { # <url> [output file]
 version=${VERSION:-}
 version=${version#v}
 if [ -z "$version" ]; then
-  version=$(fetch "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest" \
-    | node -e "let s=''; process.stdin.on('data', d => s += d).on('end', () => console.log(JSON.parse(s).tag_name.replace(/^v/, '')))")
+  version=$(sh scripts/ci/aur-release.sh)
 fi
 mkdir -p bundles
 for f in "lull_${version}_amd64.deb" "lull_${version}_amd64.deb.sig" "lull_${version}_arm64.deb" "lull_${version}_arm64.deb.sig"; do
-  fetch "https://github.com/$GITHUB_REPOSITORY/releases/download/v$version/$f" "bundles/$f"
+  # A file kept from an earlier run of this release (CI restores bundles/ by the release's tag) is not fetched again.
+  [ -f "bundles/$f" ] || fetch "https://github.com/$GITHUB_REPOSITORY/releases/download/v$version/$f" "bundles/$f"
 done
 sh scripts/aur-pkgbuild.sh "$version" bundles aur
 

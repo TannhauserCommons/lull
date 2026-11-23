@@ -41,6 +41,12 @@ jobs:
         with:
           workspaces: app
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # What app.yml's `check` saves on main, restored here and never saved (app/build.rs fetches nothing it finds).
+      - uses: actions/cache/restore@v4
+        with:
+          path: app/binaries
+          key: sidecars-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/build.rs') }}
+          restore-keys: sidecars-${{ runner.os }}-${{ runner.arch }}-
       - run: command -v tauri-driver || cargo install tauri-driver --version 2.1.0 --locked
       - uses: actions/setup-node@v5
         with:

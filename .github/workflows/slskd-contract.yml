@@ -65,7 +65,20 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24.11"
+      # The binary kept between runs: a warm run downloads nothing. Only main saves; the key holds the pin.
+      - id: slskd
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/pinned-downloads
+          key: slskd-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/build.rs') }}
       - run: node tests/slskd-contract/run.mjs --native
+        env:
+          DOWNLOADS_CACHE: ${{ runner.temp }}/pinned-downloads
+      - if: steps.slskd.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/pinned-downloads
+          key: ${{ steps.slskd.outputs.cache-primary-key }}
 
   windows-build:
     if: github.event_name == 'pull_request' || inputs.windows-build

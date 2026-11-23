@@ -35,7 +35,8 @@ case "$(uname -s)-$(uname -m)" in
   Linux-aarch64) sdk_rid=linux-arm64 sdk_sha512=$SDK_SHA512_LINUX_ARM64 ;;
   *) echo "build.sh runs on Linux x64 or arm64" >&2; exit 1 ;;
 esac
-curl -fsSL --retry 3 -o "$work/sdk.tar.gz" "https://builds.dotnet.microsoft.com/dotnet/Sdk/$sdk/dotnet-sdk-$sdk-$sdk_rid.tar.gz"
+sh "$here/../../scripts/ci/pinned-download.sh" "https://builds.dotnet.microsoft.com/dotnet/Sdk/$sdk/dotnet-sdk-$sdk-$sdk_rid.tar.gz" \
+  sha512 "$sdk_sha512" "$work/sdk.tar.gz" --retry 3
 echo "$sdk_sha512  $work/sdk.tar.gz" | sha512sum -c --quiet - ||
   { echo "the .NET SDK $sdk download isn't the one build.sh pins: a new global.json needs its sha512 here" >&2; exit 1; }
 mkdir "$work/dotnet" && tar -xzf "$work/sdk.tar.gz" -C "$work/dotnet" && rm "$work/sdk.tar.gz"

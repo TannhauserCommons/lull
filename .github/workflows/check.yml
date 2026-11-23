@@ -350,6 +350,13 @@ jobs:
           workspaces: app
           shared-key: check
           save-if: false
+      # app.yml's `check` saves the sidecars app/build.rs pins on main; restored here, never saved, so a warm run
+      # downloads nothing.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: app/binaries
+          key: sidecars-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/build.rs') }}
+          restore-keys: sidecars-${{ runner.os }}-${{ runner.arch }}-
       - name: mise run app:check
         run: mise run app:check
 
@@ -373,6 +380,13 @@ jobs:
           workspaces: app
           shared-key: check
           save-if: false
+      # app.yml's `check` saves the sidecars app/build.rs pins on main; restored here, never saved, so a warm run
+      # downloads nothing.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: app/binaries
+          key: sidecars-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/build.rs') }}
+          restore-keys: sidecars-${{ runner.os }}-${{ runner.arch }}-
       - name: mise run app:keyring
         run: mise run app:keyring
 
@@ -491,8 +505,15 @@ jobs:
         with:
           version: 2026.10.23
           cache_save: ${{ github.ref == 'refs/heads/main' }}
+      # slskd-contract.yml's `windows` saves the binary on main; restored here, never saved.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/pinned-downloads
+          key: slskd-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/build.rs') }}
       - name: mise run slskd:native
         run: mise run slskd:native
+        env:
+          DOWNLOADS_CACHE: ${{ runner.temp }}/pinned-downloads
 
   # lull's slskd for Windows built twice, to the same bytes and the pinned ones
   # (slskd-windows.yml). Builds from upstream's pinned release: network.
@@ -507,8 +528,15 @@ jobs:
         with:
           version: 2026.10.23
           cache_save: ${{ github.ref == 'refs/heads/main' }}
+      # slskd-windows.yml's `build` saves the pinned .NET SDK on main; restored here, never saved.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/pinned-downloads
+          key: slskd-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/slskd/build.sh', 'app/slskd/global.json') }}
       - name: mise run slskd:build
         run: mise run slskd:build
+        env:
+          DOWNLOADS_CACHE: ${{ runner.temp }}/pinned-downloads
 
   # The Linux server package (server-package.yml `build`), x64 on the oldest
   # glibc, unsigned, then held to the hub contract by the jobs below. The full
@@ -533,8 +561,16 @@ jobs:
         with:
           shared-key: server-package-x64-build
           save-if: false
+      # server-package.yml's `build` saves the pinned files the package is built with (nfpm, slskd, yt-dlp, Deno) on
+      # main; restored here, never saved.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/pinned-downloads
+          key: server-package-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/build.rs', 'packaging/linux/build.sh') }}
       - name: mise run package:build
         run: mise run package:build
+        env:
+          DOWNLOADS_CACHE: ${{ runner.temp }}/pinned-downloads
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: lull-server-linux-x64
@@ -627,8 +663,16 @@ jobs:
         with:
           shared-key: self-update-self-update
           save-if: false
+      # server-package.yml's `secrets-update` saves the release's source on main, keyed on the script that names the
+      # release; restored here, never saved.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/pinned-downloads
+          key: release-source-${{ hashFiles('scripts/ci/package-secrets-update.sh') }}
       - name: mise run package:secrets-update
         run: mise run package:secrets-update
+        env:
+          DOWNLOADS_CACHE: ${{ runner.temp }}/pinned-downloads
 
   # The share Worker's tests, in Cloudflare's local runtime (share.yml `test`;
   # `deploy` is not a check).
@@ -664,10 +708,22 @@ jobs:
           version: 2026.10.23
           cache: false
           cache_save: false
+      # The newest release, looked up each run (it is what this tests); its files are kept by its tag, saved on main by
+      # aur.yml and restored here, so a tag already seen is not downloaded again.
+      - id: release
+        name: mise run aur:release
+        run: mise run aur:release
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: bundles
+          key: aur-bundles-${{ steps.release.outputs.version }}
       - name: mise run aur:package
         run: mise run aur:package
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
 
   # The one status. `!cancelled()` makes it run when a job it needs failed (a
   # plain `needs:` job would be skipped, and skipped counts as passing). It

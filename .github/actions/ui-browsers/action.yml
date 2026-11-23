@@ -36,7 +36,7 @@ runs:
       run: |
         # shellcheck disable=SC2086
         npx playwright install --with-deps $BROWSERS
-        if [ -n "$PACKAGES" ]; then sudo apt-get install -y $PACKAGES; fi
+        if [ -n "$PACKAGES" ]; then sudo apt-get update && sudo apt-get install -y $PACKAGES; fi
     - if: steps.cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
       uses: actions/cache/save@v4
       with:

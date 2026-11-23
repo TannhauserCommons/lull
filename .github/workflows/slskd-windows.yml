@@ -32,8 +32,24 @@ jobs:
           ref: ${{ inputs.ref }}
       # No setup-dotnet: build.sh fetches the exact SDK and builds on it alone (setup-dotnet also adds the newest
       # LTS runtime, which the SDK then runs on).
+      # The pinned .NET SDK, kept by hash between runs (the second build below reads what the first kept): a warm run
+      # downloads nothing. Only main saves.
+      - id: sdk
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/pinned-downloads
+          key: slskd-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/slskd/build.sh', 'app/slskd/global.json') }}
       - run: sh app/slskd/build.sh "$RUNNER_TEMP/first"
+        env:
+          DOWNLOADS_CACHE: ${{ runner.temp }}/pinned-downloads
       - run: sh app/slskd/build.sh "$RUNNER_TEMP/second"
+        env:
+          DOWNLOADS_CACHE: ${{ runner.temp }}/pinned-downloads
+      - if: steps.sdk.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/pinned-downloads
+          key: ${{ steps.sdk.outputs.cache-primary-key }}
       - id: same
         name: The same bytes twice, and the ones app/build.rs pins
         run: |

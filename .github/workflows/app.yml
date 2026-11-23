@@ -66,6 +66,14 @@ jobs:
         with:
           workspaces: app
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The sidecars app/build.rs pins, kept between runs: a warm run downloads nothing, so GitHub's release host
+      # answering 5xx can't fail it. Only main saves; the key holds the pins, so a bump fetches anew.
+      - id: sidecars
+        uses: actions/cache/restore@v4
+        with:
+          path: app/binaries
+          key: sidecars-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/build.rs') }}
+          restore-keys: sidecars-${{ runner.os }}-${{ runner.arch }}-
       - run: node --check web/desktop/desktop.js
       - working-directory: app
         run: cargo fmt --check
@@ -73,6 +81,11 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
       - working-directory: app
         run: cargo test --locked
+      - if: steps.sidecars.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: app/binaries
+          key: ${{ steps.sidecars.outputs.cache-primary-key }}
 
   # ADR-0091 on Linux with a Secret Service: GNOME Keyring in its own D-Bus session, unlocked, then locked.
   keyring:
@@ -89,6 +102,12 @@ jobs:
         with:
           workspaces: app
           save-if: false
+      # What `check` saves on main, restored here and never saved.
+      - uses: actions/cache/restore@v4
+        with:
+          path: app/binaries
+          key: sidecars-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/build.rs') }}
+          restore-keys: sidecars-${{ runner.os }}-${{ runner.arch }}-
       - working-directory: app
         run: cargo test --locked --no-run
       # The daemon reads its password from stdin, makes the login collection and unlocks it. Locking it

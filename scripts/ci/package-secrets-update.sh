@@ -1,7 +1,8 @@
 #!/bin/sh
 # The listener's logins across an update (tests/hub-contract/secrets-update.sh, ADR-0091): the last release before the
 # credentials' vault, built from its tag, updated to this commit with the `secrets` switch on, through a kit that fails
-# its health window and then one that starts. Fetches that tag from origin and the Tauri CLI from npm (network). Rust
+# its health window and then one that starts. Fetches that tag from origin (kept in $DOWNLOADS_CACHE when CI sets it)
+# and the Tauri CLI from npm (network). Rust
 # comes from `mise run toolchain` before it.
 set -eu
 cd "$(dirname "$0")/../.."
@@ -24,8 +25,19 @@ build() {
   env LULL_DEV_KIT_KEY="$kit" LULL_DEV_RELEASES=http://127.0.0.1:9999/latest.json LULL_BUILD_INSTALL=package "$@" \
     cargo build --locked --bin lull
 }
-git fetch -q --depth 1 origin tag "v$RELEASE"
-git worktree add -q "$work/release" "v$RELEASE"
+# The tag's files, kept in $DOWNLOADS_CACHE (CI keeps it between runs) as a tarball: a warm run asks GitHub for nothing.
+source=${DOWNLOADS_CACHE:+$DOWNLOADS_CACHE/lull-v$RELEASE-source.tar}
+if [ -n "$source" ] && [ -f "$source" ]; then
+  mkdir "$work/release"
+  tar -xf "$source" -C "$work/release"
+else
+  git fetch -q --depth 1 origin tag "v$RELEASE"
+  git worktree add -q "$work/release" "v$RELEASE"
+  if [ -n "$source" ]; then
+    mkdir -p "$DOWNLOADS_CACHE"
+    tar -cf "$source" --exclude=./.git -C "$work/release" .
+  fi
+fi
 (cd "$work/release" && build)
 cp "$bin" "$work/lull-release"
 build LULL_BUILD_RELEASE="$v2" LULL_BUILD_CHANGES=0
