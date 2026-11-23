@@ -11,7 +11,7 @@
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { chrome, chromeNow, clippedCovers, FEATURES, features, gateFree, holders, unknownFeatures } from '../checks.mjs';
-import { designs, ids, openScreen, settle, themes } from './lib.mjs';
+import { designs, ids, openScreen, settle, spareSong, themes } from './lib.mjs';
 
 const widths = [];
 for (let w = 2560; w >= 360; w -= 20) widths.push(w);
@@ -216,7 +216,10 @@ for (const design of designs) {
       await openScreen(page, '/home', { design, theme });
       const album = await page.evaluate(() => App.data.api('/api/feed').then((f) => f.newReleases[0]));
       await page.evaluate((id) => { location.hash = '#/album/' + id; }, album);
-      const track = await page.waitForSelector('#view .trow[data-track-id]').then((r) => r.getAttribute('data-track-id'));
+      await page.waitForSelector('#view .trow[data-track-id]');
+      // a song of this test's own: the fixture hub keeps one transfer per song for every page, so ten tests trickling the
+      // album's first song restarted each other's
+      const track = await spareSong(page);
       await page.request.post('/__fixture/trickle', { data: { id: track, bytesPerS: 2000 } });
       await page.evaluate((id) => App.player.playTrack(id, [id]), track);
       await page.waitForSelector('#mini .seek--line.is-transferring');
