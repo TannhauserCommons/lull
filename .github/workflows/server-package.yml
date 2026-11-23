@@ -8,7 +8,7 @@ name: server-package
 on:
   # A branch's packages, by hand (`gh workflow run server-package --ref <branch>`): kept as workflow artifacts.
   workflow_dispatch:
-  # The queue (ADR-0095) on its candidate: x64 only; a release builds both architectures.
+  # app.yml's release, on a v* tag. check.yml's `package` jobs build and test x64 on every change to the package.
   workflow_call:
     inputs:
       ref:
@@ -16,7 +16,7 @@ on:
         type: string
         required: true
       build-release:
-        description: The release the commit holds everything of (scripts/queue.sh's build_version); empty for a release
+        description: The release the commit holds everything of (scripts/image-save.sh); empty for a release
         type: string
         default: ""
       build-changes:

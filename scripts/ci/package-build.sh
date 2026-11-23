@@ -19,7 +19,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 commit=$(git rev-parse HEAD)
 
-# What the hub says it is, as the queue's image build says it (scripts/queue.sh, build_version): the newest release this
+# What the hub says it is, as main's image says it (scripts/image-save.sh): the newest release this
 # commit holds everything of, and the changes since. A release's tag is its version commit on top of the commit it was
 # cut from, and that version commit reaches main later, so the tag itself is seldom in the history: the commit it was cut
 # from is. Release version commits aren't counted as changes.

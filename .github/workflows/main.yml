@@ -36,10 +36,9 @@ jobs:
       LULL_LASTFM_API_KEY: ${{ secrets.LULL_LASTFM_API_KEY }}
       LULL_LASTFM_API_SECRET: ${{ secrets.LULL_LASTFM_API_SECRET }}
 
-  # PROJECT: what lull does after a push lands. The queue did these after a
-  # landing (queue.yml `land`); each waits for a green `check`, as the queue
-  # landed only green. The workflows that are not called are dispatched on main
-  # (mise run main:dispatch), as the queue did.
+  # PROJECT: what lull does after a push lands. Each waits for a green `check`.
+  # The workflows that are not called are dispatched on main
+  # (mise run main:dispatch).
 
   # Which of them the push needs: from the files and commits it brought.
   plan:
@@ -202,7 +201,7 @@ jobs:
     with:
       ref: ${{ github.sha }}
 
-  # Lighthouse's budgets (what `ui` measured in the queue, ui.yml): two
+  # Lighthouse's budgets (tests/ui/lighthouse.sh): two
   # machines, each with its own hub from the image check built. They need that
   # image, so they wait for check. A red one turns main red.
   lighthouse:

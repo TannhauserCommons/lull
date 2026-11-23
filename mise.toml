@@ -109,7 +109,7 @@ description = "Fail when that hub called a slskd route the stub doesn't answer"
 run = "sh tests/ui/hub.sh stub"
 
 [tasks."ui:lighthouse"]
-description = "Lighthouse's budgets on that hub: LH_SHARD=1/2 measures half the routes (main.yml; the queue's ui.yml still runs them too)"
+description = "Lighthouse's budgets on that hub: LH_SHARD=1/2 measures half the routes (main.yml)"
 run = "sh tests/ui/hub.sh lighthouse"
 
 [tasks."ui:logs"]
@@ -130,7 +130,7 @@ description = "Push the image main's check built and tested as :sha-<short> and 
 run = "sh scripts/ci/image-publish.sh"
 
 [tasks."main:dispatch"]
-description = "Start a workflow on main, as the queue did after a landing: main:dispatch pages.yml"
+description = "Start a workflow on main after a landing (main.yml): main:dispatch pages.yml"
 run = "sh scripts/ci/main-dispatch.sh {{arg(i=0)}}"
 
 [tasks.icons]
@@ -144,10 +144,6 @@ run = "sh scripts/ship.sh {{arg(i=0)}}"
 [tasks.merge]
 description = "Merge a green pull request onto main, pinned to the head its check passed: merge <pr>"
 run = "sh scripts/merge.sh {{arg(i=0)}}"
-
-[tasks."queue:first"]
-description = "Test a waiting queue topic alone, ahead of older ones, for a fix every batch needs: queue:first <topic>"
-run = "sh scripts/queue-first.sh {{arg(i=0)}}"
 
 [tasks.release]
 description = "Tag vX.Y.Z on main's newest green commit with the version and what's new; pushing the tag publishes the apps: release X.Y.Z"

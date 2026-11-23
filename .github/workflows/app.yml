@@ -1,44 +1,27 @@
 name: app
-# The Tauri app (app/). The queue (ADR-0095) runs its checks, and the Android build when Android's
-# parts change, on every candidate that touches the app or the hub it embeds. Windows and Linux bundles
+# The Tauri app (app/). check.yml runs its checks and the Android build on every pull request and on main
+# that touches them; this workflow makes what a release ships. Windows and Linux bundles
 # (x64 and arm64) and the Android APK on a v* tag (attached to the tag's Release, with the signed updater
 # files and latest.json) or by hand (workflow artifacts, no updater files). A run by hand on main also
-# saves the bundles' caches for the next tag (ADR-0097); the queue starts one when the lockfiles change.
+# saves the bundles' caches for the next tag (ADR-0097).
 # `mise run release X.Y.Z` makes the tag (scripts/release.sh).
 on:
   push:
     tags: ["v*"]
-  pull_request:
-    paths: ["app/**", "crates/**", "web/desktop/**", "web/assets/icons/**", "scripts/android-*.sh", "rust-toolchain.toml", ".github/workflows/app.yml"]
   workflow_dispatch:
     inputs:
       gradle-verification:
         description: "Write Gradle's dependency checksums (gradle/verification-metadata.xml) from the Android build, after a dependency changes"
         type: boolean
         default: false
-  workflow_call:
-    inputs:
-      ref:
-        description: The commit to check
-        type: string
-        required: true
-      checks:
-        description: The app's checks on Linux and Windows
-        type: boolean
-        default: true
-      android:
-        description: The Android build
-        type: boolean
-        default: true
 
 permissions:
   contents: read
 
-# One run at a time per event and ref, and per candidate for the queue's. A new pull request push
-# cancels the old run.
+# One run at a time per event and ref.
 concurrency:
-  group: app-${{ inputs.ref || format('{0}-{1}', github.event_name, github.ref) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: app-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   # Tauri's documented Linux build prerequisites (WebKitGTK 4.1, AppIndicator, rsvg for icons, xdo), and
@@ -46,84 +29,8 @@ env:
   LINUX_DEPS: libwebkit2gtk-4.1-dev build-essential file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev
 
 jobs:
-  # A queue candidate, a pull request, or a run by hand on any branch (its checks, then its bundles).
-  check:
-    if: github.ref_type != 'tag' && (!inputs.ref || inputs.checks)
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.ref }}
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
-      - run: rustup toolchain install
-      # Only main saves (ADR-0097): another ref's cache can't be read by anyone else.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: app
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      # The sidecars app/build.rs pins, kept between runs: a warm run downloads nothing, so GitHub's release host
-      # answering 5xx can't fail it. Only main saves; the key holds the pins, so a bump fetches anew.
-      - id: sidecars
-        uses: actions/cache/restore@v4
-        with:
-          path: app/binaries
-          key: sidecars-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/build.rs') }}
-          restore-keys: sidecars-${{ runner.os }}-${{ runner.arch }}-
-      - run: node --check web/desktop/desktop.js
-      - working-directory: app
-        run: cargo fmt --check
-      - working-directory: app
-        run: cargo clippy --all-targets --locked -- -D warnings
-      - working-directory: app
-        run: cargo test --locked
-      - if: steps.sidecars.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v4
-        with:
-          path: app/binaries
-          key: ${{ steps.sidecars.outputs.cache-primary-key }}
-
-  # ADR-0091 on Linux with a Secret Service: GNOME Keyring in its own D-Bus session, unlocked, then locked.
-  keyring:
-    if: github.ref_type != 'tag' && (!inputs.ref || inputs.checks)
-    runs-on: ubuntu-22.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.ref }}
-      - run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS gnome-keyring dbus-x11
-      - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: app
-          save-if: false
-      # What `check` saves on main, restored here and never saved.
-      - uses: actions/cache/restore@v4
-        with:
-          path: app/binaries
-          key: sidecars-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/build.rs') }}
-          restore-keys: sidecars-${{ runner.os }}-${{ runner.arch }}-
-      - working-directory: app
-        run: cargo test --locked --no-run
-      # The daemon reads its password from stdin, makes the login collection and unlocks it. Locking it
-      # afterwards needs no prompt; reading it then asks for one, which nobody can answer here.
-      - working-directory: app
-        run: |
-          dbus-run-session -- sh -euc '
-            printf lull-ci | gnome-keyring-daemon --components=secrets --daemonize --unlock >/dev/null
-            LULL_TEST_KEYRING=present cargo test --locked keyring
-            dbus-send --session --print-reply --dest=org.freedesktop.secrets /org/freedesktop/secrets \
-              org.freedesktop.Secret.Service.Lock array:objpath:/org/freedesktop/secrets/collection/login >/dev/null
-            LULL_TEST_KEYRING=locked timeout 120 cargo test --locked keyring
-          '
-
   bundle:
-    if: ${{ !inputs.ref && !inputs.gradle-verification && (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ !inputs.gradle-verification }}
     strategy:
       fail-fast: false
       matrix:
@@ -234,7 +141,6 @@ jobs:
   # scanner), and `clean`, unsigned from a clean clone in another folder. android-compare then requires
   # the two to match except for the signature, which is what lets F-Droid ship the release APK.
   android:
-    if: ${{ !inputs.ref || inputs.android }}
     strategy:
       fail-fast: false
       matrix:
@@ -253,8 +159,6 @@ jobs:
       RUSTUP_HOME: /opt/rustup
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.ref }}
       # What F-Droid's recipe installs: Debian's rustup and the NDK, then (after the cache) the pinned
       # Rust toolchain and the Tauri CLI from source.
       - name: Toolchains

@@ -2,7 +2,7 @@ name: graphics
 # The Linux app on a computer with no graphics card (tests/desktop/graphics.mjs; docs/context/quality.md, Graphics):
 # each graphics mode gives WebKitGTK the switches it names, starts and draws; the processor drawing is found and gives
 # the lighter look; a chosen mode that never came up falls back to Automatic; and every built-in design holds the
-# frame-rate budget on the processor. The queue runs it when the app, the web UI or the designs change.
+# frame-rate budget on the processor. main.yml runs it after every merge.
 on:
   workflow_dispatch:
   workflow_call:

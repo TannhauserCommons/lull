@@ -2,7 +2,7 @@
 # Nothing in the repository or its history points to the owner (AGENTS.md, Boundaries): every commit's time is UTC, and
 # no file or commit message names what PRIVATE_PATTERNS lists (the secret of that name: extended regexes, one a line,
 # matched without case). The list lives only in the secret: kept here, it would publish what it guards. Prints where,
-# never what. Run by .github/workflows/privacy.yml; `PRIVATE_PATTERNS=... sh scripts/privacy-check.sh` locally.
+# never what. Run by check.yml's `privacy` on every pull request and on main; `PRIVATE_PATTERNS=... sh scripts/privacy-check.sh` locally.
 set -eu
 fail=0
 

@@ -2,9 +2,8 @@
 # absent here always runs. PRs run a gated job only when its
 # paths changed; a call with `all: true` runs them all.
 #
-# Each key is the queue's rule for that check (scripts/queue.sh, `checks`), as globs, plus what the queue also treats
-# as "everything changed" (`.github/`, queue.sh) and what runs the check here (mise.toml and mise.lock: the tasks and the
-# tool versions every job uses; its own scripts). `ui`
+# Each key is the paths its check reads, as globs, plus what counts as "everything changed" (`.github/`) and what runs
+# the check here (mise.toml and mise.lock: the tasks and the tool versions every job uses; its own scripts). `ui`
 # is also what `image` builds for: check.yml's `image` job runs for either key.
 image:
   - 'crates/**'
@@ -19,7 +18,6 @@ image:
   - 'scripts/web-dist/**'
   - 'scripts/image-save.sh'
   - '.github/**'
-  - 'scripts/queue.sh'
   - 'mise.toml'
   - 'mise.lock'
 ui:
@@ -31,7 +29,6 @@ ui:
   - 'Dockerfile'
   - 'scripts/playwright-flakes.mjs'
   - '.github/**'
-  - 'scripts/queue.sh'
   - 'mise.toml'
   - 'mise.lock'
 gates:
@@ -41,7 +38,6 @@ gates:
   - 'scripts/vendor-web.sh'
   - 'scripts/playwright-flakes.mjs'
   - '.github/**'
-  - 'scripts/queue.sh'
   - 'mise.toml'
   - 'mise.lock'
 # What can change the answer of `mise run budgets`: the web files and their build, the check's own files, the fixture hub
@@ -57,21 +53,18 @@ budgets:
   - 'tests/ui/setup.sh'
   - 'tests/web/budgets.test.mjs'
   - '.github/**'
-  - 'scripts/queue.sh'
   - 'mise.toml'
   - 'mise.lock'
 
-# App and contract jobs. Each list mirrors a `want` line of `checks()` in
-# scripts/queue.sh (the queue's regexes), and adds `.github/**` and
-# `scripts/queue.sh` (the queue runs everything for a change there), `mise.toml`
-# and `mise.lock` (the tasks and tool versions each job runs) and the job's own
-# scripts. A job that runs
+# App and contract jobs. Each list holds the paths its check reads, plus
+# `.github/**` (everything runs for a change there), `mise.toml` and `mise.lock`
+# (the tasks and tool versions each job runs) and the job's own scripts. A job
+# that runs
 # only after another (android-compare after android) or beside it (keyring)
 # still has its own key, the same list as the job it follows: the gate lets a
 # job skip only when it has one.
 app: &app
   - ".github/**"
-  - "scripts/queue.sh"
   - "mise.toml"
   - "mise.lock"
   - "app/**"
@@ -86,7 +79,6 @@ keyring: *app
 
 android: &android
   - ".github/**"
-  - "scripts/queue.sh"
   - "mise.toml"
   - "mise.lock"
   - "app/gen/android/**"
@@ -104,7 +96,6 @@ android-compare: *android
 
 slskd: &slskd
   - ".github/**"
-  - "scripts/queue.sh"
   - "mise.toml"
   - "mise.lock"
   - "deploy/compose.yaml"
@@ -117,7 +108,6 @@ slskd-windows: *slskd
 # lull's slskd for Windows, built twice: only its recipe and its pin change its bytes.
 slskd-build:
   - ".github/**"
-  - "scripts/queue.sh"
   - "mise.toml"
   - "mise.lock"
   - "app/build.rs"
@@ -128,7 +118,6 @@ slskd-build:
 # it, the contract, and the hub code only the package runs.
 package: &package
   - ".github/**"
-  - "scripts/queue.sh"
   - "mise.toml"
   - "mise.lock"
   - "packaging/linux/**"
@@ -154,7 +143,6 @@ package-secrets-update: *package
 # The share Worker: tested whenever it or a file it serves changes.
 share:
   - ".github/**"
-  - "scripts/queue.sh"
   - "mise.toml"
   - "mise.lock"
   - "share/**"
@@ -168,7 +156,6 @@ share:
 # lull-bin, lull in the AUR: how its PKGBUILD is written.
 aur:
   - ".github/**"
-  - "scripts/queue.sh"
   - "mise.toml"
   - "mise.lock"
   - "packaging/aur/**"

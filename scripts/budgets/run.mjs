@@ -1,7 +1,7 @@
 // `mise run budgets [base]`: the shipped bytes of each route's start on this tree and on its merge-base, and whether the
 // growth is within the allowance (docs/context/quality.md, Budgets check).
 //
-// The base is the merge-base with origin/main (a pull request's merge commit and a queue branch both have one), or the
+// The base is the merge-base with origin/main (a pull request's branch has one), or the
 // revision given (mise hands it to its task as `usage_base`, in the environment, so cmd on Windows reads it too). This
 // tree is measured as it is on disk. Which side's files do what:
 //   - the merge-base's harness (list.mjs, measure.mjs, decide.mjs) lists and sizes both trees and judges, and its budgets

@@ -2,7 +2,7 @@ name: ui-browsers
 description: >-
   Playwright's browsers and the system packages they need (and any others asked for), from the Actions cache when it
   has them. A runner's Ubuntu mirror can be slow: on 2026-11-04 one fetched these 114 MB at 78 kB/s for 24 minutes, and
-  its gates job ran out of time before a test. Only main's runs save (the queue runs there); other refs read main's.
+  its gates job ran out of time before a test. Only main's runs save; other refs read main's.
 inputs:
   browsers:
     description: Playwright's browsers, e.g. "chromium webkit"

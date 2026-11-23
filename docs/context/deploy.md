@@ -30,7 +30,7 @@ They talk to the hub over `/var/lib/lull/admin.sock` (hub.md). A fresh hub's mus
 
 **Firewalls:** where firewalld or ufw is on (Fedora's firewalld is, by default), `lull setup` offers to open the hub's port 8484 and Soulseek's 50300, or prints the commands.
 
-**Proof:** the queue builds the x64 package when its parts change and installs it in a fresh Ubuntu 24.04, Debian 13 and Fedora 43 running systemd (`tests/hub-contract/in-systemd.sh`). The hub contract (`tests/hub-contract/run.mjs`) runs against the service there:
+**Proof:** `check.yml`'s `package` jobs build the x64 package when its parts change and installs it in a fresh Ubuntu 24.04, Debian 13 and Fedora 43 running systemd (`tests/hub-contract/in-systemd.sh`). The hub contract (`tests/hub-contract/run.mjs`) runs against the service there:
 - `/health` and every part;
 - the web UI;
 - the gate, pairing with `lull pair`, and every part's API;
@@ -93,9 +93,9 @@ Only lull and `init` start.
 
 ## Updating
 
-`IMAGE_TAG=latest`, the default, follows lull's releases (from 0.2.4; `release-image.yml` publishes it for every release tag), and `X.Y.Z` pins one; `main` follows every change lull's queue lands, and `sha-<commit>` pins one of those. The slskd and gluetun images are pinned in `compose.yaml` and move with lull's releases, because lull reads slskd's file layout (`crates/soulseek/src/layout.rs`).
+`IMAGE_TAG=latest`, the default, follows lull's releases (from 0.2.4; `release-image.yml` publishes it for every release tag), and `X.Y.Z` pins one; `main` follows every change merged into main, and `sha-<commit>` pins one of those. The slskd and gluetun images are pinned in `compose.yaml` and move with lull's releases, because lull reads slskd's file layout (`crates/soulseek/src/layout.rs`).
 
-Settings › App shows the server's version and whether a newer release is out. An image from `main` says what it holds, for example **lull 0.2.4 + 12 changes (abc1234)**, and that it follows the latest changes; the queue works this out from git when it builds the image (`build_version` in `scripts/queue.sh`, `lull_core::build`). Updating is `docker compose pull` and `docker compose up -d` where the server runs.
+Settings › App shows the server's version and whether a newer release is out. An image from `main` says what it holds, for example **lull 0.2.4 + 12 changes (abc1234)**, and that it follows the latest changes; `main.yml` works this out from git when it builds the image (`scripts/image-save.sh`, `lull_core::build`). Updating is `docker compose pull` and `docker compose up -d` where the server runs.
 
 **Updating from any paired device** (ADR-0090, behind the `hub-self-update` switch while it is finished):
 - **Update in Settings › App,** or `sudo lull update` on the server. The hub of the Linux package or the image downloads the newest release's hub kit for its machine, checks its signature and files, and copies its database. Then it restarts on the new version.

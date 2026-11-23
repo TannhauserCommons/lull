@@ -4,7 +4,7 @@
 # copy of its own.
 name: pages
 
-# The queue starts it when a landed change touches the site (ADR-0095); by hand too.
+# main.yml starts it when a merged change touches the site; by hand too.
 on:
   workflow_dispatch:
 

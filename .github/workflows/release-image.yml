@@ -3,7 +3,7 @@ name: release-image
 # the newest release. It runs on the tag itself, so every way of releasing publishes it: release.yml starts it (a tag
 # its job token pushes starts no workflow), and a tag a person pushes (`mise run release`) starts it here. 0.2.8 to
 # 0.2.10 were tagged that way while this lived in release.yml, and no image was published. A dispatch from main with
-# `tag` publishes a tag that has none. :main and :sha-<short> stay the queue's.
+# `tag` publishes a tag that has none. :main and :sha-<short> stay main.yml's.
 on:
   push:
     tags: ["v*"]

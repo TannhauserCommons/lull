@@ -48,7 +48,7 @@ Discord shows lull's own card for a link, a [component embed](https://docs.disco
 
 ## Run it
 
-- **Tests:** `npm ci` then `npm test` in `share/` (also runs `tests/web/open-page.test.mjs`, since the Worker serves that script). CI runs them on Linux (`share.yml`, and the queue whenever `share/`, `site/` or a file the Worker serves changes).
+- **Tests:** `npm ci` then `npm test` in `share/` (also runs `tests/web/open-page.test.mjs`, since the Worker serves that script). CI runs them on Linux (`check.yml`'s `share`, whenever `share/`, `site/` or a file the Worker serves changes).
 - **On Windows,** Miniflare's local rate limiter fails with "internal error" (Miniflare 5 beta, 2026-11): run the tests in Linux instead, from the repository root:
 
   ```bash

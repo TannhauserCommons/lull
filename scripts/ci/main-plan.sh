@@ -1,8 +1,7 @@
 #!/bin/sh
 # What a push to main brought, for main.yml's after-landing jobs: `sh scripts/ci/main-plan.sh` (`mise run main:plan`).
 # Reads BEFORE (main's tip before the push) and SHA (its tip now) and writes one `name=true|false` line each to
-# $GITHUB_OUTPUT, or to stdout when that isn't set. These are the rules the queue's `checks` used to apply to a
-# candidate's diff (scripts/queue.sh); they go with it when the queue does.
+# $GITHUB_OUTPUT, or to stdout when that isn't set.
 set -eu
 
 die() { echo "main-plan: $*" >&2; exit 1; }

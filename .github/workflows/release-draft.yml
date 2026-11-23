@@ -1,7 +1,7 @@
 name: release-draft
 # Keeps the GitHub draft release "Next release" current (ADR-0098): what landed since the last release, by area, which
-# areas' batches are complete, the proposed version and the 500-character notes (scripts/release-notes.mjs). The queue
-# starts it after landing a feat or fix; by hand too. A person's batch name and edited notes stay.
+# areas' batches are complete, the proposed version and the 500-character notes (scripts/release-notes.mjs). main.yml
+# starts it after a merge brings a feat or fix; by hand too. A person's batch name and edited notes stay.
 on:
   workflow_dispatch:
 
