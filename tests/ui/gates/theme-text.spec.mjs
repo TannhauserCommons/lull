@@ -68,6 +68,38 @@ test('a new theme in Theme Studio is signed by its maker, never by lull', async 
   expect(JSON.parse((await saved).postData()).author).toBe('Sam');
 });
 
+// The hub tells every page a theme's file changed as each file is written, so a page hears of its own new theme before its
+// save has finished. A Save asked for in that moment is the same theme's next save: kept and run once the first is done,
+// to the same theme, not a second theme under a name the first one just took. The hub's answer to the first save's CSS is
+// held here until the Save is asked again, which is the moment, not a guess at it.
+test('a Save asked while the first save is still running is kept, and saves the same theme once that is done', async ({ browser }) => {
+  const page = await appearance(browser);
+  await page.locator('[data-act="theme-studio"]').click();
+  const isJson = (r) => r.method() === 'PUT' && /\/api\/themes\/[^/]+\/theme\.json$/.test(r.url());
+  let release;
+  const held = new Promise((ok) => {
+    page.route('**/api/themes/*/theme.css', (route) => {
+      if (route.request().method() !== 'PUT' || release) return route.continue();
+      release = () => route.continue(); ok();
+    });
+  });
+  const puts = [];
+  page.on('request', (r) => { if (isJson(r)) puts.push(new URL(r.url()).pathname); });
+  const firstSave = page.waitForRequest(isJson);
+  await page.locator('[data-studio-act="save"]').click();
+  const id = new URL((await firstSave).url()).pathname.split('/')[3];   // the hub may hold a theme of this name already
+  await held;                                    // the first save's theme.json is written, its CSS is on the way
+  await page.waitForFunction((id) => !!App.designs[id], id);   // the page heard of the new theme from the hub's event
+  await page.locator('[data-studio="author"]').fill('Sam');
+  const second = page.waitForRequest((r) => isJson(r) && r.postData()?.includes('"Sam"'));
+  await page.locator('[data-studio-act="save"]').click();
+  release();
+  const body = JSON.parse((await second).postData());
+  expect(body.author).toBe('Sam');
+  await expect(page.locator('[data-studio-state]')).toHaveText('Saved on your hub');
+  expect(puts, 'every save of this theme goes to the one theme').toEqual([`/api/themes/${id}/theme.json`, `/api/themes/${id}/theme.json`]);
+});
+
 test('Theme Studio will not save or export a description past the hub\'s bound, and says which and by how much', async ({ browser }) => {
   const page = await appearance(browser);
   const limit = await page.evaluate(() => window.Designs.limits.description);

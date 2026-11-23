@@ -496,8 +496,16 @@
     if (d.window) m.window = d.window;
     return m;
   }
+  /* One save at a time. The hub tells this page of the theme's files as each is written, so the page hears of its own new
+     theme (and Designs.refresh lists it) before the save is done: a Save asked in that moment would name it again as
+     a new theme (my-lull-2). So a Save asked while one runs waits for it, then saves the draft as it is by then, to the same
+     theme. */
   function save() {
     if (!S) return Promise.resolve(null);
+    var studio = S, run = function () { return S === studio ? write() : null; };
+    return studio.saving = (studio.saving || Promise.resolve()).then(run, run);
+  }
+  function write() {
     var id = S.id || slug(S.draft.name), css = S.draft.css, problem = Designs.textProblem(Object.assign({}, S.draft, { name: S.draft.name.trim() || 'My theme' }));
     if (problem) {                                 // the hub would refuse it, and an export of it would fail every import
       state('Not saved');
@@ -506,19 +514,20 @@
       if (at) $('[data-studio="' + at + '"]', S.el).focus();
       return Promise.resolve(null);
     }
+    S.dirty = false;                               // what is written is what is in the draft now: an edit while it writes is unsaved
     state('Saving...');
     return M.api('/api/themes/' + id + '/theme.json', { method: 'PUT', body: JSON.stringify(manifest(id)) })
       .then(function () { return M.api('/api/themes/' + id + '/theme.css', { method: 'PUT', body: css }); })
       .then(function (saved) {
         App.themePictures(saved);                  // its card's picture, of what was just saved (ADR-0080)
         if (!S) return id;
-        S.id = id; S.dirty = false; state();
+        S.id = id; state();
         checkHooks();
         App.announce('Saved ' + S.draft.name);
         return Designs.refresh().then(function () { return id; });
       })
       .catch(function (err) {
-        if (S) state('Not saved');
+        if (S) { S.dirty = true; state('Not saved'); }
         App.toast('Couldn\'t save the theme: ' + err.message, { kind: 'error', sticky: true });
         return null;
       });
