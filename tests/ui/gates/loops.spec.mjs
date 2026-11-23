@@ -11,7 +11,9 @@
 import { expect, test } from '@playwright/test';
 import { designs, ids, loopRate, openScreen, themes } from './lib.mjs';
 
-// the parts that show something happening, whose loops keep going while the page holds still (components.css)
+// lull's own parts that show something happening, whose loops keep going while the page holds still (components.css:
+// they leave animation-play-state out). Any other loop shows progress when it says so, as lull reads it (app.js named()):
+// --loop-holds: no, which Petal's reels name while the player is finding, queued or buffering a song and not once it plays
 const PROGRESS = '.spin-ring, .btn-gloss__spin, .skel, .seek, .progress--xfer';
 
 // each loop on the page that never ends: its changes a second, whether it shows progress, and whether it is paused
@@ -25,7 +27,7 @@ const loops = (page) => page.evaluate(([src, progress]) => {
       return {
         name: (a.animationName || 'animation') + ' on ' + t.tagName.toLowerCase() + '.' + [...t.classList].slice(0, 2).join('.') + (a.effect.pseudoElement || ''),
         perSecond: rate(a),
-        progress: !!t.closest(progress),
+        progress: !!t.closest(progress) || getComputedStyle(t, a.effect.pseudoElement).getPropertyValue('--loop-holds').trim() === 'no',
         paused: a.playState === 'paused' || a.playbackRate === 0,   // held by its CSS, or (a theme's --loop-fps loop) by lull
       };
     });
@@ -37,7 +39,8 @@ for (const design of designs) {
     test(`${design} / ${theme}: every loop stepped from its first frame, held when asked`, async ({ page }) => {
       await openScreen(page, `/album/${ids.album}`, { design, theme });
       await page.evaluate(() => App.player.playList([...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id')), 0));
-      await page.waitForFunction(() => App.player.state.playing, null, { timeout: 10_000 }).catch(() => {});
+      // the song is playing, not still buffering: what is progress depends on it (the loops below are classified as they are drawn)
+      await page.waitForFunction(() => App.player.state.playing, null, { timeout: 10_000 });
       for (const route of ['/home', '/now']) {
         await page.evaluate((r) => { location.hash = r; }, route);
         await page.waitForTimeout(1200);
