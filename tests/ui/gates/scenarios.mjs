@@ -216,7 +216,9 @@ export async function resizePanel(browser, page, opts) {
 
 // Two seconds with a song playing, on `route`: the per-second cost of the clock, seek bars and designs' loops.
 export async function playing(browser, page, opts, route = '/home') {
-  await openScreen(page, `/album/${ids.album}`, opts);
+  // the real clock: the fixed one replaces requestAnimationFrame and the page's timers with Playwright's own (44-48 more
+  // timer tasks in 2 s), so the counts below would be the clock's as much as the page's
+  await openScreen(page, `/album/${ids.album}`, { ...opts, clock: false });
   await playShown(page);
   await page.waitForFunction(() => App.player.state.playing && App.player.state.pos > 0.5);
   await page.evaluate((r) => App.go(r), route);
@@ -226,6 +228,7 @@ export async function playing(browser, page, opts, route = '/home') {
   const s = await traced(browser, page, () => page.waitForTimeout(2000));
   s.perSecondMs = s.busyMs / 2;
   s.framesPerSecond = s.frames / 2;
+  s.perSecond = { frames: s.frames / 2, timers: s.timers / 2, scriptCalls: s.scriptCalls / 2, styleRecalcs: s.styleRecalcs / 2 };
   s.loops = await loops(page);
   return s;
 }
