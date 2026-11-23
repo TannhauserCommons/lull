@@ -1,8 +1,8 @@
 name: main-full
 # Every check on main's newest commit (ADR-0095). The queue runs only the checks a change needs, so this runs the rest
 # too, every three hours while main has a commit no full run has checked. Its verdict is the commit's `full` status; a
-# release is cut only from a commit the queue landed and a full run passed (scripts/release.sh). A red one files an
-# issue for the integrator.
+# release is cut only from a commit the queue landed and a full run passed (scripts/release.sh). A red check has one open
+# issue for the integrator, `main-full: <check> fails`: a repeat comments on it, a green run comments and closes it.
 on:
   schedule:
     - cron: "41 */3 * * *"
@@ -156,14 +156,38 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
         run: |
           failed=$(printf '%s' "$RESULTS" | jq -r 'to_entries[] | select(.key != "plan" and .value.result != "success") | .key' | tr '\n' ' ')
+          checks=$(printf '%s' "$RESULTS" | jq -r 'keys[] | select(. != "plan")')
           url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          short=$(echo "$SHA" | cut -c1-7)
+          # One open issue per failing check, found by its title: a repeat comments, a green run comments and closes.
+          if open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --search '"main-full:" in:title' --json number,title)
+          then
+            for check in $checks; do
+              title="main-full: $check fails"
+              number=$(printf '%s' "$open" | jq -r --arg title "$title" '[.[] | select(.title == $title)][0].number // ""')
+              case " $failed " in
+                *" $check "*)
+                  if [ -n "$number" ]; then
+                    gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "Still failing at $SHA ($short): $url" >/dev/null || true
+                  else
+                    gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" \
+                      --body "$check failed on main's $SHA, a check the queue didn't need for that change: $url. Later full runs comment here while it fails, and the first green one closes this." >/dev/null || true
+                  fi ;;
+                *)
+                  if [ -n "$number" ]; then
+                    gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "Green at $SHA ($short): $url" >/dev/null &&
+                      gh issue close "$number" --repo "$GITHUB_REPOSITORY" >/dev/null || true
+                  fi ;;
+              esac
+            done
+          else
+            echo "::warning::couldn't list main-full's open issues"
+          fi
           if [ -z "$failed" ]; then
             gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=success -f context=full -f description="every check passed" -f target_url="$url" >/dev/null
             echo "every check passed on $SHA"
           else
             gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=failure -f context=full -f description="failed: $failed" -f target_url="$url" >/dev/null
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "main fails a full run at $(echo "$SHA" | cut -c1-7)" \
-              --body "A check the queue didn't need for this change failed on main's $SHA: $failed. $url" >/dev/null || true
             echo "::error::failed on main: $failed"
             exit 1
           fi
