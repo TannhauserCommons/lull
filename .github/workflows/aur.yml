@@ -62,10 +62,26 @@ jobs:
               | node -e "let s=''; process.stdin.on('data', d => s += d).on('end', () => console.log(JSON.parse(s).tag_name.replace(/^v/, '')))")
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      # The release's files, kept by its tag between runs: the newest release is still looked up each run (it is what
+      # this tests), but a tag already seen is not downloaded again. Only main saves.
+      - id: bundles
+        uses: actions/cache/restore@v4
+        with:
+          path: bundles
+          key: aur-bundles-${{ steps.release.outputs.version }}
+      - name: Its files
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
           mkdir -p bundles
           for f in "lull_${VERSION}_amd64.deb" "lull_${VERSION}_amd64.deb.sig" "lull_${VERSION}_arm64.deb" "lull_${VERSION}_arm64.deb.sig"; do
-            curl -fsSL -o "bundles/$f" "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/$f"
+            [ -f "bundles/$f" ] || curl -fsSL -o "bundles/$f" "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/$f"
           done
+      - if: steps.bundles.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: bundles
+          key: ${{ steps.bundles.outputs.cache-primary-key }}
       - run: sh scripts/aur-pkgbuild.sh "${{ steps.release.outputs.version }}" bundles aur
       # makepkg won't run as root, and its user can't install what the package needs: root does, from .SRCINFO.
       - name: makepkg

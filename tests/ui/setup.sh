@@ -22,4 +22,4 @@ else
   npx playwright install "$@" >/dev/null
 fi
 # shellcheck disable=SC2086
-if [ -n "${PACKAGES:-}" ]; then sudo apt-get install -y $PACKAGES; fi
+if [ -n "${PACKAGES:-}" ]; then sudo apt-get update && sudo apt-get install -y $PACKAGES; fi

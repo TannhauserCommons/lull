@@ -33,12 +33,24 @@ const versions = { 'yt-dlp': constant('YTDLP_VERSION'), deno: constant('DENO_VER
 const tools = pinned(blocks('Tool'), 'yt-dlp or Deno');
 await mkdir(dir, { recursive: true });
 
+// CI keeps $DOWNLOADS_CACHE between runs, the files by hash: a kept file is used when it hashes to the pin, and a
+// download is kept once it does, so a warm run downloads nothing.
+const kept = process.env.DOWNLOADS_CACHE;
+const hashOf = (bytes) => createHash('sha256').update(bytes).digest('hex');
 async function fetchChecked(url, sha256) {
+  if (kept) {
+    const bytes = await readFile(join(kept, sha256)).catch(() => null);
+    if (bytes && hashOf(bytes) === sha256) return bytes;
+  }
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   const bytes = Buffer.from(await res.arrayBuffer());
-  const got = createHash('sha256').update(bytes).digest('hex');
+  const got = hashOf(bytes);
   if (got !== sha256) throw new Error(`${url} has sha256 ${got}, not the pinned ${sha256}`);
+  if (kept) {
+    await mkdir(kept, { recursive: true });
+    await writeFile(join(kept, sha256), bytes);
+  }
   return bytes;
 }
 async function unzip(bytes, entry, to) {

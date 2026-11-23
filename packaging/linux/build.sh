@@ -6,7 +6,8 @@
 # SHA-256s, lull-hub-<version>-linux-<arch>.json, which a release signs.
 #
 #   sh packaging/linux/build.sh <lull binary> <version> <out>
-# Needs node, unzip and curl; fetches the nfpm it builds the .deb and .rpm with, pinned below.
+# Needs node, unzip and curl; fetches the nfpm it builds the .deb and .rpm with, pinned below. With $DOWNLOADS_CACHE
+# set (CI keeps that folder between runs) what it fetches is kept there by hash, and a warm run downloads nothing.
 set -eu
 lull=$1 version=$2 out=$3
 here=$(cd "$(dirname "$0")" && pwd)
@@ -26,7 +27,7 @@ case "$(uname -m)" in
 esac
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
-curl -fsSL -o "$stage/nfpm.tar.gz" "https://github.com/goreleaser/nfpm/releases/download/v$nfpm_version/$nfpm_asset"
+sh "$root/scripts/ci/pinned-download.sh" "https://github.com/goreleaser/nfpm/releases/download/v$nfpm_version/$nfpm_asset" sha256 "$nfpm_sha256" "$stage/nfpm.tar.gz"
 echo "$nfpm_sha256  $stage/nfpm.tar.gz" | sha256sum -c --quiet
 tar -C "$stage" -xzf "$stage/nfpm.tar.gz" nfpm
 nfpm=$stage/nfpm

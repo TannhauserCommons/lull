@@ -207,6 +207,10 @@ description = "The share Worker's tests, in Cloudflare's local runtime"
 dir = "share"
 run = ["npm ci --no-audit --no-fund", "npm test"]
 
+[tasks."aur:release"]
+description = "The newest release's version, looked up (curl; GITHUB_OUTPUT gets version=): the key its files are kept under"
+run = "sh scripts/ci/aur-release.sh"
+
 [tasks."aur:package"]
 description = "lull-bin's PKGBUILD built, installed and started on Arch (CI, as root in an Arch container; network; nothing pushed)"
 run = "sh scripts/ci/aur.sh"

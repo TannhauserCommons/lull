@@ -451,7 +451,7 @@ async function dockerSlskd() {
 }
 
 /**
- * The binary app/build.rs pins for this machine, downloaded and checked by its sha256 like build.rs does, and run
+ * The binary app/build.rs pins for this machine, downloaded (once: it is kept) and checked by its sha256 like build.rs does, and run
  * the way the desktop app runs it (crates/server/src/managed/slskd.rs): its folders on the command line, headless.
  */
 async function nativeSlskd() {
@@ -462,7 +462,8 @@ async function nativeSlskd() {
   if (!pin) throw new Error(`app/build.rs pins no slskd for ${target}`);
   const [, , url, sha256] = pin;
 
-  const dir = join(tmpdir(), 'lull-slskd-contract', sha256);
+  // CI keeps this folder between runs (DOWNLOADS_CACHE): a warm run finds the unpacked binary and downloads nothing.
+  const dir = join(process.env.DOWNLOADS_CACHE || tmpdir(), 'lull-slskd-contract', sha256);
   const exe = join(dir, 'slskd.exe');
   if (!(await access(exe).then(() => true, () => false))) {
     console.log(`downloading ${url}`);
