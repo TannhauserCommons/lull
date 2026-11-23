@@ -325,15 +325,18 @@
   /* ---------- the start-up sound: once per app start, never on a reload, never late ---------- */
   var started = start0.started, bootAt = start0.at;
   function begin() {
-    var bootWanted = !started && settings.on && !!context(true);
+    var bootWanted = S.bootWanted(started, settings.on) && !!context(true);
     if (bootWanted) {
       // the eggs first, so one can take the start-up sound's place
       Promise.all([load(), settings.surprises ? App.needEggs().then(null, function () {}) : null]).then(function () {
-        if (now() - bootAt > S.BOOT_WITHIN_MS) return;
+        var after = now() - bootAt, onTime = S.bootOnTime(after);
+        App.emit('boot-sound', { decision: onTime ? 'play' : 'late', after: after });   // the page's own say, which a gate reads
+        if (!onTime) return;
         armed = true;
         if (ctx.state === 'running') cue('boot');
       });
     } else {
+      App.emit('boot-sound', { decision: 'skip', after: now() - bootAt });
       // the rest wait until the first screen has settled and the browser is idle
       setTimeout(function () {
         var go = function () { load(); if (settings.surprises) App.needEggs().then(null, function () {}); };
