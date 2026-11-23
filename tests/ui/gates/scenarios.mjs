@@ -269,22 +269,66 @@ function whatRan(events, thread) {
     if (e.name === 'FunctionCall') return `${d.functionName || 'function'} (${(d.url || '').split('/').pop()}:${d.lineNumber ?? '?'})`;
     return null;
   });
+  // what a restyle began with: the element a script changed and where that script was (a restyle of every <a> reads
+  // "Invalidation set matched tagName", which says what was restyled, not who asked); a change Chromium made itself
+  // (an animation's tick, a hover) has no script
+  const changed = tally(events.filter((e) => String(e.pid) === pid && /^Style.*InvalidationTracking$/.test(e.name) && e.args?.data?.stackTrace?.length), (e) => {
+    const d = e.args.data, f = d.stackTrace[0];
+    return `${d.nodeName || '?'} by ${f.functionName || 'function'} (${(f.url || '').split('/').pop()}:${f.lineNumber})`;
+  });
   const elsewhere = events.filter((e) => e.name === 'Commit' && e.ph === 'X' && !on(e)).length;
   const parts = [];
   if (Object.keys(began).length) parts.push('animations begun: ' + top(began, 6).join(', '));
   if (ended) parts.push(ended + ' ended');
   const off = offTheCompositor(events.filter((e) => String(e.pid) === pid));
   if (off.length) parts.push('off the compositor: ' + off.join(', '));
+  if (Object.keys(changed).length) parts.push('changed by script: ' + top(changed, 6).join(', '));
   if (Object.keys(invalid).length) parts.push('invalidated: ' + top(invalid, 6).join(', '));
   if (Object.keys(script).length) parts.push('ran: ' + top(script, 5).join(', '));
   if (elsewhere) parts.push(elsewhere + ' frames committed by another renderer');
   return parts.join('; ') || 'no animation, invalidation or script in the trace';
 }
 
+/* For the page, from its start: every change script makes to a loop's timing or play state (lull's align() moves the
+   delay of a loop that is already running, App.still holds and lets go), and every resize of this window. A change to a
+   running loop makes Chromium decide again whether the compositor can run it; one it can't then runs on the main thread,
+   a frame at each of its steps, until something changes it again. Times on the document timeline, which Playwright's
+   clock leaves alone */
+function changesToLoops() {
+  const log = (window.__loopChanges = []), resizes = (window.__resizes = []);
+  const now = () => document.timeline.currentTime;
+  const name = (a) => {
+    const t = a.effect?.target;
+    return `${a.animationName || a.transitionProperty || 'animation'} on ${t ? t.tagName.toLowerCase() + '.' + [...t.classList].slice(0, 2).join('.') : '?'}`;
+  };
+  const note = (a, what) => { if (a.effect?.getTiming().iterations === Infinity) log.push({ t: now(), what: `${name(a)} ${what}${a.playState === 'running' ? ' while running' : ''}` }); };
+  const owner = (x) => (x instanceof Animation ? x : x.target?.getAnimations?.().find((a) => a.effect === x));
+  const wrap = (proto, key, what) => {
+    const fn = proto[key];
+    proto[key] = function (...args) { const a = owner(this); if (a) note(a, what(args)); return fn.apply(this, args); };
+  };
+  wrap(AnimationEffect.prototype, 'updateTiming', ([t]) => 'timing ' + JSON.stringify(t));
+  wrap(Animation.prototype, 'pause', () => 'paused');
+  wrap(Animation.prototype, 'play', () => 'played');
+  const rate = Object.getOwnPropertyDescriptor(Animation.prototype, 'playbackRate');
+  Object.defineProperty(Animation.prototype, 'playbackRate', { ...rate, set(v) { note(this, 'rate ' + v); rate.set.call(this, v); } });
+  addEventListener('resize', () => resizes.push({ t: now(), size: `${innerWidth}x${innerHeight}` }));
+}
+// what changesToLoops saw, for a failure's message: changes inside the window measured (from `from`), and the last few
+// before it, with their time to the window's start
+function changedLoops(from) {
+  const at = (e) => `${e.what} (${Math.round(e.t - from)} ms)`;
+  const inside = window.__loopChanges.filter((e) => e.t >= from), before = window.__loopChanges.filter((e) => e.t < from);
+  const resized = window.__resizes.filter((e) => e.t >= from);
+  return `loop timing changed in the window: ${inside.map(at).join(', ') || 'never'}; last before it: ${before.slice(-4).map(at).join(', ') || 'never'}`
+    + `; this window resized in it: ${resized.map((e) => e.size).join(', ') || 'never'}`;
+}
+
 export async function idle(browser, page, opts, route = '/home') {
   // as a listener leaves it: the desktop app's bridge in (its windows are fed while they're open), a song loaded and
   // paused, the pointer off the page
   await page.addInitScript({ path: fileURLToPath(new URL('./desktop-bridge.js', import.meta.url)) });
+  await page.addInitScript(changesToLoops);
   /* from the start, the animations Chromium couldn't hand to the compositor and why (blink.animations: an animation
      says so as it starts, before the measured window): a loop that runs on the main thread draws main-thread frames at
      rest, and this names it when they show up */
@@ -319,8 +363,9 @@ export async function idle(browser, page, opts, route = '/home') {
   }, null, { polling: 100, timeout: 5000 }).catch(() => {});
   const offCompositor = offTheCompositor(JSON.parse((await browser.stopTracing()).toString()).traceEvents || []);
   await throttle(page, opts.rate);
+  const from = await page.evaluate(() => document.timeline.currentTime);
   const s = await traced(browser, page, () => page.waitForTimeout(2000), { drawn: true, why: true });
-  s.why = whatRan(s.events, s.thread);
+  s.why = whatRan(s.events, s.thread) + '; ' + await page.evaluate(changedLoops, from);
   delete s.events;
   s.perSecondMs = s.busyMs / 2;
   s.offCompositor = offCompositor;
@@ -349,16 +394,20 @@ export async function whoDraws(browser, page) {
     return `${a.animationName || a.transitionProperty || 'animation'} on ${t ? t.tagName.toLowerCase() + '.' + [...t.classList].slice(0, 2).join('.') : '?'}${a.effect?.pseudoElement || ''}`;
   }));
   const hold = (which, on) => page.evaluate(([which, on]) => window.__gateRunning.forEach((a, i) => { if (which < 0 || i === which) on ? a.pause() : a.play(); }), [which, on]);
-  await hold(-1, true);
-  const all = await count();
-  await hold(-1, false);
+  // untouched first, then each alone, while the state that drew is still there: holding any loop makes Chromium decide
+  // afresh for it, so the first hold that stops the frames names the loop the main thread ran (holding all at once
+  // first, as before, cleared the state on every red and named none)
+  const untouched = await count();
   const each = [];
   for (let i = 0; i < names.length; i++) {
     await hold(i, true);
     each.push(`${names[i]} ${await count()}`);
     await hold(i, false);
   }
-  return `frames in 1 s with every running animation held: ${all}; with each held alone: ${each.join(', ') || 'none running'}; all let go again: ${await count()}`;
+  await hold(-1, true);
+  const all = await count();
+  await hold(-1, false);
+  return `frames in 1 s untouched: ${untouched}; with each held alone, in turn: ${each.join(', ') || 'none running'}; with every one held: ${all}; all let go again: ${await count()}`;
 }
 
 // The loops on screen that draw more than they need to (docs/themes.md, Drawing cheaply): each one that never ends must
