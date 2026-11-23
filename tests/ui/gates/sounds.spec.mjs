@@ -1,5 +1,5 @@
 // lull's UI sounds on the real page (ADR-0081, web/sounds.js): a browser tab nobody has tapped fetches none of them,
-// the start-up sound plays once per app start and never on a reload, nothing but play and pause sounds while music plays, the buffering loop is gone the moment the song sounds,
+// the start-up sound plays once per app start (or is dropped as late, as the page says) and never on a reload, nothing but play and pause sounds while music plays, the buffering loop is gone the moment the song sounds,
 // and nothing sounds while the page is hidden. Every sound the page starts is read from Web Audio itself (each buffer
 // source started or stopped), named by the page's `sound` event.
 import { expect, test as base } from '@playwright/test';
@@ -30,6 +30,8 @@ async function listen(page, { standalone = false } = {}) {
       window.__named = [];
       App.on('sound', (n) => window.__named.push(n));
       App.on('heard', (v) => window.__heard.push({ v, at: performance.now() }));
+      window.__boots = [];
+      App.on('boot-sound', (d) => window.__boots.push(d));   // the page's own decision on the start-up sound (sounds.js)
     });
   }, standalone);
 }
@@ -52,13 +54,29 @@ test('a browser tab nobody has tapped fetches none of the sounds, and its first 
   expect(asked.some((p) => p.endsWith('/sounds.js')), 'the sounds came with the tap').toBe(true);
 });
 
+// Read from the page's own decision (`boot-sound`, sounds.js, by sound-rules.js' rules; the 4 s window itself is pinned in
+// tests/web/sound-rules.test.mjs), not from how soon a runner got the sound out: a start that took over 4 s is dropped by
+// design, and this gate then checks that the page said so truthfully.
+const decisions = (page) => page.evaluate(() => window.__boots.slice());
+const decided = (page) => page.waitForFunction(() => window.__boots.length > 0);
+
 test('the start-up sound plays once per app start, and a reload makes no sound', async ({ page }) => {
   await listen(page, { standalone: true });
   await openScreen(page, '/home', { clock: false });
-  await page.waitForFunction(() => window.__named.includes('boot'), null, { timeout: 8000 });
+  await decided(page);
+  const [start] = await decisions(page);
+  if (start.decision === 'play') {
+    await page.waitForFunction(() => window.__named.includes('boot'));
+  } else {
+    expect(start.decision, 'the start-up sound is played or dropped as late').toBe('late');
+    expect(start.after, 'dropped only when the start took longer than its window (ms)').toBeGreaterThan(4000);
+  }
+  expect(await decisions(page), 'one decision per app start').toHaveLength(1);
+  expect((await named(page)).filter((n) => n === 'boot').length, 'start-up sounds this start').toBe(start.decision === 'play' ? 1 : 0);
+
   await page.reload();
-  await page.waitForFunction(() => window.App && App.server && App.server.checked);
-  await page.waitForTimeout(4000);              // longer than a start-up sound may wait (sound-rules.js BOOT_WITHIN_MS)
+  await decided(page);
+  expect(await decisions(page), 'what the page decided after a reload').toEqual([expect.objectContaining({ decision: 'skip' })]);
   expect(await named(page), 'sounds after a reload').toEqual([]);
   expect(await page.evaluate(() => window.__sounds.length), 'audio started after a reload').toBe(0);
 });

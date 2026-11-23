@@ -43,6 +43,11 @@
     return out;
   };
 
+  /* the start-up sound (`boot`): wanted at a first start only, with sounds on; and ready on time if the start's own
+     clock (from app.js's first run) hasn't passed BOOT_WITHIN_MS when the pack is loaded. Late is dropped, never played late. */
+  S.bootWanted = function (alreadyStarted, soundsOn) { return !alreadyStarted && !!soundsOn; };
+  S.bootOnTime = function (sinceStartMs) { return sinceStartMs <= S.BOOT_WITHIN_MS; };
+
   /* is this sound switched on? (a sound the vocabulary lists as off by default needs the listener's yes) */
   S.enabled = function (event, settings, vocab) {
     var v = settings.sounds[event];

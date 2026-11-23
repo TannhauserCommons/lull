@@ -40,7 +40,10 @@ sound-rules.js  window.LullSoundRules: the UI sounds' rules (ADR-0081: what may 
 sounds.js    App.sounds: the UI sounds, loaded with sound-rules.js after the first tap or key, once the page is idle (at the start in the app, for the
              start-up sound: App.needSounds in app.js). Their own Web Audio context (sleeping when idle), the packs
              that are on (web/packs/ and GET /api/packs), the moments that sound (presses, player states, saves, errors),
-             the buffering loop only in silence; App.player.heard() and the `heard` event are what it keeps quiet for
+             the buffering loop only in silence; App.player.heard() and the `heard` event are what it keeps quiet for.
+             The start-up sound is decided by sound-rules.js (`bootWanted`, `bootOnTime`: dropped when the start took
+             over `BOOT_WITHIN_MS`, never played late) and the page says what it decided in the `boot-sound` event
+             (`play`, `late` or `skip`), which gates/sounds.spec.mjs reads instead of timing the sound
 egg-rules.js, eggs.js  window.LullEggRules (pure, tests/web/egg-rules.test.mjs) and App.eggs: the easter eggs the packs
              declare, loaded once the page is idle (App.needEggs); the hidden #/credits page
 screens/sounds-settings.js  Settings > Sounds, loaded as it opens: the switches, each sound, the packs, the surprises

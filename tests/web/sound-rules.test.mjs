@@ -109,3 +109,15 @@ test('levelling: loud sounds come down to the same peak and loudness, quiet ones
   assert.equal(S.levelGain(quiet, rate), 1);
   assert.equal(S.levelGain(new Float32Array(100), rate), 0);
 });
+
+test('the start-up sound plays at a first start only, and only if the pack is ready within 4 s of it; later is dropped, never played late', () => {
+  assert.equal(S.BOOT_WITHIN_MS, 4000);
+  assert.equal(S.bootWanted(false, true), true, 'a first start');
+  assert.equal(S.bootWanted(true, true), false, 'a reload of a started app');
+  assert.equal(S.bootWanted(false, false), false, 'sounds switched off');
+  assert.equal(S.bootOnTime(0), true);
+  assert.equal(S.bootOnTime(3999), true);
+  assert.equal(S.bootOnTime(4000), true, 'exactly the window is still in it');
+  assert.equal(S.bootOnTime(4001), false);
+  assert.equal(S.bootOnTime(60000), false);
+});
