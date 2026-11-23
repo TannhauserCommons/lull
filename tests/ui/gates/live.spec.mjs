@@ -68,9 +68,14 @@ test('the hub lists the clock values the theme names', async ({ browser }) => {
 
 test('a theme that names the clock shows it, and it turns at the minute\'s edge', async ({ browser }) => {
   const ctx = await context(browser), page = await ctx.newPage();
-  await page.clock.install({ time: new Date('2026-11-08T21:59:58Z') });
+  // The clock runs in real time from install, and opening the page takes as long as the machine takes: installed at
+  // 21:59:58 a slow open passed the minute's edge before the first check. So it is installed an hour away, and put at
+  // the edge (and stopped there) once the page is open: it crosses 22:00 when this test says, not when the runner does.
+  await page.clock.install({ time: new Date('2026-11-08T21:00:00Z') });
   await openScreen(page, '/home', { design: 'clocked', clock: false });
+  await page.clock.pauseAt(new Date('2026-11-08T21:59:58Z'));
   await expect(page.locator('.ck b').first()).toHaveText('21');
+  await expect(page.locator('.ck b').nth(1)).toHaveText('59');
   expect(await shown(page)).toEqual({ hour: '21', minute: '59', time: '21:59', hand: '59', daypart: 'evening' });
   // lull's own hosts carry it too: every region, drawn before the theme's script had loaded
   expect(await page.evaluate(() => [...document.querySelectorAll('[data-region="header"], [data-region="playerbar"]')]
