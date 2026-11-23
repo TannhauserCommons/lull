@@ -23,7 +23,7 @@ const walk = (suite, path) => {
         title: [...path, spec.title].filter(Boolean).join(' › '),
         project: test.projectName,
         where: `${spec.file}:${spec.line}`,
-        failure: failure.replace(/\u001b\[[0-9;]*m/g, '').split('\n').slice(0, 6).join('\n'),
+        failure: failure.replace(/\u001b\[[0-9;]*m/g, ''),
       });
     }
   }
@@ -35,6 +35,17 @@ if (!flaky.length) {
   console.log('no flaky tests');
   process.exit(0);
 }
+
+// GitHub refuses a comment over 65536 characters. The whole error is the evidence (what failed, in what list), so it is
+// cut only past the room left, and then in the middle: the start says what was asserted, the end what was found.
+const COMMENT_LIMIT = 65536;
+const fit = (text, room) => {
+  if (text.length <= room) return text;
+  const marker = (cut) => `\n[... ${cut} characters cut from the middle: the error was longer than GitHub's comment limit ...]\n`;
+  const keep = room - marker(text.length).length;
+  const head = Math.ceil(keep / 2);
+  return text.slice(0, head) + marker(text.length - keep) + text.slice(text.length - (keep - head));
+};
 
 const run = process.env.GITHUB_SERVER_URL
   ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
@@ -49,9 +60,11 @@ for (const t of flaky) {
   const name = `${t.title} [${t.project}]`;
   console.log(`::warning file=tests/ui/${t.where.split(':')[0]},title=Flaky test::${name} failed, then passed on its retry`);
   summary.push(`- \`${name}\` (${t.where}): failed, then passed on its retry`);
-  const body = `${name}, at \`${t.where}\`, failed and then passed on its retry in ${job}: ${run}\n\n` +
+  const head = `${name}, at \`${t.where}\`, failed and then passed on its retry in ${job}: ${run}\n\n` +
     `It didn't hold the landing (ADR-0095). Fix the cause where it starts (docs/context/quality.md#flaky-checks), ` +
-    `then close this.\n\n\`\`\`\n${t.failure}\n\`\`\``;
+    `then close this.\n\n\`\`\`\n`;
+  const tail = '\n```';
+  const body = head + fit(t.failure, COMMENT_LIMIT - 1000 - head.length - tail.length) + tail;
   const title = `Flaky test: ${name}`;
   try {
     const open = gh('issue', 'list', '--repo', repo, '--label', 'flaky', '--state', 'open',

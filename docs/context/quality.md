@@ -24,9 +24,9 @@ Main moves only through the queue (ADR-0095). `mise run ship <topic>` pushes `HE
 
 ## Flaky checks
 
-A check that fails without a change to blame is a bug with an owner: whoever owns its area (the table in workspace.md, or the integrator), named that day. It gets a fix at its cause, the same day. The fix's commit says what made it flaky and how the fix was proven (the same check green on runs that used to fail).
+A check that fails without a change to blame is a bug with an owner: whoever owns its area (the table in workspace.md, or the integrator), named that day. It gets a fix at its cause, the same day. The fix's commit says what made it flaky and how the fix was proven (the same check green on runs that used to fail), and ends with `Fixes #<n>` for the flaky issue it fixes. GitHub may not close an issue from a push made with the workflow token, which is what lands the queue; so whoever ships the fix checks that the issue closed once it landed, and if not, closes it with the landed commit as proof.
 
-In CI, a UI test that fails runs once more on the same code (`retries` in both Playwright configs; the owner's call, 2026-11-06, so one flaky test no longer holds every landing). One that fails twice fails. One that fails and then passes is flaky: it doesn't hold the landing, and `scripts/flaky.mjs` puts a warning on the run, a line in its summary, and an open issue labelled `flaky` per test (a comment each time again) for its area's owner, who fixes the cause and closes it. Nothing else is retried, no budget is loosened, and no sleep stands in for a fix.
+In CI, a UI test that fails runs once more on the same code (`retries` in both Playwright configs; the owner's call, 2026-11-06, so one flaky test no longer holds every landing). One that fails twice fails. One that fails and then passes is flaky: it doesn't hold the landing, and `scripts/flaky.mjs` puts a warning on the run, a line in its summary, and an open issue labelled `flaky` per test (a comment each time again) for its area's owner, who fixes the cause and closes it. The issue carries the test's whole error message; only one past GitHub's comment limit is cut, in the middle, with a marker saying so. Nothing else is retried, no budget is loosened, and no sleep stands in for a fix.
 
 ## Production web assets
 
