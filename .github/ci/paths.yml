@@ -1,5 +1,5 @@
 # The path map: one key per path-gated job id in check.yml. A job whose key is
-# absent here always runs. PRs and queue branches run a gated job only when its
+# absent here always runs. PRs run a gated job only when its
 # paths changed; a call with `all: true` runs them all.
 #
 # Each key is the queue's rule for that check (scripts/queue.sh, `checks`), as globs, plus what the queue also treats

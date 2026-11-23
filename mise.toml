@@ -1,6 +1,6 @@
 # One entry point for humans, agents and CI. `mise run setup` once per clone.
 # Tools are pinned exactly and hash-checked in mise.lock; Rust is pinned by rust-toolchain.toml.
-# The shared ci:* tasks come from .github/ci/tasks.toml (docs/context/quality.md, Check in shadow).
+# The shared ci:* tasks come from .github/ci/tasks.toml (docs/context/quality.md, The check).
 [tools]
 node = "24.11.1"
 python = "3.14.10"
@@ -20,7 +20,7 @@ run = [{ task = "toolchain" }, "sh scripts/vendor-web.sh"]
 # The new workflows are the only ones written to the skeleton's rules (SHA pins, a timeout on every job, one
 # `mise run` per step); the older ones don't meet them, so `ci:lint` (every workflow) is not run here.
 [tasks.check]
-description = "Exactly what the `check` workflow runs: fmt, clippy, tests, the release scopes, the lint of check.yml"
+description = "Exactly what the `check` workflow runs: fmt, clippy, tests, the release scopes, the lint of check.yml, main.yml and after.yml"
 run = [
   "cargo fmt --all --check",
   "cargo clippy --workspace --all-targets --locked -- -D warnings",
@@ -32,8 +32,8 @@ run = [
   # here and not on main after landing. The draft it prints is not needed (no `> /dev/null`: cmd on Windows has none).
   "node scripts/release-notes.mjs draft",
   "cargo update --manifest-path app/Cargo.toml --workspace --locked",
-  "actionlint .github/workflows/check.yml",
-  "python .github/ci/lint.py .github/workflows/check.yml",
+  "actionlint .github/workflows/check.yml .github/workflows/main.yml .github/workflows/after.yml",
+  "python .github/ci/lint.py .github/workflows/check.yml .github/workflows/main.yml .github/workflows/after.yml",
 ]
 
 [tasks.privacy]
@@ -81,7 +81,7 @@ run = "sh tests/ui/gates/approve.sh"
 description = "Recapture the visual goldens on CI's image and download them into tests/ui/goldens"
 run = "sh tests/ui/update-goldens.sh"
 
-# The web UI checks the `check` workflow runs (docs/context/quality.md, Check in shadow). Each is a script a person can
+# The web UI checks the `check` workflow runs (docs/context/quality.md, The check). Each is a script a person can
 # run too; the image and the hub need Linux and Docker. `check:ui` above takes GATES=perf|fit|rest and SHARD=2/3.
 [tasks."image:save"]
 description = "Build the hub image as CI does (main's layer cache read, never written) and save it as a tar: image:save [tar]"
@@ -108,6 +108,10 @@ run = "sh tests/ui/hub.sh contract"
 description = "Fail when that hub called a slskd route the stub doesn't answer"
 run = "sh tests/ui/hub.sh stub"
 
+[tasks."ui:lighthouse"]
+description = "Lighthouse's budgets on that hub: LH_SHARD=1/2 measures half the routes (main.yml; the queue's ui.yml still runs them too)"
+run = "sh tests/ui/hub.sh lighthouse"
+
 [tasks."ui:logs"]
 description = "That hub's log and the stub slskd's, for after a failure"
 run = "sh tests/ui/hub.sh logs"
@@ -115,6 +119,19 @@ run = "sh tests/ui/hub.sh logs"
 [tasks."flakes:ui"]
 description = "Write flakes/ from the UI tests' Playwright reports: the tests that failed, then passed on their retry"
 run = "node scripts/playwright-flakes.mjs tests/ui/report/results.json tests/ui/report/gates/results.json"
+
+# What main.yml does after a push to main lands (docs/context/quality.md, The check). Each is a script a person can read.
+[tasks."main:plan"]
+description = "What a push to main brought (BEFORE and SHA in the environment): pages, share, youtube_contract, warm, notes as true or false"
+run = "sh scripts/ci/main-plan.sh"
+
+[tasks."image:publish"]
+description = "Push the image main's check built and tested as :sha-<short> and :main (the `image` artifact is in RUNNER_TEMP)"
+run = "sh scripts/ci/image-publish.sh"
+
+[tasks."main:dispatch"]
+description = "Start a workflow on main, as the queue did after a landing: main:dispatch pages.yml"
+run = "sh scripts/ci/main-dispatch.sh {{arg(i=0)}}"
 
 [tasks.icons]
 description = "Render every packaged app icon (desktop, web, store, Android) from the masters in design/assets"
@@ -142,7 +159,7 @@ run = "node scripts/ci/version.mjs"
 description = "Write X.Y.Z into every file that holds the version, no cargo: bump X.Y.Z"
 run = "node scripts/ci/version.mjs bump {{arg(i=0)}}"
 
-# The app and contract checks of .github/workflows/check.yml (docs/context/quality.md, Check in shadow). Each calls a
+# The app and contract checks of .github/workflows/check.yml (docs/context/quality.md, The check). Each calls a
 # POSIX sh script in scripts/ci/ (Git's sh on Windows), so CI and an agent run the same thing.
 [tasks."app:check"]
 description = "The app's syntax check, fmt, clippy -D warnings and tests (Linux installs Tauri's system packages first)"
