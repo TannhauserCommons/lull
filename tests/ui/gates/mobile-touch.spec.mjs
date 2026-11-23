@@ -26,8 +26,18 @@ const tooSmall = (sels) => {
     if (r.width < 1 || cs.visibility === 'hidden' || el.closest('[hidden]')) continue;
     const x = r.left + r.width / 2, y = r.top + r.height / 2, R = 21;
     const probes = [...(r.width < 43.5 ? [[x - R, y], [x + R, y]] : []), ...(r.height < 43.5 ? [[x, y - R], [x, y + R]] : [])];
-    const missed = probes.filter(([px, py]) => { const hit = document.elementFromPoint(px, py); return !hit || !(hit === el || el.contains(hit)); });
-    if (missed.length) out.push(`${named(el)} ${Math.round(r.width)}x${Math.round(r.height)}, a tap ${missed.map(([px, py]) => `${Math.round(px - x)},${Math.round(py - y)}`).join(' / ')} px from its centre misses it`);
+    // each probe with what it landed on, so a miss names the thing in the way
+    const hits = probes.map(([px, py]) => { const hit = document.elementFromPoint(px, py); return { px, py, hit, ok: !!hit && (hit === el || el.contains(hit)) }; });
+    const missed = hits.filter((h) => !h.ok);
+    if (!missed.length) continue;
+    let moving = 0; for (let e = el; e; e = e.parentElement) moving += e.getAnimations().length;   // a transition still running on it or above it
+    out.push(`${named(el)} ${r.width.toFixed(1)}x${r.height.toFixed(1)} at ${r.left.toFixed(1)},${r.top.toFixed(1)}, ${moving} animations running on it or above it; a tap `
+      + `${hits.map((h) => `${Math.round(h.px - x)},${Math.round(h.py - y)} ${h.ok ? 'reaches it' : 'misses it, hitting ' + (h.hit ? named(h.hit) : 'nothing')}`).join(' / ')}`);
+  }
+  if (out.length) {   // the page those controls were measured on: a page drawn zoomed out or wider than the phone shrinks them and moves every probe
+    const v = window.visualViewport, d = document.documentElement;
+    out.push(`page: visualViewport scale ${v.scale} (${v.width.toFixed(1)}x${v.height.toFixed(1)}), innerWidth ${innerWidth}, `
+      + `documentElement.scrollWidth ${d.scrollWidth} / clientWidth ${d.clientWidth}, body.scrollWidth ${document.body.scrollWidth}, devicePixelRatio ${devicePixelRatio}`);
   }
   return [...new Set(out)];
 };
