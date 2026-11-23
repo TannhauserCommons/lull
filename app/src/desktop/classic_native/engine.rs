@@ -2460,10 +2460,18 @@ mod tests {
             Some(&json!({ "peer": "better", "path": "rips/s.flac" }))
         );
         let before = engine.snapshot().position;
-        listen(&output, 2.0);
-        let after = engine.snapshot();
+        // The notice comes with the mixer's Switched, after a later tick hands the switch to the mixer and its fade
+        // ends: wait for it in the song's own time, as the loop above waits for the POST, not a fixed stretch.
+        let mut after = engine.snapshot();
+        for _ in 0..40 {
+            listen(&output, 0.5);
+            after = engine.snapshot();
+            if after.notice.is_some() {
+                break;
+            }
+        }
         assert!(after.position > before, "the song carried on in its own time");
-        assert_eq!(after.notice.as_deref(), Some("Switched to a better copy"));
+        assert_eq!(after.notice.as_deref(), Some("Switched to a better copy"), "{after:?}");
         Ok(())
     }
 
