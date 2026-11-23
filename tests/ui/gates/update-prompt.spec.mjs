@@ -21,11 +21,16 @@ async function hubIs(page, v) {
 }
 const note = (page) => page.locator('#toasts .toast', { hasText: 'New version' });
 const running = (page) => page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => (r.active ? new URL(r.active.scriptURL).searchParams.get('v') : null)));
+// The page is up and settled: its health answer has been read (which is when it decides whether to offer an update), and
+// its worker is the one for the version it runs, with no hand-over left (a page on a newer hub than its worker is still
+// being taken over until the controller changes; a reload then would meet the worker stopping).
 async function started(page) {
   await page.waitForFunction(() => window.App && App.server && App.server.checked && App.server.version);
   await page.evaluate(() => navigator.serviceWorker.ready);
-  await page.waitForFunction(() => navigator.serviceWorker.controller);
-  await page.waitForTimeout(1200);
+  await page.waitForFunction(() => {
+    const c = navigator.serviceWorker.controller;
+    return c && new URL(c.scriptURL).searchParams.get('v') === App.server.version && !App.handingOver;
+  });
 }
 async function opened(page, v) {
   await page.addInitScript(() => localStorage.setItem('lull:installOffered', 'true'));
