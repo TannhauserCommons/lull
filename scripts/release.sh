@@ -4,8 +4,8 @@
 # app, which embeds the hub, ADR-0006; Android's versionCode; what's new) and tags it v0.2.0. Nothing
 # leaves this clone: pushing the tag publishes, because .github/workflows/app.yml then builds the
 # installers, the signed updater files, latest.json and the Android APK, and attaches them to the tag's
-# GitHub Release. F-Droid and IzzyOnDroid pick the tag up from there (packaging/fdroid/). Pushing the
-# commit to the queue lands the version on main.
+# GitHub Release. F-Droid and IzzyOnDroid pick the tag up from there (packaging/fdroid/). The version commit
+# reaches main through a pull request from the branch release-X.Y.Z, merged like any other change.
 set -eu
 
 die() { echo "release: $*" >&2; exit 1; }
@@ -23,11 +23,15 @@ git fetch -q --tags origin main
 ! git rev-parse -q --verify "refs/tags/v$version" >/dev/null || die "v$version exists already"
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 
-# The newest green commit: the queue landed it and a full run passed it (main-full.yml; the queue runs only what a
-# change needs), or before the queue, every check run passed.
+# The newest green commit: main.yml passed every check on it after it merged (docs/context/quality.md, The check).
+# Older commits came through the queue, whose `queue` and `full` statuses say the same (ADR-0095), or before it,
+# through check runs that all passed.
 green() {
   for sha in $(git rev-list --first-parent -n 200 origin/main); do
-    # Only GitHub Actions can set them: main's ruleset requires the queue's from there (ADR-0095).
+    main=$(gh api "repos/$repo/actions/workflows/main.yml/runs?head_sha=$sha&event=push&status=completed" \
+      --jq '[.workflow_runs[].conclusion] | if any(. == "success") then "green" else "" end' 2>/dev/null || true)
+    [ "$main" = green ] && { echo "$sha"; return; }
+    # Only GitHub Actions can set them: main's ruleset required the queue's from there (ADR-0095).
     states=$(gh api "repos/$repo/commits/$sha/statuses" \
       --jq '[.[] | select(.creator.login == "github-actions[bot]")] as $s | [($s | map(select(.context == "queue")) | .[0].state // ""), ($s | map(select(.context == "full")) | .[0].state // "")] | join(" ")')
     queue=${states%% *} full=${states#* }
@@ -92,5 +96,6 @@ git worktree add -q --detach "$work" "$base"
   git tag -a "v$version" -m "lull $version"
 )
 [ -z "$draft" ] || rm "$draft"
-echo "Tagged v$version on $(git rev-parse --short "v$version^{commit}") (Android versionCode $code). Publish the release and land the version on main with:"
-echo "  git push origin v$version v$version^{commit}:refs/heads/queue/release-$version"
+echo "Tagged v$version on $(git rev-parse --short "v$version^{commit}") (Android versionCode $code). Publish the release, and put the version up for main, with:"
+echo "  git push origin v$version v$version^{commit}:refs/heads/release-$version"
+echo "  gh pr create --repo $repo --base main --head release-$version --fill    # with the App's token, so check runs on it"

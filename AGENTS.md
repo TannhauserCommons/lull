@@ -24,7 +24,7 @@ A music app for one listener who hosts it themselves (PROJECT.md). It streams fr
 | After changing `web/` (CI runs it too) | `mise run check:ui`: performance budgets, key screens, accessibility ([quality.md](docs/context/quality.md#ui-gates)) |
 | Run locally (settings in `.env`, see `deploy/.env.example`) | `mise run dev` |
 | Container image | `mise run image` |
-| Land your commits on main | `mise run ship <topic>` |
+| Put your commits up for main | `mise run ship <topic>`, then `mise run merge <pr>` where merge-policy allows |
 | Cut a release (on the owner's word only) | `gh workflow run release.yml -f version=X.Y.Z` (quality.md) |
 
 **On this Windows workstation:** set `CARGO_TARGET_DIR` to a folder outside `Desktop` (e.g. `%LOCALAPPDATA%\cargo-target\<your-worktree>`). C dependencies (bundled SQLite, TLS) fail to compile under `Desktop` with `D8050`. Use one target dir per worktree so parallel builds don't block each other; they still share compiled dependencies through the workstation's sccache (`~/.cargo/config.toml` `rustc-wrapper`), so only your own crates compile.
@@ -48,7 +48,7 @@ A music app for one listener who hosts it themselves (PROJECT.md). It streams fr
 ## Changes
 
 - **Git history is the changelog.** Commit as `type(scope): summary`, where scope is the crate or area (`soulseek`, `web`, `app`, `deploy`, `docs`). The body says why and how it was verified. No change logs, session notes or handoff files.
-- **Small commits, landed by the queue.** `mise run ship <topic>` pushes to `queue/<topic>`, which tests it on top of main and lands it only if green ([quality.md](docs/context/quality.md#the-queue-main-is-always-green)). Never push to `main`; it refuses. Red: fix it on your branch and ship again.
+- **Small commits, each change a pull request.** `mise run ship <topic>` pushes to the branch `<topic>`, opens its pull request with the App's token and waits for `check / gate`; `mise run merge <pr>` merges it green, pinned to the head that was checked ([quality.md](docs/context/quality.md#landing-a-change)). Never push to `main`; it refuses. Red: fix it on your branch and ship again.
 - **Name what it holds.** Topics and branches say what they hold (`loops-in-css`), never the worktree's generated name: the repository is public. A branch's checks run by hand (docs/context/quality.md).
 - **Big work lands switched off** (`lull_core::flags`, ADR-0096; workspace.md), so a release never waits for it. Finishing it removes the switch.
 - **A flaky check is a bug:** its area's owner fixes the cause that day. CI gives a failing UI test one retry, and one that passes on it gets a `flaky` issue instead of holding the landing; nothing else is retried, and no budget is loosened (quality.md, Flaky checks).

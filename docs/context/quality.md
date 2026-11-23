@@ -236,3 +236,15 @@ A new hook is added to section 11 in the same commit: as stable when a theme may
 ## What lull holds fixed
 
 `tests/web/important.test.mjs` (part of `mise run check`) keeps docs/themes.md section 3's list of lull's own `!important` rules true (ADR-0101, section 4): each must hold something whatever a design draws, with its reason. It reads every important declaration in `web/*.css`, `web/screens/*.css`, `web/desktop/*.css` and the `<style>` blocks of the pages beside them (comments and strings left out; never `web/designs/` or `web/packs/`), and fails one the list doesn't name and a listed one that is gone.
+
+## Landing a change
+
+Every change reaches main as a pull request, and main's ruleset requires `check / gate` on it.
+
+1. `mise run ship <topic>` pushes HEAD to the branch `<topic>`, opens its pull request (or updates the open one) and waits for `check / gate` on that commit. The topic says what the change holds; the repository is public.
+2. It opens pull requests only with the App's token (`GH_TOKEN`): a person's account stamps its time zone on the test-merge commit GitHub makes for an open pull request. It refuses any other token.
+3. Green: `mise run merge <pr>` merges it, where `home/merge-policy.toml` lets it go without the owner's yes; otherwise the owner approves it first. The merge rebases, so each commit keeps its subject for the release notes, and it names the checked head, so a push after the check makes it refuse.
+4. Red: fix it on the branch and ship the same topic again.
+5. After the merge, `main.yml` runs every check on main, publishes the image and the post-merge jobs; `after.yml` keeps one `main is red` issue for a red there (The check: one gate, above).
+
+A release's version commit lands the same way: the release puts it on the branch `release-X.Y.Z`, and the session that ran the release opens its pull request with the App's token, since a pull request opened by a workflow's own token starts no check.

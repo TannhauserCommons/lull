@@ -52,7 +52,7 @@ Each area has one owner at a time. Edit only what your brief says you own.
 
 ## Working in parallel
 
-1. **Work in your own worktree.** Commit small, then `git fetch && git rebase origin/main`, `mise run check`, and `mise run ship <topic>`: the queue lands it on main once its checks pass (quality.md). No long-lived branches, and nobody waits for anyone's merge.
+1. **Work in your own worktree.** Commit small, then `git fetch && git rebase origin/main`, `mise run check`, and `mise run ship <topic>`: it opens the pull request and waits for its check, and `mise run merge <pr>` lands it once green (quality.md, Landing a change). No long-lived branches, and nobody waits for anyone's merge.
 2. **Cargo.lock conflicts** are expected and trivial: take upstream's (`git checkout --theirs Cargo.lock` during the rebase), run `cargo check` to put your dependencies back, `git add`, continue.
 3. **Changes to `crates/core` are additive only.** That means new items, new optional fields with defaults, and new config keys with defaults. Never rename or remove; ask the integrator instead. Push them in their own commit straight away so others pick them up on their next rebase.
 4. **Dependencies.** Shared versions live in the root `[workspace.dependencies]` (integrator). A dependency only your crate uses goes in your crate's `Cargo.toml` with an exact version and a one-line reason.
@@ -74,7 +74,7 @@ Each area has one owner at a time. Edit only what your brief says you own.
    | 0095-0099 | quality |
 
 7. **Big work lands switched off** (ADR-0096). Add a `Flag` to `lull_core::flags` in the work's first commit, with the release area it belongs to (`scripts/release-areas.tsv`): while it is there, that area's batch is waiting (ADR-0098); the hub asks `ctx.config.flags.on(&X)`, the web UI `App.flag('x')`. With it off, lull must be exactly what it was: no new request, element, setting or cost, so the goldens and budgets don't move. You try it with `LULL_FLAGS=x` (the hub's environment, or `PATCH /api/config`; the fixture hub reads the same variable). Finishing the work removes the flag and the code paths for off; `grep -rn "flags.on(\|App.flag(" crates web` lists what is still dark.
-8. **Main can't go red;** the queue tests every change before it lands. If yours comes back red, fix it on your branch. If a check fails for no change of yours, it's flaky: tell its area's owner (quality.md, Flaky checks).
+8. **Main stays green;** `check / gate` passes on every pull request before it merges, and main runs every check again after. If yours comes back red, fix it on your branch. If a check fails for no change of yours, it's flaky: tell its area's owner (quality.md, Flaky checks).
 8. **Something you need is in another owner's area?** Use what exists (the seams, events, api.md). If it truly needs changing, stop and ask; don't edit it.
 9. **A change to the UI is looked at in every theme before it ships,** the listeners' too: `mise run themes:check -- <route> [<route>...]` (a key screen, `home` `search` `playlist` `album` `now` `settings`, or a path) draws each route with a song playing, on desktop and phone, day and night, in the five designs and every theme package in the folder `LULL_THEMES_DIR` names. It runs the fit checks on each and writes one contact sheet, `tests/ui/themes-check/index.html`, in under a minute for two routes. Point `LULL_THEMES_DIR` at the themes you have; its path never goes in the repo.
 

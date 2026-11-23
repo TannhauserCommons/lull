@@ -121,8 +121,12 @@ description = "Render every packaged app icon (desktop, web, store, Android) fro
 run = "sh scripts/icons/build.sh"
 
 [tasks.ship]
-description = "Land HEAD on main through the queue and wait for its verdict: ship <topic>"
+description = "Open a pull request for HEAD as the App and wait for check / gate on it: ship <topic>"
 run = "sh scripts/ship.sh {{arg(i=0)}}"
+
+[tasks.merge]
+description = "Merge a green pull request onto main, pinned to the head its check passed: merge <pr>"
+run = "sh scripts/merge.sh {{arg(i=0)}}"
 
 [tasks."queue:first"]
 description = "Test a waiting queue topic alone, ahead of older ones, for a fix every batch needs: queue:first <topic>"
