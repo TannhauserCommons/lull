@@ -32,6 +32,14 @@ apt_install() {
     echo "ci: install first:  sudo apt-get install -y$missing" >&2
     return 1
   fi
+  # APT_KEEP names a folder the job's Actions cache keeps: apt downloads into it and uses what is already there, so a
+  # slow mirror costs only the index update (check.yml's package-jellyfin).
+  if [ -n "${APT_KEEP:-}" ]; then
+    mkdir -p "$APT_KEEP/partial"
+    $sudo chown _apt "$APT_KEEP/partial"
+    printf 'Dir::Cache::Archives "%s";\nAPT::Keep-Downloaded-Packages "true";\n' "$APT_KEEP" \
+      | $sudo tee /etc/apt/apt.conf.d/99-apt-keep >/dev/null
+  fi
   # shellcheck disable=SC2086 # one word per package, on purpose
   $sudo apt-get update -qq && $sudo apt-get install -y -qq $missing
 }
