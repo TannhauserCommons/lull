@@ -21,6 +21,9 @@ async function listen(page, { standalone = false } = {}) {
       window.__stops.push({ loop: this.loop, at: performance.now(), within: (a[0] || 0) - this.context.currentTime });
       return stop.apply(this, a);
     };
+    // the page's audio context, for a failure's message (a start-up sound is cued only if it is running when the pack is loaded)
+    const AC = window.AudioContext;
+    window.AudioContext = class extends AC { constructor(...a) { super(...a); window.__ctx = this; } };
     // an installed app starts audio by itself (sounds.js: the start-up sound plays only there)
     if (standalone) {
       const mm = window.matchMedia.bind(window);
@@ -59,6 +62,15 @@ test('a browser tab nobody has tapped fetches none of the sounds, and its first 
 // design, and this gate then checks that the page said so truthfully.
 const decisions = (page) => page.evaluate(() => window.__boots.slice());
 const decided = (page) => page.waitForFunction(() => window.__boots.length > 0);
+// A start that decided to play but whose sound never came (the one red so far, run 45312501574, waited out the whole
+// test timeout with nothing to read): what the page's rules for a sound look at, when it gives up
+const bootSounded = (page) => page.waitForFunction(() => window.__named.includes('boot'), null, { timeout: 15000 }).catch(async (err) => {
+  const seen = await page.evaluate(() => ({
+    decision: window.__boots[0], context: window.__ctx?.state ?? 'none', started: window.__sounds.length, named: window.__named,
+    visible: document.visibilityState, focused: document.hasFocus(), packLoaded: !!window.App.sounds?.vocab(),
+  }));
+  throw new Error(`the start-up sound was decided but never sounded: ${JSON.stringify(seen)}`, { cause: err });
+});
 
 test('the start-up sound plays once per app start, and a reload makes no sound', async ({ page }) => {
   await listen(page, { standalone: true });
@@ -66,7 +78,7 @@ test('the start-up sound plays once per app start, and a reload makes no sound',
   await decided(page);
   const [start] = await decisions(page);
   if (start.decision === 'play') {
-    await page.waitForFunction(() => window.__named.includes('boot'));
+    await bootSounded(page);
   } else {
     expect(start.decision, 'the start-up sound is played or dropped as late').toBe('late');
     expect(start.after, 'dropped only when the start took longer than its window (ms)').toBeGreaterThan(4000);
