@@ -63,6 +63,7 @@ fn score(fit: Fit, popularity: f64) -> Score {
         filler: false,
         popularity,
         lean: 0.0,
+        own_first: false,
     }
 }
 

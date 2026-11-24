@@ -4,11 +4,11 @@ use std::fmt;
 
 use super::listening::{Listening, WantedArtist, WantedSong};
 use super::queries::Target;
-use crate::search::merge::{self, Merged, Score};
+use crate::search::merge::{Merged, Score};
 use crate::search::personal::snapshot::Snapshot;
 use crate::search::query::Query;
 use crate::search::query_set::top_line;
-use crate::search::{Ranked, Top, song_scores};
+use crate::search::{Ranked, Top, sections};
 
 /// How far down a section the reciprocal rank looks.
 pub const DEPTH: usize = 10;
@@ -21,6 +21,8 @@ pub enum Cause {
     VersionRule,
     /// Both fit alike and the leader is the better known.
     Popularity,
+    /// Another of the listener's own led it, by the short-search rule (`merge::own_leads`).
+    OwnFirst,
     /// The listener keeps the wanted one, and the leader they don't: only popularity put it first.
     OwnIgnored,
     /// No source's answer holds it.
@@ -29,10 +31,11 @@ pub enum Cause {
 }
 
 impl Cause {
-    pub const ALL: [Cause; 6] = [
+    pub const ALL: [Cause; 7] = [
         Cause::WrongFit,
         Cause::VersionRule,
         Cause::Popularity,
+        Cause::OwnFirst,
         Cause::OwnIgnored,
         Cause::Missing,
         Cause::Other,
@@ -45,6 +48,7 @@ impl fmt::Display for Cause {
             Cause::WrongFit => "wrong fit",
             Cause::VersionRule => "version rule",
             Cause::Popularity => "popularity",
+            Cause::OwnFirst => "another of the listener's own led",
             Cause::OwnIgnored => "the listener's own ignored",
             Cause::Missing => "missing from the answers",
             Cause::Other => "other",
@@ -91,14 +95,14 @@ pub fn judge(
     r: &Ranked,
     personal: Option<&Snapshot>,
 ) -> Outcome {
-    let (artists, songs) = (artist_scores(q, m, personal), song_scores(q, m, personal));
+    let scores = sections(q, m, personal);
     let rows = Rows {
         listening,
         m,
         r,
-        artists: &artists,
-        songs: &songs,
-        q,
+        artists: &scores.artists.lifted,
+        albums: &scores.albums.lifted,
+        songs: &scores.songs.lifted,
         personal,
     };
     match target {
@@ -113,8 +117,8 @@ struct Rows<'a> {
     m: &'a Merged,
     r: &'a Ranked,
     artists: &'a [Score],
+    albums: &'a [Score],
     songs: &'a [Score],
-    q: &'a Query,
     personal: Option<&'a Snapshot>,
 }
 
@@ -199,10 +203,8 @@ impl Rows<'_> {
                 score: self.artists[i],
                 kept: l.keeps_artist(&self.m.artists[i].name),
             }),
-            "album" => self.m.albums.iter().find(|a| a.id().0 == top.id).map(|a| Row {
-                score: self.personal.map_or(Score::album(self.q, a), |p| {
-                    Score::album(self.q, a).with_affinity(p.album(a))
-                }),
+            "album" => self.m.albums.iter().position(|a| a.id().0 == top.id).map(|i| Row {
+                score: self.albums[i],
                 kept: false,
             }),
             _ => None,
@@ -210,19 +212,8 @@ impl Rows<'_> {
     }
 }
 
-/// The artists' scores as `rank_rows` (or, with a snapshot, `rank_personal`) ranks them.
-fn artist_scores(q: &Query, m: &Merged, personal: Option<&Snapshot>) -> Vec<Score> {
-    let mut scores: Vec<Score> = m.artists.iter().map(|a| Score::artist(q, a)).collect();
-    merge::overshadow(&m.artists, &mut scores);
-    if let Some(p) = personal {
-        for (score, a) in scores.iter_mut().zip(&m.artists) {
-            *score = score.with_affinity(p.artist(a));
-        }
-    }
-    scores
-}
-
-/// Why `lead` is before `wanted`, by the order `merge::rank` sorts in: fit, the song itself before
+/// Why `lead` is before `wanted`, by the order `merge::rank` sorts in: the short-search rule's
+/// mark (`merge::own_leads`), fit, the song itself before
 /// its other versions, then popularity in tenths (where the listener's own breaks ties). With
 /// `blended` (`merge::rank_blended`) popularity already holds the listener's affinity and decides
 /// alone: the leader leads by it, and the listener's own were outweighed when `wanted` is kept
@@ -230,7 +221,9 @@ fn artist_scores(q: &Query, m: &Merged, personal: Option<&Snapshot>) -> Vec<Scor
 fn why(lead: Row, wanted: Row, blended: bool) -> Cause {
     let tenths = |r: Row| (r.score.popularity * 10.0).floor() as i64;
     let own_outweighed = wanted.kept && !lead.kept && (blended || tenths(lead) >= tenths(wanted));
-    if lead.score.fit > wanted.score.fit {
+    if lead.score.own_first && !wanted.score.own_first {
+        Cause::OwnFirst
+    } else if lead.score.fit > wanted.score.fit {
         Cause::WrongFit
     } else if lead.score.fit < wanted.score.fit {
         // The top result went to another kind of row (an album's lean toward the top).

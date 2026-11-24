@@ -191,15 +191,16 @@ fn hello_leads_with_lionel_richies_for_his_listener() {
 }
 
 #[test]
-fn one_stray_play_does_not_lift_a_song_over_a_far_better_known_match() {
-    let answers = query_set_answers("hello");
-    let (m, r) = lead("hello", &answers, "stray-play");
-    let (m_empty, r_empty) = lead("hello", &answers, "empty");
-    assert_eq!(
-        first_songs(&m, &r, 1),
-        first_songs(&m_empty, &r_empty, 1),
-        "KES's Hello, played once, is still not first"
-    );
+fn one_stray_play_leads_a_short_search_but_not_a_longer_one_over_a_far_better_known_match() {
+    // "hello" is one word: the listener's KES Hello, played once, is theirs and leads (the
+    // short-search rule). "stairway to" is two: Mastodon's, played once, is as good a match as Led
+    // Zeppelin's, and far less known, so it stays behind (`AFFINITY_WEIGHT`'s high end).
+    let (m, r) = lead("hello", &query_set_answers("hello"), "stray-play");
+    assert_eq!(first_songs(&m, &r, 1), ["KES - Hello"]);
+    let answers = query_set_answers("stairway to");
+    let (m, r) = lead("stairway to", &answers, "stray-play");
+    let (m_empty, r_empty) = lead("stairway to", &answers, "empty");
+    assert_eq!(first_songs(&m, &r, 1), first_songs(&m_empty, &r_empty, 1));
 }
 
 #[test]
@@ -238,31 +239,43 @@ fn radiohead_1997_finds_the_listeners_saved_ok_computer_songs_below_the_name_mat
 }
 
 #[test]
-fn the_listeners_radiohead_leads_the_songs_that_only_start_with_ra() {
+fn the_listeners_radiohead_leads_every_other_song_for_ra_even_one_named_ra() {
     let f = fixture();
     let (m, r) = lead("ra", &f.answers["ra"], "radiohead-fan");
-    // Rows with the word "ra" in them (a song named Ra, "Au/Ra") are the better match; the rest
-    // only have a word that starts with it ("Radiohead", "Rager"): that is where the listener's
-    // music leads.
-    let named_ra = |i: usize| {
-        let s = &m.songs[i];
-        lull_core::ids::normalize(&format!("{} {} {}", s.artist, s.title, s.album))
-            .split(' ')
-            .any(|w| w == "ra")
-    };
+    // A short search: rows that are "ra" itself (a song named Ra, "Au/Ra") fit better, but the
+    // listener's songs that "ra" starts ("Radiohead") lead them, and the top result is theirs (a
+    // song or an album of the band: the albums lean toward the top).
     let theirs = |i: usize| m.songs[i].artist == "Radiohead";
     let lines: Vec<String> = r.songs.iter().map(|&i| song_line(&m, i)).collect();
-    let after_named: Vec<usize> = (0..r.songs.len()).filter(|&n| !named_ra(r.songs[n])).collect();
-    let first_other = after_named.iter().copied().find(|&n| !theirs(r.songs[n]));
     let last_theirs = (0..r.songs.len()).rev().find(|&n| theirs(r.songs[n]));
+    let first_other = (0..r.songs.len()).find(|&n| !theirs(r.songs[n]));
     assert!(last_theirs.is_some(), "their songs are found from \"ra\": {lines:?}");
     assert!(
         last_theirs < first_other,
-        "all eight of their Radiohead songs come before the songs that merely start with ra: {lines:?}"
+        "all eight of their Radiohead songs come before every other song: {lines:?}"
     );
+    assert_eq!(r.songs.iter().filter(|&&i| theirs(i)).count(), 8, "{lines:?}");
+    let top = r.top.as_ref().is_some_and(|t| {
+        m.songs.iter().any(|s| s.id().0 == t.id && s.artist == "Radiohead")
+            || m.albums.iter().any(|a| a.id().0 == t.id && a.artist == "Radiohead")
+    });
+    assert!(top, "the top result is theirs, a song or an album: {:?}", r.top);
+}
+
+#[test]
+fn a_well_known_artist_named_exactly_leads_a_short_search_over_a_song_of_theirs_it_merely_starts() {
+    // "muse" names the band for anyone; a listener's "Musetta's Waltz" starts it, and stays a song.
+    let answers = query_set_answers("muse");
+    let (m, r) = lead("muse", &answers, "museum-visitor");
+    let (m_empty, r_empty) = lead("muse", &answers, "empty");
+    assert_eq!(
+        r.top, r_empty.top,
+        "the same top result as for a listener with none of it"
+    );
+    assert_eq!(first_songs(&m, &r, 1), first_songs(&m_empty, &r_empty, 1));
     assert!(
-        (0..r.songs.len()).filter(|&n| theirs(r.songs[n])).count() == 8,
-        "{lines:?}"
+        r.songs.iter().any(|&i| m.songs[i].title.starts_with("Musetta")),
+        "their song is still found"
     );
 }
 

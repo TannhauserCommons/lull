@@ -576,6 +576,9 @@ pub struct Score {
     pub popularity: f64,
     /// How far the top result leans toward it over the other kinds (`top`).
     pub lean: f64,
+    /// The listener's own, led by the short-search rule (`own_leads`): it goes before every row
+    /// that isn't, whatever their fit.
+    pub own_first: bool,
 }
 
 impl Score {
@@ -586,6 +589,7 @@ impl Score {
             filler: false,
             popularity: s.popularity,
             lean: 0.0,
+            own_first: false,
         }
     }
 
@@ -600,6 +604,7 @@ impl Score {
             filler: false,
             popularity: a.popularity,
             lean: if full_length { LEAN_FULL_LENGTH } else { LEAN_RELEASE },
+            own_first: false,
         }
     }
 
@@ -610,12 +615,14 @@ impl Score {
             filler: false,
             popularity: a.popularity,
             lean: LEAN_ARTIST,
+            own_first: false,
         }
     }
 }
 
 /// How far the listener's own music lifts a row's popularity (`Score::with_affinity`), per unit of
-/// affinity (0 to 1). Chosen by the personal case set and the query set (docs/context/discovery.md).
+/// affinity (0 to 1). Bounded from above by the personal case set and the query set; from below, for
+/// searches longer than one word, by nothing yet (docs/context/discovery.md).
 pub const AFFINITY_WEIGHT: f64 = 0.5;
 
 impl Score {
@@ -632,14 +639,52 @@ impl Score {
     }
 }
 
+/// The one rule of short searches: the listener's own songs, albums and artists that the typed
+/// letters start (a word of the row begins with them: `Fit::Words` or better) lead strangers' rows
+/// that fit exactly. A looser fit never jumps. Whether the search is one this applies to is
+/// `Query::is_short` and no artist being clearly named (`names_artist`); a row's `own_first` is
+/// this, asked once per row (`Score::leading`) and read by the order and by the top result.
+pub fn own_leads(fit: Fit, a: Affinity) -> bool {
+    fit >= Fit::Words && a.theirs()
+}
+
+/// The catalogs clearly name an artist: `leader`, the best artist row by their scores alone, fits
+/// exactly and is the top result (`top`), and no other artist the letters start (`Fit::Words` or
+/// better) has a bigger audience, so the letters could not be the start of someone better known.
+/// "radiohead" names the band, "muse" the band; "ra" names no one, though an artist is called Ra:
+/// a bigger one starts with it. Only the catalogs' own signals decide it (fit, popularity, the lean
+/// toward artists, `overshadow`, audience).
+pub fn names_artist(artists: &[ArtistHit], scores: &[Score], leader: Option<usize>, top: Option<Kind>) -> bool {
+    let Some(named) = leader else { return false };
+    top == Some(Kind::Artist)
+        && scores[named].fit == Fit::Exact
+        && !artists
+            .iter()
+            .zip(scores)
+            .enumerate()
+            .any(|(i, (other, score))| i != named && score.fit >= Fit::Words && smaller_than(&artists[named], other, 1))
+}
+
+impl Score {
+    /// This row as the short-search rule leads it (`own_leads`), when the rule `applies` to the
+    /// search.
+    pub fn leading(self, a: Affinity, applies: bool) -> Score {
+        Score {
+            own_first: applies && own_leads(self.fit, a),
+            ..self
+        }
+    }
+}
+
 /// Positions of `rows` best first when their popularity already holds the listener's affinity
 /// (`Score::with_affinity`): fit, then the song before its other versions, then the catalog's
-/// rows before a gap-filler's, then that one blended value. With no affinity anywhere this is
-/// `rank`'s order, as popularity in tenths then exact popularity is popularity.
+/// rows before a gap-filler's, then that one blended value; the rows the short-search rule leads
+/// (`own_leads`) before all of them. With no affinity anywhere this is `rank`'s order, as
+/// popularity in tenths then exact popularity is popularity.
 pub fn rank_blended(rows: &[Score]) -> Vec<usize> {
     let mut order: Vec<usize> = (0..rows.len()).collect();
     order.sort_by(|&a, &b| {
-        let key = |i: usize| (rows[i].fit, !rows[i].version, !rows[i].filler);
+        let key = |i: usize| (rows[i].own_first, rows[i].fit, !rows[i].version, !rows[i].filler);
         key(b).cmp(&key(a)).then_with(|| {
             rows[b]
                 .popularity
@@ -779,11 +824,12 @@ pub enum Kind {
     Track,
 }
 
-/// The one top result among the best artist, album and track: the best fit, then the song
-/// itself (or its release) before another version of it, then the most popular, leaning toward artists and albums
-/// (full-length ones more than EPs and singles).
+/// The one top result among the best artist, album and track: the one the short-search rule
+/// leads (`own_leads`), then the best fit, then the song itself (or its release) before another
+/// version of it, then the most popular, leaning toward artists and albums (full-length ones more
+/// than EPs and singles).
 pub fn top(artist: Option<Score>, album: Option<Score>, track: Option<Score>) -> Option<Kind> {
-    type Candidate = (Kind, (Fit, bool), f64);
+    type Candidate = (Kind, (bool, Fit, bool), f64);
     let better = |a: &Candidate, b: &Candidate| {
         a.1.cmp(&b.1)
             .then_with(|| a.2.partial_cmp(&b.2).unwrap_or(Ordering::Equal))
@@ -791,7 +837,7 @@ pub fn top(artist: Option<Score>, album: Option<Score>, track: Option<Score>) ->
     };
     [(Kind::Artist, artist), (Kind::Album, album), (Kind::Track, track)]
         .into_iter()
-        .filter_map(|(kind, row)| row.map(|r| (kind, (r.fit, !r.version), r.popularity + r.lean)))
+        .filter_map(|(kind, row)| row.map(|r| (kind, (r.own_first, r.fit, !r.version), r.popularity + r.lean)))
         .fold(None, |best, c| match best {
             Some(b) if !better(&c, &b) => Some(b),
             _ => Some(c),

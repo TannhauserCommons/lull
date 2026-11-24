@@ -48,6 +48,8 @@ Behind the `personal-search` switch (ADR-0036), search lifts the listener's own 
 | Artist | `w / (w + 4)` for taste's artist weight `w` (a follow alone is 0.5), reached **only through ids**: a search row's catalog artist id (Apple's, Deezer's, MusicBrainz's) equal to an id `discovery_artist_ids` holds for a listener's artist. Only ids the listener's own evidence or an exact link gave count (a song of theirs, the library's MBID, a MusicBrainz link, an ISRC); an id a search row or a recommender seeded does not, as a namesake's id could have been seeded onto the artist. No ids, no lift; a hidden artist has none. |
 | A song's or album's row | `1 − (1 − own)(1 − ½ × artist)`: a song of an artist they love lifts a little even if never played |
 
+**What counts as "theirs"** for the short-search rule (discovery.md#personal-search) is this score, nothing new: a row is the listener's when its own take has a signal, or its score is above 0 through their songs, their albums, or an artist reached by trusted ids (`Affinity::theirs`). A stray play counts.
+
 A take is a song under its loose artist and title and the version words in its title ("Creep (Acoustic)" is not "Creep"), as `merge::same_take` judges it; playing one take lifts that take, not the other.
 
 ## Reset

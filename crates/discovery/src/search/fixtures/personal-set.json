@@ -3728,6 +3728,20 @@
      "skippedDaysAgo": [],
      "likedDaysAgo": null,
      "playlisted": false
+    },
+    {
+     "artist": "Mastodon",
+     "title": "Stairway to Heaven",
+     "album": "Stairway to Nick John - Single",
+     "year": null,
+     "tags": [],
+     "saved": false,
+     "playedDaysAgo": [
+      1
+     ],
+     "skippedDaysAgo": [],
+     "likedDaysAgo": null,
+     "playlisted": false
     }
    ],
    "follows": [],
@@ -3987,6 +4001,28 @@
      ]
     ]
    }
+  },
+  "museum-visitor": {
+   "songs": [
+    {
+     "artist": "Maria Callas",
+     "title": "Musetta's Waltz",
+     "album": "Puccini: La Bohème",
+     "year": null,
+     "tags": [],
+     "saved": true,
+     "playedDaysAgo": [
+      1,
+      2,
+      3
+     ],
+     "skippedDaysAgo": [],
+     "likedDaysAgo": 2,
+     "playlisted": true
+    }
+   ],
+   "follows": [],
+   "artistIds": {}
   }
  }
 }

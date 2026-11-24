@@ -112,6 +112,12 @@ impl Query {
             })
     }
 
+    /// One word typed: the listener is still at the start of a name or a title. A second word is
+    /// more than a start, and `begins` already reads two words as a title being typed.
+    pub fn is_short(&self) -> bool {
+        self.words.len() == 1
+    }
+
     /// The words typed, accents folded.
     pub fn words(&self) -> &[String] {
         &self.words
