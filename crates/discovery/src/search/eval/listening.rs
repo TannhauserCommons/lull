@@ -10,7 +10,10 @@ use serde_json::Value;
 
 use super::answers::Answers;
 use super::ids::{self, DerivedIds};
+use super::links::ArtistLinks;
 use super::mine::Pages;
+use super::queries::ARTISTS;
+use crate::artist::identity::Source;
 use crate::search::personal::snapshot::Snapshot;
 
 /// What each sign of liking a song adds to its weight: a play is a listen, the rest are the
@@ -96,10 +99,15 @@ impl Listening {
 
     /// The artist has a trusted catalog id, derived from the rows recorded for their songs.
     pub fn has_ids(&self, artist: &WantedArtist) -> bool {
-        self.ids.holds(&self.listened, &artist.loose)
+        self.ids.holds(&self.listened, &artist.loose, None)
     }
 
-    pub fn load(dir: &Path, answers: &Answers) -> Result<Listening, String> {
+    /// The artist has a Deezer id (artist rows are Deezer's): through a song, or MusicBrainz's links.
+    pub fn has_deezer_id(&self, artist: &WantedArtist) -> bool {
+        self.ids.holds(&self.listened, &artist.loose, Some(Source::Deezer))
+    }
+
+    pub fn load(dir: &Path, answers: &Answers, links: &ArtistLinks) -> Result<Listening, String> {
         let read = |name: &str| -> Result<Value, String> {
             let path = dir.join(name);
             let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -196,7 +204,8 @@ impl Listening {
             known: &known,
         };
         let listened = pages.listened()?;
-        let ids = ids::derive(&listened, answers)?;
+        let expand: HashSet<String> = artists.iter().take(ARTISTS).map(|a| a.loose.clone()).collect();
+        let ids = ids::derive(&listened, answers, links, &expand)?;
         let snapshot = pages.snapshot(&ids.by_artist)?;
         let without_ids = pages.snapshot(&HashMap::new())?;
         Ok(Listening {

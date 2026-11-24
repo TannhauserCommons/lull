@@ -189,6 +189,8 @@ pub struct Coverage {
     /// The artist targets, and how many of them hold a trusted id.
     pub targets: usize,
     pub with_ids: usize,
+    /// How many of those hold a Deezer id, which the artist rows carry.
+    pub with_deezer_id: usize,
     /// The artist rows in the answers to the full-name queries, and how many the ids lift.
     pub rows: usize,
     pub lifted: usize,
@@ -199,10 +201,10 @@ pub struct Coverage {
 /// hub's own (`eval/ids.rs`).
 pub fn artist_tier(scored: &[Scored], coverage: &Coverage) -> String {
     let mut out = format!(
-        "### Artist tier (ids derived from recorded rows, not the hub's)\n\n\
-         {} of {} artist targets hold a trusted id; the ids lift {} of {} artist rows in the full-name answers.\n\n\
+        "### Artist tier (ids derived from recorded rows and MusicBrainz, not the hub's)\n\n\
+         {} of {} artist targets hold a trusted id, {} of them a Deezer id; the ids lift {} of {} artist rows in the full-name answers.\n\n\
          | query | queries | top-1 | in first {DEPTH} | MRR@{DEPTH} |\n|---|---|---|---|---|\n",
-        coverage.with_ids, coverage.targets, coverage.lifted, coverage.rows
+        coverage.with_ids, coverage.targets, coverage.with_deezer_id, coverage.lifted, coverage.rows
     );
     let mut by_form: BTreeMap<Form, (Tally, Tally)> = BTreeMap::new();
     for s in scored.iter().filter(|s| matches!(s.case.target, Target::Artist(_))) {

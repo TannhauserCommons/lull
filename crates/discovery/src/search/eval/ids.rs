@@ -2,10 +2,12 @@
 //! (`discovery_artist_ids` isn't in it), so they are **derived from the recorded rows, not the
 //! hub's own**: for each song the listener played or liked, the `artist_source` of the recorded
 //! catalog rows that are the same take (`merge::same_take`), weighed by the hub's own rule
-//! (`identity::decide`) with lookups that answer nothing. No MusicBrainz expansion happens, so
-//! only `Evidence::Song` ids come out: a catalog artist that every such row of the artist names.
-//! The hub's ids come from the tracklists of the albums its songs were found on, and add the
-//! library's MBIDs and links, so this is a floor on what the hub holds, never more.
+//! (`identity::decide`). The song ids alone are iTunes artists (the recorded song rows are
+//! iTunes's) while artist rows are Deezer's, so for the eval's artists the lookups are the hub's
+//! (`links.rs`: MusicBrainz's url and artist links, recorded), and the Deezer ids come as the hub
+//! gets them. Everything else asks nothing. These are ids **derived as the hub derives them, from
+//! recorded rows plus MusicBrainz**, not the hub's own: it also has the albums' tracklists, the
+//! library's MBIDs and ISRC credits.
 
 use std::collections::{HashMap, HashSet};
 
@@ -13,7 +15,8 @@ use lull_core::ids::{ArtistId, loose_artist, loose_title};
 use lull_core::model::Track;
 
 use super::answers::Answers;
-use crate::artist::identity::{self, Evidence, Listened};
+use super::links::ArtistLinks;
+use crate::artist::identity::{self, Evidence, Listened, Source};
 use crate::search::merge::{SongHit, same_take};
 use crate::search::personal::score::CatalogId;
 
@@ -23,11 +26,24 @@ pub struct DerivedIds {
     pub by_artist: HashMap<ArtistId, Vec<CatalogId>>,
 }
 
-/// The ids of the artists of `tracks` (the songs played or liked), from the rows in `answers`.
-pub fn derive(tracks: &[Track], answers: &Answers) -> Result<DerivedIds, String> {
+/// The ids of the artists of `tracks` (the songs played or liked), from the rows in `answers`,
+/// and for the artists named in `expand` (loose first credits) as the hub expands them through
+/// MusicBrainz's links (`links`). Derived as the hub derives them, from recorded rows plus
+/// MusicBrainz: not the hub's own.
+pub fn derive(
+    tracks: &[Track],
+    answers: &Answers,
+    links: &ArtistLinks,
+    expand: &HashSet<String>,
+) -> Result<DerivedIds, String> {
     let rows = recorded_rows(answers);
     let mut listened: HashMap<ArtistId, Listened> = HashMap::new();
+    let mut names: HashMap<ArtistId, String> = HashMap::new();
     for track in tracks {
+        names.insert(
+            ArtistId::of(&track.artist),
+            loose_artist(super::listening::first_credit(&track.artist)),
+        );
         let song = crate::search::saved(track.clone());
         let named = rows
             .get(&(loose_artist(&track.artist), loose_title(&track.title)))
@@ -42,23 +58,41 @@ pub fn derive(tracks: &[Track], answers: &Answers) -> Result<DerivedIds, String>
             .extend(named.map(|source| (source, track.id.clone())));
     }
     let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
         .build()
         .map_err(|e| e.to_string())?;
     let mut by_artist = HashMap::new();
     for (artist, listened) in listened.into_iter().filter(|(_, l)| !l.catalog.is_empty()) {
+        let asked = if names.get(&artist).is_some_and(|n| expand.contains(n)) {
+            Some(links)
+        } else {
+            None
+        };
         let ids = runtime
             .block_on(identity::decide(
                 &listened,
                 "US",
-                |_| async { Ok(HashMap::new()) },
-                |_| async { Ok(Default::default()) },
+                |u| async move {
+                    match asked {
+                        Some(links) => links.url_artists(u).await,
+                        None => Ok(HashMap::new()),
+                    }
+                },
+                |m| async move {
+                    match asked {
+                        Some(links) => links.links(m).await,
+                        None => Ok(Default::default()),
+                    }
+                },
                 |_| async { Ok(Vec::new()) },
             ))
             .map_err(|e| e.to_string())?;
+        // What the hub's `listener_artist_ids` keeps: everything but a recommender's or a
+        // search row's id, none of which come out here.
         let trusted: Vec<CatalogId> = ids
             .rows()
             .iter()
-            .filter(|r| matches!(r.evidence, Evidence::Song { .. }))
+            .filter(|r| !matches!(r.evidence, Evidence::Recommended { .. } | Evidence::Searched))
             .map(|r| (r.source, r.id.clone()))
             .collect();
         if !trusted.is_empty() {
@@ -80,13 +114,14 @@ fn recorded_rows(answers: &Answers) -> HashMap<(String, String), Vec<&SongHit>> 
 }
 
 impl DerivedIds {
-    /// Whether the artist named (loose, first credit) has a trusted id through any song of theirs.
-    pub fn holds(&self, tracks: &[Track], name: &str) -> bool {
-        let named: HashSet<ArtistId> = tracks
+    /// Whether the artist named (loose, first credit) has a trusted id through any song of theirs,
+    /// of `source` when one is given.
+    pub fn holds(&self, tracks: &[Track], name: &str, source: Option<Source>) -> bool {
+        tracks
             .iter()
             .filter(|t| loose_artist(super::listening::first_credit(&t.artist)) == name)
-            .map(|t| ArtistId::of(&t.artist))
-            .collect();
-        named.iter().any(|a| self.by_artist.contains_key(a))
+            .filter_map(|t| self.by_artist.get(&ArtistId::of(&t.artist)))
+            .flatten()
+            .any(|(s, _)| source.is_none_or(|only| *s == only))
     }
 }
