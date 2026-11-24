@@ -19,7 +19,7 @@ mod store;
 mod taste;
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
@@ -29,7 +29,7 @@ use lull_core::db::Migrations;
 use lull_core::events::Event;
 use lull_core::ids::{ArtistId, TrackId};
 use lull_core::model::Entities;
-use lull_core::seams::{Library, Transfers, Youtube};
+use lull_core::seams::{Collection, Library, Transfers, Youtube};
 use lull_core::{Ctx, Error, Result};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -195,6 +195,9 @@ pub struct Service {
     unfinished: pages::Unfinished,
     /// The listener's own music for search, with the `personal-search` switch on only.
     personal: Option<search::personal::Personal>,
+    /// The listener's playlists, for search's index. Collection starts after discovery, so the hub
+    /// hands it over later (`attach_collection`).
+    collection: OnceLock<Arc<dyn Collection>>,
 }
 
 pub async fn start(
@@ -242,6 +245,7 @@ pub async fn start(
         adventurousness: RwLock::new(DEFAULT_STEER),
         unfinished: pages::Unfinished::default(),
         personal: search::personal::Personal::when(&ctx.config.flags),
+        collection: OnceLock::new(),
         ctx: ctx.clone(),
     });
     ctx.pictures.set_finder(Arc::new(art::Covers(Arc::downgrade(&svc))));
@@ -260,6 +264,15 @@ pub async fn start(
         ctx.spawn(search::personal::keep_fresh(svc.clone()));
     }
     Ok(svc)
+}
+
+/// Hands discovery the listener's collection once `collection` has started: search's index reads
+/// their playlists through it (docs/context/discovery.md#personal-search).
+pub fn attach_collection(svc: &Arc<Service>, collection: Arc<dyn Collection>) {
+    if svc.collection.set(collection).is_ok() {
+        // The first build began before the playlists could be read.
+        svc.personal_changed();
+    }
 }
 
 /// `/api/search`, `/api/catalog/art/{id}`, `/api/feed`, `/api/radio`,

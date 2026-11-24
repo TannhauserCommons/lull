@@ -380,22 +380,6 @@ impl Store {
             .await
     }
 
-    /// The songs in any of the listener's playlists. Read from collection's table, as plays and
-    /// likes are read from core's: the `Collection` seam isn't wired into discovery.
-    pub async fn playlisted(&self) -> Result<HashSet<TrackId>> {
-        self.db
-            .call(|c| {
-                Ok(
-                    rows(c, "SELECT DISTINCT track_id FROM collection_playlist_items", [], |r| {
-                        Ok(TrackId(r.get(0)?))
-                    })?
-                    .into_iter()
-                    .collect(),
-                )
-            })
-            .await
-    }
-
     /// The catalog ids lull holds for each artist the listener's own evidence stands behind
     /// (`trusted`).
     pub async fn listener_artist_ids(
