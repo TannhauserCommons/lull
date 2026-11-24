@@ -303,6 +303,33 @@ fn a_namesake_of_a_liked_artist_gets_no_lift_and_the_artist_is_found_by_its_id()
     );
 }
 
+/// What leads "muse" for a listener of Muse's songs, whether lull holds Deezer's id for the band
+/// (their songs were found through it) or not (a song with no catalog record to take it from).
+fn muse_top(who: &str) -> Option<String> {
+    let answers = query_set_answers("muse");
+    let (m, r) = lead("muse", &answers, who);
+    let top = r.top?;
+    match top.kind {
+        "artist" => m
+            .artists
+            .iter()
+            .find(|a| a.id().0 == top.id)
+            .map(|a| format!("artist: {}", a.name)),
+        _ => Some(format!("{}: {}", top.kind, top.id)),
+    }
+}
+
+#[test]
+fn the_artist_leads_its_own_name_for_a_listener_of_its_songs_whether_or_not_lull_holds_its_id() {
+    assert_eq!(muse_top("muse-songs-with-ids").as_deref(), Some("artist: Muse"));
+    assert_eq!(
+        muse_top("muse-songs-no-ids").as_deref(),
+        Some("artist: Muse"),
+        "the songs and their album are lifted by the listener's records; the band's row has no id to be reached by"
+    );
+    assert_eq!(muse_top("empty").as_deref(), Some("artist: Muse"));
+}
+
 #[test]
 fn an_empty_listener_gets_the_order_the_query_set_checks() {
     let recorded = query_set::recorded();
