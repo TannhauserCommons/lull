@@ -9,6 +9,7 @@ use lull_core::ids::{ArtistId, TrackId};
 use lull_core::model::Track;
 use serde_json::Value;
 
+use crate::search::personal::first_met;
 use crate::search::personal::index::Song;
 use crate::search::personal::score::CatalogId;
 use crate::search::personal::snapshot::Snapshot;
@@ -34,7 +35,7 @@ impl Pages<'_> {
         let now = plays.iter().map(|p| p.at).max().unwrap_or_default();
         let likes = self.liked(now)?;
         let saved: Vec<Track> = self.tracks(&self.library["songs"])?;
-        let playlisted: HashSet<TrackId> = self.playlisted();
+        let playlisted: Vec<TrackId> = self.playlisted();
         let signals = Signals {
             followed_artists: self.followed_names(),
             plays,
@@ -42,6 +43,7 @@ impl Pages<'_> {
             ..Signals::default()
         };
         let songs = self.songs(&signals, &saved, &playlisted)?;
+        let playlisted: HashSet<TrackId> = playlisted.into_iter().collect();
         Ok(Snapshot::from_signals(signals, songs, &playlisted, ids, now))
     }
 
@@ -102,15 +104,17 @@ impl Pages<'_> {
             .collect())
     }
 
-    fn playlisted(&self) -> HashSet<TrackId> {
-        self.playlists["items"]
+    /// The songs in the playlists, once each, in the playlists' order (as the hub reads them).
+    fn playlisted(&self) -> Vec<TrackId> {
+        let listed: Vec<TrackId> = self.playlists["items"]
             .as_array()
             .into_iter()
             .flatten()
             .flat_map(|list| list["items"].as_array().into_iter().flatten())
             .filter_map(|t| t["trackId"].as_str())
             .map(|id| TrackId(id.to_owned()))
-            .collect()
+            .collect();
+        first_met(&listed).into_iter().cloned().collect()
     }
 
     fn followed_names(&self) -> Vec<String> {
@@ -124,15 +128,17 @@ impl Pages<'_> {
     }
 
     /// Every song the listener saved, played, liked or listed, once, as the hub's build holds them.
-    fn songs(&self, signals: &Signals, saved: &[Track], playlisted: &HashSet<TrackId>) -> Result<Vec<Song>, String> {
+    fn songs(&self, signals: &Signals, saved: &[Track], playlisted: &[TrackId]) -> Result<Vec<Song>, String> {
         let kept: HashSet<&TrackId> = saved.iter().map(|t| &t.id).collect();
-        let met: HashSet<&TrackId> = signals
-            .plays
-            .iter()
-            .map(|p| &p.track)
-            .chain(signals.likes.iter().map(|m| &m.track))
-            .chain(playlisted)
-            .collect();
+        // In the order the hub meets them (`personal::first_met`): plays, likes, playlists.
+        let met = first_met(
+            signals
+                .plays
+                .iter()
+                .map(|p| &p.track)
+                .chain(signals.likes.iter().map(|m| &m.track))
+                .chain(playlisted),
+        );
         let mut songs: Vec<Song> = saved
             .iter()
             .map(|t| Song {

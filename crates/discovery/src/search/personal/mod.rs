@@ -108,19 +108,21 @@ async fn build(svc: &Service) -> Result<Snapshot> {
         tracing::info!(error = %e, "personal search without the library this time");
         Vec::new()
     });
-    let playlisted = playlisted(svc).await?;
+    let playlist_songs = playlisted(svc).await?;
     let saved: HashSet<&TrackId> = library.iter().map(|(t, _)| &t.id).collect();
-    let met: Vec<TrackId> = signals
-        .plays
-        .iter()
-        .map(|p| &p.track)
-        .chain(signals.likes.iter().map(|m| &m.track))
-        .chain(&playlisted)
-        .filter(|id| !saved.contains(id))
-        .cloned()
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
+    let met: Vec<TrackId> = first_met(
+        signals
+            .plays
+            .iter()
+            .map(|p| &p.track)
+            .chain(signals.likes.iter().map(|m| &m.track))
+            .chain(&playlist_songs),
+    )
+    .into_iter()
+    .filter(|id| !saved.contains(id))
+    .cloned()
+    .collect();
+    let playlisted: HashSet<TrackId> = playlist_songs.into_iter().collect();
     let others = svc.store.catalog_songs(met).await?;
     let ids = svc.store.listener_artist_ids().await?;
     let songs: Vec<Song> = library
@@ -141,17 +143,29 @@ async fn build(svc: &Service) -> Result<Snapshot> {
         .map_err(|e| lull_core::Error::internal(format!("personal search index build: {e}")))
 }
 
-/// The songs in any of the listener's playlists, asked of collection, which owns them. Before
-/// collection is attached (`attach_collection` nudges a rebuild) there are none to read.
-async fn playlisted(svc: &Service) -> Result<HashSet<TrackId>> {
+/// The songs in any of the listener's playlists, once each in the playlists' order, asked of
+/// collection, which owns them. Before collection is attached (`attach_collection` nudges a
+/// rebuild) there are none to read.
+async fn playlisted(svc: &Service) -> Result<Vec<TrackId>> {
     match svc.collection.get() {
         Some(collection) => Ok(songs_of(&collection.playlists().await?)),
-        None => Ok(HashSet::new()),
+        None => Ok(Vec::new()),
     }
 }
 
-fn songs_of(playlists: &[Playlist]) -> HashSet<TrackId> {
-    playlists.iter().flat_map(|p| p.track_ids.iter().cloned()).collect()
+fn songs_of(playlists: &[Playlist]) -> Vec<TrackId> {
+    first_met(playlists.iter().flat_map(|p| &p.track_ids))
+        .into_iter()
+        .cloned()
+        .collect()
+}
+
+/// The ids once each, in the order they are first met. The index keeps the first record of a take
+/// it is given, and answers equal rows in its order, so the order songs go in is the order a
+/// search breaks ties by: a hash set's would differ from one start of the hub to the next.
+pub fn first_met<'a>(ids: impl IntoIterator<Item = &'a TrackId>) -> Vec<&'a TrackId> {
+    let mut seen = HashSet::new();
+    ids.into_iter().filter(|id| seen.insert(*id)).collect()
 }
 
 #[cfg(test)]
@@ -189,7 +203,7 @@ mod tests {
             playlist("pl-2", &["b"]),
             playlist("pl-3", &[]),
         ]);
-        assert_eq!(listed, ["a", "b"].map(|t| TrackId(t.into())).into_iter().collect());
+        assert_eq!(listed, ["a", "b"].map(|t| TrackId(t.into())), "in the playlists' order");
     }
 
     #[test]
