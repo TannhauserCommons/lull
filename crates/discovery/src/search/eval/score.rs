@@ -4,7 +4,9 @@ use std::fmt;
 
 use super::listening::{Listening, WantedArtist, WantedSong};
 use super::queries::Target;
-use crate::search::merge::{self, Merged, Query, Score};
+use crate::search::merge::{self, Merged, Score};
+use crate::search::personal::snapshot::Snapshot;
+use crate::search::query::Query;
 use crate::search::query_set::top_line;
 use crate::search::{Ranked, Top, song_scores};
 
@@ -79,9 +81,17 @@ struct Row {
     kept: bool,
 }
 
-/// The result of ranking `m` for `q`, judged for the wanted target.
-pub fn judge(target: Target, listening: &Listening, q: &Query, m: &Merged, r: &Ranked) -> Outcome {
-    let (artists, songs) = (artist_scores(q, m), song_scores(q, m));
+/// The result of ranking `m` for `q`, judged for the wanted target. `personal` is the snapshot
+/// the ranking was given, if any: its rows' scores are then the blended ones.
+pub fn judge(
+    target: Target,
+    listening: &Listening,
+    q: &Query,
+    m: &Merged,
+    r: &Ranked,
+    personal: Option<&Snapshot>,
+) -> Outcome {
+    let (artists, songs) = (artist_scores(q, m, personal), song_scores(q, m, personal));
     let rows = Rows {
         listening,
         m,
@@ -89,6 +99,7 @@ pub fn judge(target: Target, listening: &Listening, q: &Query, m: &Merged, r: &R
         artists: &artists,
         songs: &songs,
         q,
+        personal,
     };
     match target {
         Target::Song(i) => rows.judge_song(&listening.songs[i]),
@@ -104,6 +115,7 @@ struct Rows<'a> {
     artists: &'a [Score],
     songs: &'a [Score],
     q: &'a Query,
+    personal: Option<&'a Snapshot>,
 }
 
 impl Rows<'_> {
@@ -152,7 +164,9 @@ impl Rows<'_> {
         let miss = (!top1).then(|| Miss {
             cause: match (wanted, in_answers) {
                 (_, false) => Cause::Missing,
-                (Some(wanted), true) => self.leader().map_or(Cause::Other, |lead| why(lead, wanted)),
+                (Some(wanted), true) => self
+                    .leader()
+                    .map_or(Cause::Other, |lead| why(lead, wanted, self.personal.is_some())),
                 (None, true) => Cause::Other,
             },
             led: top_line(self.r, self.m),
@@ -186,7 +200,9 @@ impl Rows<'_> {
                 kept: l.keeps_artist(&self.m.artists[i].name),
             }),
             "album" => self.m.albums.iter().find(|a| a.id().0 == top.id).map(|a| Row {
-                score: Score::album(self.q, a),
+                score: self.personal.map_or(Score::album(self.q, a), |p| {
+                    Score::album(self.q, a).with_affinity(p.album(a))
+                }),
                 kept: false,
             }),
             _ => None,
@@ -194,17 +210,26 @@ impl Rows<'_> {
     }
 }
 
-/// The artists' scores as `rank_rows` ranks them.
-fn artist_scores(q: &Query, m: &Merged) -> Vec<Score> {
+/// The artists' scores as `rank_rows` (or, with a snapshot, `rank_personal`) ranks them.
+fn artist_scores(q: &Query, m: &Merged, personal: Option<&Snapshot>) -> Vec<Score> {
     let mut scores: Vec<Score> = m.artists.iter().map(|a| Score::artist(q, a)).collect();
     merge::overshadow(&m.artists, &mut scores);
+    if let Some(p) = personal {
+        for (score, a) in scores.iter_mut().zip(&m.artists) {
+            *score = score.with_affinity(p.artist(a));
+        }
+    }
     scores
 }
 
 /// Why `lead` is before `wanted`, by the order `merge::rank` sorts in: fit, the song itself before
-/// its other versions, then popularity in tenths (where the listener's own breaks ties).
-fn why(lead: Row, wanted: Row) -> Cause {
+/// its other versions, then popularity in tenths (where the listener's own breaks ties). With
+/// `blended` (`merge::rank_blended`) popularity already holds the listener's affinity and decides
+/// alone: the leader leads by it, and the listener's own were outweighed when `wanted` is kept
+/// and the leader isn't.
+fn why(lead: Row, wanted: Row, blended: bool) -> Cause {
     let tenths = |r: Row| (r.score.popularity * 10.0).floor() as i64;
+    let own_outweighed = wanted.kept && !lead.kept && (blended || tenths(lead) >= tenths(wanted));
     if lead.score.fit > wanted.score.fit {
         Cause::WrongFit
     } else if lead.score.fit < wanted.score.fit {
@@ -214,7 +239,7 @@ fn why(lead: Row, wanted: Row) -> Cause {
         Cause::VersionRule
     } else if lead.score.filler != wanted.score.filler {
         Cause::Other
-    } else if wanted.kept && !lead.kept && tenths(lead) >= tenths(wanted) {
+    } else if own_outweighed {
         Cause::OwnIgnored
     } else if lead.score.popularity > wanted.score.popularity {
         Cause::Popularity

@@ -8,6 +8,9 @@ use lull_core::ids::{ArtistId, TrackId, loose_artist, loose_title};
 use lull_core::model::Track;
 use serde_json::Value;
 
+use super::mine::Pages;
+use crate::search::personal::snapshot::Snapshot;
+
 /// What each sign of liking a song adds to its weight: a play is a listen, the rest are the
 /// listener choosing to keep it.
 const PLAY: u32 = 1;
@@ -52,6 +55,8 @@ pub struct Listening {
     pub own: Own,
     /// The songs in the library: what the hub's saved-songs source would answer.
     pub saved: Vec<Track>,
+    /// What the personal search reads of them, built as the hub builds it (`mine`).
+    pub snapshot: Snapshot,
 }
 
 impl WantedSong {
@@ -169,6 +174,15 @@ impl Listening {
             .filter_map(|id| known.get(id))
             .map(|t| serde_json::from_value::<Track>((*t).clone()).map_err(|e| format!("a library track: {e}")))
             .collect::<Result<Vec<Track>, String>>()?;
+        let snapshot = Pages {
+            history: &history,
+            likes: &likes,
+            library: &library,
+            playlists: &playlists,
+            follows: &follows,
+            known: &known,
+        }
+        .snapshot()?;
         Ok(Listening {
             songs,
             artists,
@@ -177,6 +191,7 @@ impl Listening {
                 followed,
             },
             saved,
+            snapshot,
         })
     }
 }

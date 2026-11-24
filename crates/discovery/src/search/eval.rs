@@ -1,7 +1,11 @@
 //! How well search puts what the listener wants first, on the listener's own music (the plan:
 //! docs/context/discovery.md#search). Targets are the songs and artists in their listening,
-//! queries the words they would type for each, answers the fast sources' recorded for them, and
-//! the ranking is today's `rank_rows`: run it before and after a change to see what moved.
+//! queries the words they would type for each, answers the fast sources' recorded for them. Each
+//! query is ranked twice, as today's hub does (`rank_rows`, the library emulated as a substring
+//! scan of the saved songs) and as the personal search does (`rank_personal`, the snapshot built
+//! from the folder's history, likes, library, playlists and follows answering for the library),
+//! and both are scored, so a change shows in one table. The folder has no artist ids, so the
+//! artist tier of the score isn't measured.
 //!
 //! The data is private and never in the repo: the tests read the folder named by
 //! `LULL_SEARCH_EVAL_DIR` and skip, saying so, when it is unset. They are `#[ignore]`d, run with
@@ -17,6 +21,7 @@
 
 mod answers;
 mod listening;
+mod mine;
 mod queries;
 mod record;
 mod report;
@@ -25,23 +30,20 @@ mod score;
 use std::path::PathBuf;
 
 use self::answers::{Answer, Answers};
-use self::listening::{Listening, Own};
+use self::listening::Listening;
 use self::queries::{Case, Target};
 use self::report::Scored;
-use super::merge::{Found, Merged, Query};
+use super::merge::{Found, Merged};
+use super::personal::snapshot::Snapshot;
+use super::query::Query;
 use super::query_set::merged_from;
-use super::{Ranked, rank_rows};
+use super::{Ranked, rank_personal, rank_rows};
 
 const DIR_VAR: &str = "LULL_SEARCH_EVAL_DIR";
 const RECORD_VAR: &str = "LULL_SEARCH_EVAL_RECORD";
 const COUNTRY_VAR: &str = "LULL_CATALOG_COUNTRY";
 /// Saved songs the library answers a search with (`SAVED` in search).
 const SAVED_ANSWERS: usize = 25;
-
-/// The one call to the ranking under test: point it at the personal ranking to measure that.
-fn rank(q: &Query, m: &Merged, own: &Own) -> Ranked {
-    rank_rows(q, m, &own.liked, &own.followed)
-}
 
 /// The folder of the listener's data, or None, saying the test is skipped.
 fn eval_dir(test: &str) -> Option<PathBuf> {
@@ -52,12 +54,9 @@ fn eval_dir(test: &str) -> Option<PathBuf> {
     dir
 }
 
-/// The answers of every source search reads first, merged as search merges them.
-fn merged(listening: &Listening, query: &str, answer: &Answer) -> Merged {
-    let saved = Found {
-        songs: saved_matching(listening, query).into_iter().map(super::saved).collect(),
-        ..Found::default()
-    };
+/// The answers of every source search reads first, merged as search merges them, with the library
+/// answering as `saved` says.
+fn merged(saved: Found, answer: &Answer) -> Merged {
     merged_from(
         saved,
         answer.deezer_artists.clone(),
@@ -66,8 +65,15 @@ fn merged(listening: &Listening, query: &str, answer: &Answer) -> Merged {
     )
 }
 
-/// The library's search (`Index::search`): the songs holding every word typed in their artist,
-/// album or title.
+/// The library as the hub answers now (`Index::search`): the songs holding every word typed in
+/// their artist, album or title.
+fn saved_today(listening: &Listening, query: &str) -> Found {
+    Found {
+        songs: saved_matching(listening, query).into_iter().map(super::saved).collect(),
+        ..Found::default()
+    }
+}
+
 fn saved_matching(listening: &Listening, query: &str) -> Vec<lull_core::model::Track> {
     let words: Vec<String> = lull_core::ids::normalize(query).split(' ').map(str::to_owned).collect();
     listening
@@ -128,12 +134,18 @@ fn score_search_on_the_listeners_music() -> Result<(), String> {
         .filter_map(|case| {
             let answer = answers.get(&case.query)?;
             let q = Query::new(&case.query);
-            let m = merged(&listening, &case.query, answer);
-            let r = rank(&q, &m, &listening.own);
+            let today = merged(saved_today(&listening, &case.query), answer);
+            let personal = merged(listening.snapshot.found(&q), answer);
+            let (own, snapshot) = (&listening.own, &listening.snapshot);
             Some(Scored {
                 case,
                 wanted: wanted(&listening, case.target),
-                outcome: score::judge(case.target, &listening, &q, &m, &r),
+                today: judge(case.target, &listening, &q, &today, None, |m| {
+                    rank_rows(&q, m, &own.liked, &own.followed)
+                }),
+                personal: judge(case.target, &listening, &q, &personal, Some(snapshot), |m| {
+                    rank_personal(&q, m, snapshot)
+                }),
             })
         })
         .collect();
@@ -147,8 +159,29 @@ fn score_search_on_the_listeners_music() -> Result<(), String> {
         scored.len(),
         cases.len()
     );
-    println!("misses by cause: {}", report::cause_counts(&scored));
+    println!("misses by cause\n{}", report::cause_counts(&scored));
+    let worse = report::worse_forms(&scored);
+    println!(
+        "{}",
+        if worse.is_empty() {
+            "no query form has a lower top-1 under the personal ranking".to_owned()
+        } else {
+            format!("lower top-1 under the personal ranking:\n{worse}")
+        }
+    );
     let latest = format!("{tables}\n## Misses\n\n{}", report::misses(&scored));
     let path = dir.join("latest.md");
     std::fs::write(&path, latest).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// The outcome of ranking `m` with `rank`, judged for the wanted target.
+fn judge(
+    target: Target,
+    listening: &Listening,
+    q: &Query,
+    m: &Merged,
+    personal: Option<&Snapshot>,
+    rank: impl FnOnce(&Merged) -> Ranked,
+) -> score::Outcome {
+    score::judge(target, listening, q, m, &rank(m), personal)
 }
