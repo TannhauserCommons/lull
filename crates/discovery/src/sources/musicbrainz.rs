@@ -96,10 +96,11 @@ impl RawGroup {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Links {
     pub tags: Vec<String>,
-    /// Apple's `artistId`.
-    pub itunes: Option<u64>,
-    /// Deezer's artist id.
-    pub deezer: Option<u64>,
+    /// Apple's `artistId` of every page linked, lowest first: MusicBrainz may link duplicates of
+    /// one artist there, and the lowest is the oldest page, the established one.
+    pub itunes: Vec<u64>,
+    /// Deezer's artist id of every page linked, lowest first.
+    pub deezer: Vec<u64>,
 }
 
 /// The number after `/artist/` in a link to one of `hosts` ("https://music.apple.com/gb/artist/1689784894",
@@ -116,6 +117,14 @@ fn linked_id(url: &str, hosts: &[&str]) -> Option<u64> {
         .rsplit('/')
         .next()?;
     last.trim_start_matches("id").parse().ok()
+}
+
+/// The ids of every artist page among `urls` on one of `hosts`, lowest first, each once.
+fn linked_ids(urls: &[String], hosts: &[&str]) -> Vec<u64> {
+    let mut ids: Vec<u64> = urls.iter().filter_map(|u| linked_id(u, hosts)).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
 }
 
 /// "A & B" and the first artist's MBID, from an artist credit.
@@ -167,7 +176,7 @@ impl MusicBrainz {
             resource: String,
         }
         self.cache
-            .get(format!("mb:artist-links:{mbid}"), 30 * DAY, || async {
+            .get(format!("mb:artist-links-all:{mbid}"), 30 * DAY, || async {
                 let raw: Raw = self
                     .get(&format!("artist/{mbid}"), &[("inc", "tags genres url-rels")])
                     .await?;
@@ -178,10 +187,8 @@ impl MusicBrainz {
                     .collect();
                 Ok(Links {
                     tags: tags(raw.tags, raw.genres),
-                    itunes: urls
-                        .iter()
-                        .find_map(|u| linked_id(u, &["music.apple.com/", "itunes.apple.com/"])),
-                    deezer: urls.iter().find_map(|u| linked_id(u, &["deezer.com/"])),
+                    itunes: linked_ids(&urls, &["music.apple.com/", "itunes.apple.com/"]),
+                    deezer: linked_ids(&urls, &["deezer.com/"]),
                 })
             })
             .await

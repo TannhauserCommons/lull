@@ -100,20 +100,43 @@ impl IdRow {
     }
 }
 
-/// The exact ids lull holds for an artist, at most one per source.
+/// The exact ids lull holds for an artist: one per source, except that MusicBrainz may link an
+/// artist to several pages of one catalog (duplicates of the same artist there), and each is held
+/// (`add`), so a row from either page is recognised as the artist's (`all`).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Ids(Vec<IdRow>);
 
 impl Ids {
+    /// The artist's primary id of the source: the one that things are fetched by (pages, albums,
+    /// pictures). It is the first held: what the listener's songs gave, else the lowest of the
+    /// pages MusicBrainz links, the oldest page of the catalog and so the established one.
     pub fn get(&self, source: Source) -> Option<&IdRow> {
         self.0.iter().find(|r| r.source == source)
     }
 
-    /// Sets (or replaces) the id of the row's source.
+    /// Every id held of the source, the primary first: what a row is matched by.
+    pub fn all(&self, source: Source) -> impl Iterator<Item = &IdRow> {
+        self.0.iter().filter(move |r| r.source == source)
+    }
+
+    /// Whether the source's `id` is one of the artist's.
+    pub fn holds(&self, source: Source, id: &str) -> bool {
+        self.all(source).any(|r| r.id == id)
+    }
+
+    /// Sets (or replaces) the id of the row's source: the one id the evidence names.
     pub fn set(&mut self, row: IdRow) {
         self.0.retain(|r| r.source != row.source);
         self.0.push(row);
         self.0.sort_by_key(|r| r.source);
+    }
+
+    /// Adds another id of the row's source, after the ones held; one held already is kept as is.
+    pub fn add(&mut self, row: IdRow) {
+        if !self.holds(row.source, &row.id) {
+            self.0.push(row);
+            self.0.sort_by_key(|r| r.source);
+        }
     }
 
     pub fn rows(&self) -> &[IdRow] {
@@ -486,19 +509,22 @@ where
             });
         }
     }
-    if let Some(mbid) = ids.mbid().map(str::to_owned)
-        && (ids.itunes().is_none() || ids.deezer().is_none())
-    {
+    if let Some(mbid) = ids.mbid().map(str::to_owned) {
         let linked = links(mbid).await?;
-        for (source, id) in [(Source::Itunes, linked.itunes), (Source::Deezer, linked.deezer)] {
-            if let (None, Some(id)) = (ids.get(source), id) {
-                ids.set(IdRow {
-                    source,
-                    id: id.to_string(),
-                    evidence: Evidence::Link {
-                        source: Source::Musicbrainz,
-                    },
-                });
+        for (source, pages) in [(Source::Itunes, linked.itunes), (Source::Deezer, linked.deezer)] {
+            // Every page MusicBrainz links is this artist's, unless the listener's songs named
+            // one that it doesn't link: then the songs decide and nothing is added.
+            let agrees = ids.all(source).all(|r| pages.iter().any(|p| p.to_string() == r.id));
+            if agrees {
+                for page in pages {
+                    ids.add(IdRow {
+                        source,
+                        id: page.to_string(),
+                        evidence: Evidence::Link {
+                            source: Source::Musicbrainz,
+                        },
+                    });
+                }
             }
         }
     }
@@ -522,8 +548,8 @@ where
         }
         for mbid in members {
             let linked = links(mbid.clone()).await?;
-            let ours = linked.itunes.is_some_and(|i| ids.itunes() == Some(i))
-                || linked.deezer.is_some_and(|d| ids.deezer() == Some(d));
+            let ours = linked.itunes.iter().any(|i| ids.holds(Source::Itunes, &i.to_string()))
+                || linked.deezer.iter().any(|d| ids.holds(Source::Deezer, &d.to_string()));
             if ours {
                 found.insert(mbid.clone());
             }
@@ -629,12 +655,12 @@ mod tests {
     async fn links(mbid: String) -> Result<Links> {
         Ok(match mbid.as_str() {
             BIJI => Links {
-                itunes: Some(BIJI_APPLE),
-                deezer: Some(BIJI_DEEZER),
+                itunes: vec![BIJI_APPLE],
+                deezer: vec![BIJI_DEEZER],
                 ..Links::default()
             },
             "6100aaaa-0000-4000-8000-0000000000c1" => Links {
-                deezer: Some(777),
+                deezer: vec![777],
                 ..Links::default()
             },
             _ => Links::default(),
@@ -761,6 +787,39 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn an_artist_musicbrainz_links_to_two_deezer_pages_is_recognised_by_either() -> Result<()> {
+        // Invented ids. The listener's song names the lower page; MusicBrainz links both.
+        const TWIN: &str = "6100aaaa-0000-4000-8000-0000000000f1";
+        let urls = |asked: Vec<String>| async move {
+            Ok(asked
+                .into_iter()
+                .filter(|u| u.ends_with("/artist/4001"))
+                .map(|u| (u, vec![artist("Twin Pages", TWIN)]))
+                .collect::<HashMap<_, _>>())
+        };
+        let twin_links = |_: String| async {
+            Ok(Links {
+                deezer: vec![4001, 8_000_002],
+                ..Links::default()
+            })
+        };
+        let ids = decide(
+            &Listened {
+                catalog: vec![song(ArtistSource::Deezer(4001))],
+                ..Listened::default()
+            },
+            "US",
+            urls,
+            twin_links,
+            no_credits,
+        )
+        .await?;
+        assert!(ids.holds(Source::Deezer, "4001") && ids.holds(Source::Deezer, "8000002"));
+        assert_eq!(ids.deezer(), Some(4001), "pages are fetched by the one the songs named");
+        Ok(())
+    }
+
     // Other libraries than the one lull was first measured on: other scripts and storefronts,
     // artists only one source knows. Invented names and ids.
     const LISA_APPLE: u64 = 5_550_001;
@@ -791,7 +850,7 @@ mod tests {
     async fn other_links(mbid: String) -> Result<Links> {
         Ok(match mbid.as_str() {
             ONLY_DEEZER_MBID => Links {
-                deezer: Some(ONLY_DEEZER),
+                deezer: vec![ONLY_DEEZER],
                 ..Links::default()
             },
             _ => Links::default(),

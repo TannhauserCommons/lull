@@ -384,13 +384,11 @@ fn own_ids(c: &Connection, artist: &ArtistId) -> Result<LegacyIds> {
             Anchor::Itunes(i) => (IdSource::Itunes, i.to_string()),
             _ => continue,
         };
-        if ids.get(source).is_none() {
-            ids.set(IdRow {
-                source,
-                id,
-                evidence: Evidence::Searched,
-            });
-        }
+        ids.add(IdRow {
+            source,
+            id,
+            evidence: Evidence::Searched,
+        });
     }
     Ok(ids)
 }

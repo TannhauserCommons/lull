@@ -798,7 +798,7 @@ fn identified(c: &Connection, mut a: Artist) -> Result<Artist> {
 fn artist_ids(c: &Connection, id: &ArtistId) -> Result<Ids> {
     let rows = rows(
         c,
-        "SELECT source, id, evidence FROM discovery_artist_ids WHERE artist_id = ?1",
+        "SELECT source, id, evidence FROM discovery_artist_ids WHERE artist_id = ?1 ORDER BY rowid",
         [&id.0],
         |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
     )?;
@@ -809,7 +809,7 @@ fn artist_ids(c: &Connection, id: &ArtistId) -> Result<Ids> {
             serde_json::from_value::<Source>(serde_json::Value::String(source)),
             serde_json::from_str::<Evidence>(&evidence),
         ) {
-            ids.set(IdRow {
+            ids.add(IdRow {
                 source,
                 id: value,
                 evidence,
@@ -933,7 +933,7 @@ fn put_artist_id(c: &Connection, id: &ArtistId, row: &IdRow) -> Result<()> {
     let evidence = serde_json::to_string(&row.evidence).map_err(|e| Error::internal(format!("evidence json: {e}")))?;
     c.execute(
         "INSERT INTO discovery_artist_ids (artist_id, source, id, evidence) VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT(artist_id, source) DO UPDATE SET id = excluded.id, evidence = excluded.evidence",
+         ON CONFLICT(artist_id, source, id) DO UPDATE SET evidence = excluded.evidence",
         params![id.0, row.source.as_str(), row.id, evidence],
     )?;
     Ok(())
@@ -1511,7 +1511,28 @@ mod tests {
         });
         replace_ids(&mut c, &linked, &ids, 100)?;
 
+        let twin = ArtistId("ar-twin".into());
+        let mut ids = Ids::default();
+        ids.set(song(Source::Deezer, "4001"));
+        ids.add(IdRow {
+            source: Source::Deezer,
+            id: "8000002".into(),
+            evidence: Evidence::Link {
+                source: Source::Musicbrainz,
+            },
+        });
+        replace_ids(&mut c, &twin, &ids, 100)?;
+        assert_eq!(artist_ids(&c, &twin)?, ids, "both pages are kept, the songs' first");
+
         let trusted = trusted_artist_ids(&c)?;
+        assert_eq!(
+            trusted[&twin],
+            [
+                (Source::Deezer, "4001".to_owned()),
+                (Source::Deezer, "8000002".to_owned())
+            ],
+            "a row from either page is the artist's"
+        );
         assert_eq!(
             trusted[&heard],
             [(Source::Deezer, "64816272".to_owned())],

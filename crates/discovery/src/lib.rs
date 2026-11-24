@@ -154,6 +154,24 @@ pub const MIGRATIONS: Migrations = Migrations {
             album_id  TEXT PRIMARY KEY
         );
     "#,
+        r#"
+        -- An artist may hold several ids of one catalog: MusicBrainz links some artists to more
+        -- than one page there (duplicates), and a search row may come from either
+        -- (artist::identity::Ids). The key gains the id; existing rows carry over in order.
+        CREATE TABLE discovery_artist_ids_all (
+            artist_id  TEXT NOT NULL,
+            source     TEXT NOT NULL,
+            id         TEXT NOT NULL,
+            evidence   TEXT NOT NULL,
+            PRIMARY KEY (artist_id, source, id)
+        );
+        INSERT INTO discovery_artist_ids_all (artist_id, source, id, evidence)
+            SELECT artist_id, source, id, evidence FROM discovery_artist_ids ORDER BY rowid;
+        DROP TABLE discovery_artist_ids;
+        ALTER TABLE discovery_artist_ids_all RENAME TO discovery_artist_ids;
+        -- The MusicBrainz links were kept as the first page only: asked again.
+        DELETE FROM discovery_cache WHERE key LIKE 'mb:artist-links:%';
+    "#,
     ],
 };
 
