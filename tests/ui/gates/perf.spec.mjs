@@ -80,7 +80,11 @@ for (const design of designs) {
       const s = await S.playing(browser, page, opts(design), '/now');
       // the work, counted: it holds on a busy runner, where the same work takes several times as long (ms/s, below)
       for (const [what, per] of Object.entries(B.playing)) {
-        expect(s.perSecond[what], `${what} per second while playing, on Now Playing`).toBeLessThanOrEqual(per[design]);
+        // a count over its budget: all of them and the time it took (a starved runner raises the time, not the counts), and,
+        // for frames, the loop the main thread runs, found by holding each still (the rest gate's red, S.whoDraws)
+        const over = s.perSecond[what] > per[design];
+        const who = over && what === 'frames' ? `; ${await S.whoDraws(browser, page)}` : '';
+        expect(s.perSecond[what], `${what} per second while playing, on Now Playing (per second: ${JSON.stringify(s.perSecond)}, ${Math.round(s.perSecondMs)} ms)${who}`).toBeLessThanOrEqual(per[design]);
       }
       // the backstop: a page that blocks for a noticeable moment, whatever its counts
       expect(s.perSecondMs, 'main-thread ms per second while playing, on Now Playing').toBeLessThanOrEqual(B.playingMsPerSecond);
