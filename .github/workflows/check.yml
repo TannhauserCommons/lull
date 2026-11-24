@@ -1,7 +1,8 @@
 name: check
 
 # The one gate (docs/context/quality.md, The check): every pull request, and
-# main.yml with `all: true` on every push to main. The one required status of
+# main.yml on every push to main, with `base` (the paths changed since main's
+# newest green run) or, when it has none, `all: true`. The one required status of
 # this workflow is `gate` ("check / gate").
 on:
   pull_request:
@@ -11,6 +12,10 @@ on:
         description: Run every job, whatever paths changed
         type: boolean
         default: false
+      base:
+        description: Commit to diff the paths against, for a call that is not a pull request; empty means the pull request's base
+        type: string
+        default: ""
     secrets:
       PRIVATE_PATTERNS:
         description: Patterns the privacy check rejects, one extended regex a line
@@ -56,6 +61,7 @@ jobs:
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: .github/ci/paths.yml
+          base: ${{ inputs.base }}
       - id: select
         name: mise run ci:select
         run: mise run ci:select ${{ inputs.all && '--all' || '' }}
@@ -121,9 +127,10 @@ jobs:
   # pull request's check has none: its image has no built-in key (the Dockerfile builds without; a listener then brings
   # their own), and the expression below keeps a pull request's own run from reading the repository's secrets. The
   # build reads main's layer cache; a run on main writes it back.
+  # Main always builds it (`base` is set there): main.yml publishes the image and Lighthouse runs on it.
   image:
     needs: changes
-    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'image') || contains(fromJSON(needs.changes.outputs.run), 'ui') }}
+    if: ${{ inputs.base != '' || contains(fromJSON(needs.changes.outputs.run), 'image') || contains(fromJSON(needs.changes.outputs.run), 'ui') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

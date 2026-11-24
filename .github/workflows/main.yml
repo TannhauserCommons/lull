@@ -1,6 +1,7 @@
 name: main
 
-# Every push to main: everything check runs, on the merged result, then what
+# Every push to main: the checks whose paths changed since the newest green run
+# of this workflow (all of them when there is none), on the merged result, then what
 # the merge brings (the image, Pages, the share Worker, the YouTube Music
 # contract, the release draft, the bundles' caches) and the checks that run
 # only here (graphics, Lighthouse). Blocks nothing; after.yml opens the issue
@@ -20,6 +21,7 @@ concurrency:
 
 jobs:
   check:
+    needs: plan
     uses: ./.github/workflows/check.yml
     # A called workflow can use only what its caller grants: this is the most
     # any job in check.yml asks for.
@@ -27,7 +29,8 @@ jobs:
       contents: read
       pull-requests: read
     with:
-      all: true
+      base: ${{ needs.plan.outputs.base }}
+      all: ${{ needs.plan.outputs.base == '' }}
     # The privacy list, and Last.fm's app key and secret for the hub's image:
     # main's check builds the image it tests and this run publishes. A pull
     # request's check has neither.
@@ -49,6 +52,7 @@ jobs:
       contents: read
       actions: read
     outputs:
+      base: ${{ steps.plan.outputs.base }}
       pages: ${{ steps.plan.outputs.pages }}
       share: ${{ steps.plan.outputs.share }}
       youtube_contract: ${{ steps.plan.outputs.youtube_contract }}
