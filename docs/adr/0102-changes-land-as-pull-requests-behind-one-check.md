@@ -1,6 +1,6 @@
 # ADR-0102: Changes land as pull requests behind one check
 
-- Status: accepted (the owner's call in the CI review, 2026-11-23: remove the queue and its custom code). Supersedes ADR-0095; amends ADR-0097.
+- Status: accepted (the owner's call in the CI review, 2026-11-23: remove the queue and its custom code). Supersedes ADR-0095; amends ADR-0097. Amended 2026-11-24: main's check is path-gated against its newest green run, not full.
 - Date: 2026-11-23
 
 ## Context
@@ -16,7 +16,7 @@ The shared CI skeleton (the `ci-skeleton` project) gives every project the same 
 
 - **Every change is a pull request, and main's ruleset requires `gate` from GitHub Actions,** with linear history and no force push. `mise run ship <topic>` opens it with the App's token and waits for `check / gate`; `mise run merge <pr>` rebases it onto main, pinned to the head that passed. Who may merge without the owner's yes is merge-policy's.
 - **`check.yml` is the one check,** path-gated by `.github/ci/paths.yml`: it holds what `ci`, `privacy`, `ui`, `ui-gates`, `app`, `aur`, `slskd-contract`, `server-package` and `share` checked. Those workflows lose their pull request runs and the queue's calls; what they still do is make releases (`app`, `server-package`, `aur`, `slskd-windows`), deploy (`share`, `pages`), or take new goldens by hand (`ui`, `ui-gates`).
-- **`main.yml` runs every check again on main after each merge,** publishes the image only from a green run, and starts the jobs the queue ran after a landing. `graphics` and Lighthouse run there, after the merge (the owner's call): timing belongs to main's quiet runners.
+- **`main.yml` runs on main after each merge the checks whose paths changed since its newest green run** (every check when there is none, and the `image` job always), publishes the image only from a green run, and starts the jobs the queue ran after a landing. `graphics` and Lighthouse run there, after the merge (the owner's call): timing belongs to main's quiet runners.
 - **`after.yml` keeps one `main is red: <job>` issue per failed check on main** and files flaky tests from `check`'s artifacts. It reruns a failure that is all infrastructure once (the owner's call, 2026-11-14), the one retry ADR-0095 forbade.
 - **Caches are saved only by main's runs** and restored by pull requests, as before; `check` now saves the pinned downloads the deleted workflows used to save.
 - **ADR-0097's "newest green"** is the newest commit on main whose `main.yml` run passed (`scripts/release.sh`), falling back to the queue's `queue` and `full` statuses for older commits. The version commit goes to the branch `release-X.Y.Z` and lands by its pull request.
@@ -31,5 +31,5 @@ The shared CI skeleton (the `ci-skeleton` project) gives every project the same 
 
 - **Two green pull requests can break main together,** since each was checked on its own head. `main.yml` shows it within one run, `after` files it, and the fix is a fix or a revert, revert by default. `:main` publishes only from a green run, so no install pulls a red build.
 - **Privacy is checked on the pull request's head,** and the merged commit is made at merge time; main's own `privacy` job catches a leak there only after it is public. The rebase merge keeps the commits' own UTC dates.
-- **No `full` status any more:** every main run is full.
+- **No `full` status any more.** Main's run is path-gated like a pull request's, against `main.yml`'s newest green run (`base`), so a red job stays selected until a run is green. Main's own full history (`main-full`) found 0 real breaks behind a path skip in 48 working runs; a full pull request run is about 122 job-minutes and a full main run about 145, on 20 runner slots.
 - **Pull requests are opened by the App, never a person's account,** whose time zone GitHub writes into the test-merge commit of an open pull request.
