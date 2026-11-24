@@ -14,6 +14,7 @@ use std::sync::{Arc, PoisonError, RwLock};
 use lull_core::Result;
 use lull_core::flags::{Flags, PERSONAL_SEARCH};
 use lull_core::ids::TrackId;
+use lull_core::model::Playlist;
 use tokio::sync::Notify;
 
 use crate::Service;
@@ -105,7 +106,7 @@ async fn build(svc: &Service) -> Result<Snapshot> {
         tracing::info!(error = %e, "personal search without the library this time");
         Vec::new()
     });
-    let playlisted = svc.store.playlisted().await?;
+    let playlisted = playlisted(svc).await?;
     let saved: HashSet<&TrackId> = library.iter().map(|(t, _)| &t.id).collect();
     let met: Vec<TrackId> = signals
         .plays
@@ -138,6 +139,19 @@ async fn build(svc: &Service) -> Result<Snapshot> {
         .map_err(|e| lull_core::Error::internal(format!("personal search index build: {e}")))
 }
 
+/// The songs in any of the listener's playlists, asked of collection, which owns them. Before
+/// collection is attached (`attach_collection` nudges a rebuild) there are none to read.
+async fn playlisted(svc: &Service) -> Result<HashSet<TrackId>> {
+    match svc.collection.get() {
+        Some(collection) => Ok(songs_of(&collection.playlists().await?)),
+        None => Ok(HashSet::new()),
+    }
+}
+
+fn songs_of(playlists: &[Playlist]) -> HashSet<TrackId> {
+    playlists.iter().flat_map(|p| p.track_ids.iter().cloned()).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,6 +170,24 @@ mod tests {
         assert!(personal.snapshot().is_none());
         personal.set(Snapshot::default());
         assert!(personal.snapshot().is_some());
+    }
+
+    #[test]
+    fn a_song_in_two_playlists_is_listed_once_and_an_empty_playlist_lists_none() {
+        let playlist = |id: &str, tracks: &[&str]| Playlist {
+            id: id.into(),
+            name: id.into(),
+            description: String::new(),
+            track_ids: tracks.iter().map(|t| TrackId((*t).into())).collect(),
+            created_at: 0,
+            updated_at: 0,
+        };
+        let listed = songs_of(&[
+            playlist("pl-1", &["a", "b"]),
+            playlist("pl-2", &["b"]),
+            playlist("pl-3", &[]),
+        ]);
+        assert_eq!(listed, ["a", "b"].map(|t| TrackId(t.into())).into_iter().collect());
     }
 
     #[test]
