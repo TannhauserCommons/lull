@@ -44,6 +44,10 @@ jobs:
   plan:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    # actions: read, to find main.yml's newest green run (scripts/ci/main-plan.sh)
+    permissions:
+      contents: read
+      actions: read
     outputs:
       pages: ${{ steps.plan.outputs.pages }}
       share: ${{ steps.plan.outputs.share }}
@@ -51,7 +55,7 @@ jobs:
       warm: ${{ steps.plan.outputs.warm }}
       notes: ${{ steps.plan.outputs.notes }}
     steps:
-      # The push's first parent and its commits' subjects.
+      # Main's history back to its newest green run, and the commits' subjects.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -63,6 +67,7 @@ jobs:
         name: mise run main:plan
         run: mise run main:plan
         env:
+          GH_TOKEN: ${{ github.token }}
           BEFORE: ${{ github.event.before }}
           SHA: ${{ github.sha }}
 

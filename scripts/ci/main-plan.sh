@@ -1,7 +1,12 @@
 #!/bin/sh
-# What a push to main brought, for main.yml's after-landing jobs: `sh scripts/ci/main-plan.sh` (`mise run main:plan`).
-# Reads BEFORE (main's tip before the push) and SHA (its tip now) and writes one `name=true|false` line each to
-# $GITHUB_OUTPUT, or to stdout when that isn't set.
+# What main brought since its after-landing jobs last ran, for main.yml's: `sh scripts/ci/main-plan.sh`
+# (`mise run main:plan`). Reads BEFORE (main's tip before the push) and SHA (its tip now) and writes one
+# `name=true|false` line each to $GITHUB_OUTPUT, or to stdout when that isn't set.
+#
+# In main.yml (GITHUB_REPOSITORY and GH_TOKEN set) it plans from main.yml's newest green run on main instead of BEFORE:
+# a waiting run that a newer push replaced never ran, and a red run skipped its after-landing jobs, so what those
+# pushes brought is planned here. BEFORE stays the base when no green run is an ancestor of SHA (the first run, or a
+# re-run of an older one) and for a run by hand.
 set -eu
 
 die() { echo "main-plan: $*" >&2; exit 1; }
@@ -13,6 +18,14 @@ sha=${SHA:-}
 # guessing, and shows it.
 [ -n "$before" ] && ! printf '%s' "$before" | grep -Eq '^0+$' || die "the push has no tip before it"
 git cat-file -e "$before^{commit}" 2>/dev/null || die "$before isn't in the clone: check out with fetch-depth 0"
+if [ -n "${GITHUB_REPOSITORY:-}" ]; then
+  green=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/main.yml/runs?branch=main&event=push&status=success&per_page=1" \
+    --jq '.workflow_runs[0].head_sha // empty')
+  if [ -n "$green" ] && git merge-base --is-ancestor "$green" "$sha" 2>/dev/null; then
+    before=$green
+  fi
+fi
+echo "main-plan: from $before to $sha"
 
 files=$(git diff --name-only "$before" "$sha")
 out=${GITHUB_OUTPUT:-/dev/stdout}
