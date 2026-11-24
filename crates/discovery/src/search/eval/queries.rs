@@ -8,7 +8,7 @@ use super::listening::{Listening, first_credit};
 /// The targets the eval measures: the listener's heaviest songs and artists. Each song is a dozen
 /// queries and iTunes allows about 9 queries a minute, so recording more costs hours (record.rs).
 const SONGS: usize = 60;
-const ARTISTS: usize = 25;
+pub const ARTISTS: usize = 25;
 /// Characters typed so far, for a title or for artist and title; for an artist's name.
 const TITLE_PREFIXES: [usize; 4] = [2, 3, 5, 8];
 const ARTIST_PREFIXES: [usize; 2] = [2, 3];

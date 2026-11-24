@@ -15,6 +15,8 @@ pub struct Scored<'a> {
     pub today: Outcome,
     /// The personal ranking, the snapshot answering for the library.
     pub personal: Outcome,
+    /// The personal ranking with no artist id in the snapshot.
+    pub without_ids: Outcome,
 }
 
 #[derive(Default)]
@@ -180,4 +182,47 @@ pub fn worse_forms(scored: &[Scored]) -> String {
             )
         })
         .collect()
+}
+
+/// How far the derived artist ids reach (`eval::artist_coverage`).
+pub struct Coverage {
+    /// The artist targets, and how many of them hold a trusted id.
+    pub targets: usize,
+    pub with_ids: usize,
+    /// The artist rows in the answers to the full-name queries, and how many the ids lift.
+    pub rows: usize,
+    pub lifted: usize,
+}
+
+/// The artist tier: its coverage, and the artist forms' numbers of the personal ranking without
+/// and with the derived ids ("without / with"). The ids are derived from recorded rows, not the
+/// hub's own (`eval/ids.rs`).
+pub fn artist_tier(scored: &[Scored], coverage: &Coverage) -> String {
+    let mut out = format!(
+        "### Artist tier (ids derived from recorded rows, not the hub's)\n\n\
+         {} of {} artist targets hold a trusted id; the ids lift {} of {} artist rows in the full-name answers.\n\n\
+         | query | queries | top-1 | in first {DEPTH} | MRR@{DEPTH} |\n|---|---|---|---|---|\n",
+        coverage.with_ids, coverage.targets, coverage.lifted, coverage.rows
+    );
+    let mut by_form: BTreeMap<Form, (Tally, Tally)> = BTreeMap::new();
+    for s in scored.iter().filter(|s| matches!(s.case.target, Target::Artist(_))) {
+        let (without, with) = by_form.entry(s.case.form).or_default();
+        without.add(&s.without_ids);
+        with.add(&s.personal);
+    }
+    for (form, (without, with)) in &by_form {
+        let _ = writeln!(
+            out,
+            "| {} | {} | {} / {} | {} / {} | {} / {} |",
+            form.label(),
+            with.queries,
+            without.share(without.top1),
+            with.share(with.top1),
+            without.share(without.in_first_ten),
+            with.share(with.in_first_ten),
+            without.mrr(),
+            with.mrr(),
+        );
+    }
+    out
 }
