@@ -104,7 +104,11 @@ async fn tick(svc: &Arc<Service>, last_full: &mut Option<Instant>) -> Result<()>
         let changed = svc
             .index_mut()
             .merge(latest.into_iter().filter_map(saved_from).collect());
+        let any = !changed.is_empty();
         persist(&svc.ctx.db, changed, false).await?;
+        if any {
+            svc.index_changed();
+        }
     }
     save::settle(svc).await;
     Ok(())
@@ -113,9 +117,13 @@ async fn tick(svc: &Arc<Service>, last_full: &mut Option<Instant>) -> Result<()>
 /// Reads the whole library, replaces the index and works out where the music folder is.
 pub async fn full_read(svc: &Arc<Service>) -> Result<()> {
     let (items, music) = read_all(svc.jellyfin()?, &svc.ctx.config.library.music_dir).await?;
-    svc.index_mut().replace(items.clone());
+    let changed = svc.index_mut().replace(items.clone());
     *svc.music.write().unwrap_or_else(PoisonError::into_inner) = music;
-    persist(&svc.ctx.db, items, true).await
+    persist(&svc.ctx.db, items, true).await?;
+    if changed {
+        svc.index_changed();
+    }
+    Ok(())
 }
 
 /// Every audio item of a Jellyfin, and its music folder over `music_dir` (also for switching to
@@ -328,6 +336,19 @@ mod tests {
             mb_release_group: None,
             mb_artist: None,
         }
+    }
+
+    #[test]
+    fn a_full_read_says_whether_it_changed_the_index() {
+        let mut index = crate::index::Index::default();
+        assert!(!index.replace(vec![]), "an empty library read as empty is no change");
+        assert!(index.replace(vec![saved_at("/media/music/a.flac")]));
+        assert!(
+            !index.replace(vec![saved_at("/media/music/a.flac")]),
+            "the same songs read again are no change"
+        );
+        assert!(index.replace(vec![saved_at("/media/music/b.flac")]), "another path is");
+        assert!(index.replace(vec![]), "an emptied library is");
     }
 
     #[test]

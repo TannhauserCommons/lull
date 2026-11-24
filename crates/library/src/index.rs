@@ -57,10 +57,14 @@ impl Index {
         index
     }
 
-    /// The whole library, as a full read of the source found it.
-    pub fn replace(&mut self, items: Vec<Saved>) {
-        self.items = items.into_iter().map(|s| (s.location.key().to_owned(), s)).collect();
+    /// The whole library, as a full read of the source found it; says whether it differs from
+    /// what was indexed.
+    pub fn replace(&mut self, items: Vec<Saved>) -> bool {
+        let items: HashMap<String, Saved> = items.into_iter().map(|s| (s.location.key().to_owned(), s)).collect();
+        let changed = items != self.items;
+        self.items = items;
         self.rebuild();
+        changed
     }
 
     /// Adds or updates items (a save's rescan); returns those that were new or changed.
