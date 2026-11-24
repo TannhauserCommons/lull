@@ -122,7 +122,7 @@ impl Listening {
                 known.insert(id, track);
             }
         }
-        let mut weights: HashMap<&str, u32> = HashMap::new();
+        let mut weights: BTreeMap<&str, u32> = BTreeMap::new();
         let mut plays: HashMap<&str, u32> = HashMap::new();
         let mut keeps: HashSet<&str> = HashSet::new();
         for day in history["days"].as_array().into_iter().flatten() {
