@@ -689,8 +689,25 @@ jobs:
         with:
           name: lull-server-linux-x64
           path: ${{ runner.temp }}/packages
+      # ffmpeg's packages (the fixture library) come from the Actions cache when it has them: a runner's Ubuntu
+      # mirror can be slow enough that downloading them alone outlasts the job (2026-11-24, at about 200 kB/s).
+      # apt_install keeps what it downloads in APT_KEEP (scripts/ci/lib.sh). Only main's runs save.
+      - id: apt
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/apt/*.deb
+          key: apt-${{ runner.os }}-${{ runner.arch }}-jellyfin-${{ hashFiles('scripts/ci/package-jellyfin.sh') }}
+          restore-keys: apt-${{ runner.os }}-${{ runner.arch }}-jellyfin-
       - name: mise run package:jellyfin
         run: mise run package:jellyfin
+        env:
+          APT_KEEP: ${{ runner.temp }}/apt
+      # After the install, whether or not the test passed; not when the job was stopped.
+      - if: ${{ !cancelled() && steps.apt.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/apt/*.deb
+          key: apt-${{ runner.os }}-${{ runner.arch }}-jellyfin-${{ hashFiles('scripts/ci/package-jellyfin.sh') }}
 
   # A hub updating itself (server-package.yml `self-update`). Two debug builds.
   package-self-update:
