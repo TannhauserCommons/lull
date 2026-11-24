@@ -39,7 +39,7 @@ Owner: Discovery session (`crates/discovery/src/taste.rs`). Small, on-device and
 
 ## Search affinity
 
-Behind the `personal-search` switch (ADR-0036), search lifts the listener's own music with one number from 0 to 1 per song, album and artist (`search/personal/score.rs`, a pure function of the signals above). It reads taste's weights and fade, adds no signal of its own except playlists, and never falls below 0, so it never hides what the words match.
+Behind the `personal-search` switch (ADR-0036), search lifts the listener's own music with one number from 0 to 1 per song, album and artist (`search/personal/score.rs`, a pure function of the signals above). It reads taste's weights and fade, adds no signal of its own except playlists, and never falls below 0, so it never hides what the words match. Genres and similar artists are not in it: a small lift from a song's genre was measured and moved top-1 by nothing (ADR-0036).
 
 | Row | Score |
 |---|---|
