@@ -45,6 +45,14 @@ pub struct Affinity {
     pub own: bool,
 }
 
+impl Affinity {
+    /// The row is the listener's: their own take, or lifted through their songs, albums or an
+    /// artist reached by trusted ids.
+    pub fn theirs(&self) -> bool {
+        self.own || self.score > 0.0
+    }
+}
+
 /// How the listener keeps a song apart from playing it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Keep {

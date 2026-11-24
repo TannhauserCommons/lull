@@ -702,38 +702,22 @@ fn rank_personal(q: &Query, m: &Merged, snapshot: &Snapshot) -> Ranked {
 }
 
 fn rank_own(q: &Query, m: &Merged, own: &Own) -> Ranked {
-    let catalog_songs = catalog_song_scores(q, m);
-    let fits = lifted(&catalog_songs, &m.songs, own.personal.map(|p| |s: &SongHit| p.song(s)));
-    let songs = order(&fits, own.personal, |i| {
+    let scored = sections(q, m, own.personal);
+    let Sections {
+        songs: song_scores,
+        albums: album_scores,
+        artists: artist_scores,
+        borrowed,
+    } = &scored;
+    let fits = &song_scores.lifted;
+    let songs = order(fits, own.personal, |i| {
         let s = &m.songs[i];
         s.saved.is_some() || own.liked.contains(&s.id()) || own.followed.contains(&s.artist_id())
     });
-    let catalog_albums: Vec<Score> = m
-        .albums
-        .iter()
-        .enumerate()
-        .map(|(i, a)| Score {
-            filler: m.filler_album(i),
-            ..Score::album(q, a)
-        })
-        .collect();
-    let album_fits = lifted(
-        &catalog_albums,
-        &m.albums,
-        own.personal.map(|p| |a: &merge::AlbumHit| p.album(a)),
-    );
-    let albums = order(&album_fits, own.personal, |i| {
+    let albums = order(&album_scores.lifted, own.personal, |i| {
         own.followed.contains(&m.albums[i].artist_id())
     });
-    let mut catalog_artists: Vec<Score> = m.artists.iter().map(|a| Score::artist(q, a)).collect();
-    merge::overshadow(&m.artists, &mut catalog_artists);
-    let artist_fits = lifted(
-        &catalog_artists,
-        &m.artists,
-        own.personal.map(|p| |a: &ArtistHit| p.artist(a)),
-    );
-    let borrowed = merge::borrowed(&m.artists);
-    let mut artists = order(&artist_fits, own.personal, |i| {
+    let mut artists = order(&artist_scores.lifted, own.personal, |i| {
         own.followed.contains(&m.artists[i].id())
     });
     artists.retain(|&i| !borrowed[i]);
@@ -761,12 +745,15 @@ fn rank_own(q: &Query, m: &Merged, own: &Own) -> Ranked {
         Some(playlists::WorkTop::Playlist(i)) => (Some(Top::of("playlist", m.playlists[i].link())), None),
         None => {
             // The listener's lift orders rows inside a section; which kind of row leads is the
-            // catalogs' call, or their own songs and albums would always beat the artist's name.
+            // catalogs' call (with the short-search rule's mark), or their own songs and albums
+            // would always beat the artist's name.
             let personal = own.personal.is_some();
             let kind = merge::top(
-                kind_leader(personal, &catalog_artists, &artists, &artist_fits, |i| !borrowed[i]),
-                kind_leader(personal, &catalog_albums, &albums, &album_fits, |_| true),
-                kind_leader(personal, &catalog_songs, &songs, &fits, |_| true),
+                kind_leader(personal, &artist_scores.marked, &artists, &artist_scores.lifted, |i| {
+                    !borrowed[i]
+                }),
+                kind_leader(personal, &album_scores.marked, &albums, &album_scores.lifted, |_| true),
+                kind_leader(personal, &song_scores.marked, &songs, fits, |_| true),
             );
             let top = kind.map(|kind| match kind {
                 Kind::Artist => Top::of("artist", m.artists[artists[0]].id().0),
@@ -786,14 +773,108 @@ fn rank_own(q: &Query, m: &Merged, own: &Own) -> Ranked {
     }
 }
 
-/// The songs' scores, their popularity raised by their other takes (`merge::known`), and with
-/// the listener's snapshot, by how much each is theirs.
+/// The songs' scores as the ranking sees them: as `rank_own` has them, with the listener's lift
+/// and the short-search rule's mark when there is a snapshot.
 fn song_scores(q: &Query, m: &Merged, personal: Option<&Snapshot>) -> Vec<Score> {
-    lifted(
-        &catalog_song_scores(q, m),
-        &m.songs,
-        personal.map(|p| |s: &SongHit| p.song(s)),
-    )
+    sections(q, m, personal).songs.lifted
+}
+
+/// The scores of each section's rows, and of the artists the board leaves out.
+struct Sections {
+    songs: Scored,
+    albums: Scored,
+    artists: Scored,
+    /// Artists whose name holds another's and have a sliver of its audience (`merge::borrowed`).
+    borrowed: Vec<bool>,
+}
+
+/// One section's scores: `marked`, as the catalogs give them plus the short-search rule's mark,
+/// which is what the top result's kind is chosen from, and `lifted`, with the listener's lift
+/// too, which orders the section.
+struct Scored {
+    marked: Vec<Score>,
+    lifted: Vec<Score>,
+}
+
+/// Every section's scores. With a snapshot, rows are marked by the short-search rule (`own_first`
+/// is decided from the catalogs' scores alone) and lifted by how much each is the listener's.
+fn sections(q: &Query, m: &Merged, personal: Option<&Snapshot>) -> Sections {
+    let songs = catalog_song_scores(q, m);
+    let albums: Vec<Score> = m
+        .albums
+        .iter()
+        .enumerate()
+        .map(|(i, a)| Score {
+            filler: m.filler_album(i),
+            ..Score::album(q, a)
+        })
+        .collect();
+    let mut artists: Vec<Score> = m.artists.iter().map(|a| Score::artist(q, a)).collect();
+    merge::overshadow(&m.artists, &mut artists);
+    let borrowed = merge::borrowed(&m.artists);
+    let own_first = personal.is_some() && own_first_search(q, &m.artists, &artists, &albums, &songs, &borrowed);
+    Sections {
+        songs: Scored::new(&songs, &m.songs, personal.map(|p| |s: &SongHit| p.song(s)), own_first),
+        albums: Scored::new(
+            &albums,
+            &m.albums,
+            personal.map(|p| |a: &merge::AlbumHit| p.album(a)),
+            own_first,
+        ),
+        artists: Scored::new(
+            &artists,
+            &m.artists,
+            personal.map(|p| |a: &ArtistHit| p.artist(a)),
+            own_first,
+        ),
+        borrowed,
+    }
+}
+
+/// Whether the listener's own leads this search: it is short (`Query::is_short`) and the catalogs
+/// don't clearly name an artist (`merge::names_artist`), whose name the listener wants whatever
+/// of theirs the letters start.
+fn own_first_search(
+    q: &Query,
+    artist_rows: &[ArtistHit],
+    artists: &[Score],
+    albums: &[Score],
+    songs: &[Score],
+    borrowed: &[bool],
+) -> bool {
+    let leader = catalog_leader(artists, |i| !borrowed[i]);
+    let top = merge::top(
+        leader.map(|i| artists[i]),
+        catalog_leader(albums, |_| true).map(|i| albums[i]),
+        catalog_leader(songs, |_| true).map(|i| songs[i]),
+    );
+    q.is_short() && !merge::names_artist(artist_rows, artists, leader, top)
+}
+
+impl Scored {
+    /// The rows' scores from the catalogs (`catalog`), with the snapshot's answer for each row
+    /// (`affinity`) when there is one: marked by the short-search rule when it `applies`, then
+    /// lifted.
+    fn new<T>(catalog: &[Score], rows: &[T], affinity: Option<impl Fn(&T) -> Affinity>, applies: bool) -> Scored {
+        let Some(affinity) = affinity else {
+            return Scored {
+                marked: catalog.to_vec(),
+                lifted: catalog.to_vec(),
+            };
+        };
+        let affinities: Vec<Affinity> = rows.iter().map(affinity).collect();
+        let marked: Vec<Score> = catalog
+            .iter()
+            .zip(&affinities)
+            .map(|(s, &a)| s.leading(a, applies))
+            .collect();
+        let lifted = marked
+            .iter()
+            .zip(&affinities)
+            .map(|(s, &a)| s.with_affinity(a))
+            .collect();
+        Scored { marked, lifted }
+    }
 }
 
 /// The songs' scores as the catalogs give them, before anything of the listener's.
@@ -811,21 +892,9 @@ fn catalog_song_scores(q: &Query, m: &Merged) -> Vec<Score> {
     scores
 }
 
-/// The rows' scores with the listener's lift (`lift`: the snapshot's answer for a row), or as the
-/// catalogs give them when there is no snapshot.
-fn lifted<T>(catalog: &[Score], rows: &[T], lift: Option<impl Fn(&T) -> Affinity>) -> Vec<Score> {
-    match lift {
-        Some(lift) => catalog
-            .iter()
-            .zip(rows)
-            .map(|(s, row)| s.with_affinity(lift(row)))
-            .collect(),
-        None => catalog.to_vec(),
-    }
-}
-
 /// The score of a section's best row for choosing the top result's kind: the first as ranked, or,
-/// with a snapshot, the first by the catalogs' scores alone.
+/// with a snapshot, the first by the catalogs' scores alone (`catalog`, with the short-search
+/// rule's mark).
 fn kind_leader(
     personal: bool,
     catalog: &[Score],
@@ -834,13 +903,15 @@ fn kind_leader(
     allowed: impl Fn(usize) -> bool,
 ) -> Option<Score> {
     if personal {
-        merge::rank_blended(catalog)
-            .into_iter()
-            .find(|&i| allowed(i))
-            .map(|i| catalog[i])
+        catalog_leader(catalog, allowed).map(|i| catalog[i])
     } else {
         ranked.first().map(|&i| lifted[i])
     }
+}
+
+/// The position of the first row allowed by the catalogs' scores alone.
+fn catalog_leader(catalog: &[Score], allowed: impl Fn(usize) -> bool) -> Option<usize> {
+    merge::rank_blended(catalog).into_iter().find(|&i| allowed(i))
 }
 
 /// Positions of the rows best first: by the snapshot's blend, or, without one, the old order in
