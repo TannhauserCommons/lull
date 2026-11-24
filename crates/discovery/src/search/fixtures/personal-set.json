@@ -3820,6 +3820,173 @@
    "songs": [],
    "follows": [],
    "artistIds": {}
+  },
+  "muse-songs-no-ids": {
+   "songs": [
+    {
+     "artist": "Muse",
+     "title": "Hysteria",
+     "album": "Absolution",
+     "year": 2003,
+     "tags": [
+      "rock"
+     ],
+     "saved": true,
+     "playedDaysAgo": [
+      1,
+      2,
+      3,
+      5,
+      8
+     ],
+     "skippedDaysAgo": [],
+     "likedDaysAgo": 2,
+     "playlisted": false
+    },
+    {
+     "artist": "Muse",
+     "title": "Time Is Running Out",
+     "album": "Absolution",
+     "year": 2003,
+     "tags": [
+      "rock"
+     ],
+     "saved": true,
+     "playedDaysAgo": [
+      1,
+      4,
+      6,
+      10
+     ],
+     "skippedDaysAgo": [],
+     "likedDaysAgo": 3,
+     "playlisted": false
+    },
+    {
+     "artist": "Muse",
+     "title": "Sing for Absolution",
+     "album": "Absolution",
+     "year": 2003,
+     "tags": [
+      "rock"
+     ],
+     "saved": true,
+     "playedDaysAgo": [
+      2,
+      7,
+      12
+     ],
+     "skippedDaysAgo": [],
+     "likedDaysAgo": null,
+     "playlisted": false
+    },
+    {
+     "artist": "Muse",
+     "title": "Stockholm Syndrome",
+     "album": "Absolution",
+     "year": 2003,
+     "tags": [
+      "rock"
+     ],
+     "saved": true,
+     "playedDaysAgo": [
+      3,
+      9
+     ],
+     "skippedDaysAgo": [],
+     "likedDaysAgo": 5,
+     "playlisted": false
+    }
+   ],
+   "follows": [],
+   "artistIds": {}
+  },
+  "muse-songs-with-ids": {
+   "songs": [
+    {
+     "artist": "Muse",
+     "title": "Hysteria",
+     "album": "Absolution",
+     "year": 2003,
+     "tags": [
+      "rock"
+     ],
+     "saved": true,
+     "playedDaysAgo": [
+      1,
+      2,
+      3,
+      5,
+      8
+     ],
+     "skippedDaysAgo": [],
+     "likedDaysAgo": 2,
+     "playlisted": false
+    },
+    {
+     "artist": "Muse",
+     "title": "Time Is Running Out",
+     "album": "Absolution",
+     "year": 2003,
+     "tags": [
+      "rock"
+     ],
+     "saved": true,
+     "playedDaysAgo": [
+      1,
+      4,
+      6,
+      10
+     ],
+     "skippedDaysAgo": [],
+     "likedDaysAgo": 3,
+     "playlisted": false
+    },
+    {
+     "artist": "Muse",
+     "title": "Sing for Absolution",
+     "album": "Absolution",
+     "year": 2003,
+     "tags": [
+      "rock"
+     ],
+     "saved": true,
+     "playedDaysAgo": [
+      2,
+      7,
+      12
+     ],
+     "skippedDaysAgo": [],
+     "likedDaysAgo": null,
+     "playlisted": false
+    },
+    {
+     "artist": "Muse",
+     "title": "Stockholm Syndrome",
+     "album": "Absolution",
+     "year": 2003,
+     "tags": [
+      "rock"
+     ],
+     "saved": true,
+     "playedDaysAgo": [
+      3,
+      9
+     ],
+     "skippedDaysAgo": [],
+     "likedDaysAgo": 5,
+     "playlisted": false
+    }
+   ],
+   "follows": [],
+   "artistIds": {
+    "Muse": [
+     [
+      "deezer",
+      "705"
+     ]
+    ]
+   }
   }
  }
 }
