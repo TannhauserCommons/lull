@@ -22,6 +22,7 @@
 
 mod answers;
 mod ids;
+mod links;
 mod listening;
 mod mine;
 mod queries;
@@ -32,6 +33,7 @@ mod score;
 use std::path::PathBuf;
 
 use self::answers::{Answer, Answers};
+use self::links::ArtistLinks;
 use self::listening::Listening;
 use self::queries::{Case, Target};
 use self::report::Scored;
@@ -43,6 +45,7 @@ use super::{Ranked, rank_personal, rank_rows};
 
 const DIR_VAR: &str = "LULL_SEARCH_EVAL_DIR";
 const RECORD_VAR: &str = "LULL_SEARCH_EVAL_RECORD";
+const LINKS_VAR: &str = "LULL_SEARCH_EVAL_LINKS";
 const COUNTRY_VAR: &str = "LULL_CATALOG_COUNTRY";
 /// Saved songs the library answers a search with (`SAVED` in search).
 const SAVED_ANSWERS: usize = 25;
@@ -112,7 +115,7 @@ fn record_the_answers() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
     let mut answers = Answers::load(&dir)?;
-    let listening = Listening::load(&dir, &answers)?;
+    let listening = Listening::load(&dir, &answers, &ArtistLinks::load(&dir)?)?;
     let queries = queries::queries(&queries::plan(&listening));
     println!("{} queries planned, {} recorded", queries.len(), answers.len());
     let country = std::env::var(COUNTRY_VAR).unwrap_or_else(|_| "US".into());
@@ -123,13 +126,33 @@ fn record_the_answers() -> Result<(), String> {
 }
 
 #[test]
+#[ignore = "calls MusicBrainz; needs LULL_SEARCH_EVAL_DIR, with answers recorded, and LULL_SEARCH_EVAL_LINKS"]
+fn record_the_artist_links() -> Result<(), String> {
+    let Some(dir) = eval_dir("record_the_artist_links") else {
+        return Ok(());
+    };
+    if std::env::var_os(LINKS_VAR).is_none() {
+        println!("record_the_artist_links: skipped, {LINKS_VAR} is not set");
+        return Ok(());
+    }
+    let answers = Answers::load(&dir)?;
+    let links = ArtistLinks::recording(&dir)?;
+    // Loading derives the ids, which asks MusicBrainz for what the folder lacks; saved even when
+    // it stops half way, so a rerun asks only the rest.
+    let loaded = Listening::load(&dir, &answers, &links);
+    links.save(&dir)?;
+    println!("{} MusicBrainz requests", links.requests());
+    loaded.map(|_| ())
+}
+
+#[test]
 #[ignore = "needs LULL_SEARCH_EVAL_DIR, with answers recorded by record_the_answers"]
 fn score_search_on_the_listeners_music() -> Result<(), String> {
     let Some(dir) = eval_dir("score_search_on_the_listeners_music") else {
         return Ok(());
     };
     let answers = Answers::load(&dir)?;
-    let listening = Listening::load(&dir, &answers)?;
+    let listening = Listening::load(&dir, &answers, &ArtistLinks::load(&dir)?)?;
     let cases: Vec<Case> = queries::plan(&listening);
     let scored: Vec<Scored> = cases
         .iter()
@@ -209,6 +232,7 @@ fn artist_coverage(listening: &Listening, answers: &Answers, cases: &[Case]) -> 
     report::Coverage {
         targets: targets.len(),
         with_ids: targets.iter().filter(|a| listening.has_ids(a)).count(),
+        with_deezer_id: targets.iter().filter(|a| listening.has_deezer_id(a)).count(),
         rows,
         lifted,
     }
