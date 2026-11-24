@@ -9,8 +9,8 @@
 # re-run of an older one) and for a run by hand.
 #
 # It also writes `base=<sha>`, that green run's commit, which main.yml hands to check.yml: main's check runs the jobs
-# whose paths changed since it. `base=` is empty when no green ancestor was found (BEFORE is never used for that),
-# and check then runs every job.
+# whose paths changed since it. `base=` is empty when no green ancestor was found or the lookup failed (BEFORE is never
+# used for that), and check then runs every job.
 set -eu
 
 die() { echo "main-plan: $*" >&2; exit 1; }
@@ -24,8 +24,9 @@ sha=${SHA:-}
 [ -n "$before" ] && ! printf '%s' "$before" | grep -Eq '^0+$' || die "the push has no tip before it"
 git cat-file -e "$before^{commit}" 2>/dev/null || die "$before isn't in the clone: check out with fetch-depth 0"
 if [ -n "${GITHUB_REPOSITORY:-}" ]; then
+  # A lookup that fails finds no green run: main then checks every job, which is never less than it needs.
   green=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/main.yml/runs?branch=main&event=push&status=success&per_page=1" \
-    --jq '.workflow_runs[0].head_sha // empty')
+    --jq '.workflow_runs[0].head_sha // empty') || { echo "main-plan: main.yml's runs couldn't be read" >&2; green=; }
   if [ -n "$green" ] && git merge-base --is-ancestor "$green" "$sha" 2>/dev/null; then
     before=$green
     base=$green
