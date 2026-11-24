@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::search::merge::Found;
+use crate::search::merge::{Found, SongHit};
 
 const FILE: &str = "answers.json";
 
@@ -47,6 +47,14 @@ impl Answers {
 
     pub fn insert(&mut self, query: String, answer: Answer) {
         self.0.insert(query, answer);
+    }
+
+    /// Every song row of every recorded answer.
+    pub fn songs(&self) -> impl Iterator<Item = &SongHit> {
+        self.0
+            .values()
+            .flat_map(|a| [&a.itunes, &a.deezer_artists, &a.youtube_music])
+            .flat_map(|found| &found.songs)
     }
 
     pub fn len(&self) -> usize {

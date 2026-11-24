@@ -8,6 +8,8 @@ use lull_core::ids::{ArtistId, TrackId, loose_artist, loose_title};
 use lull_core::model::Track;
 use serde_json::Value;
 
+use super::answers::Answers;
+use super::ids::{self, DerivedIds};
 use super::mine::Pages;
 use crate::search::personal::snapshot::Snapshot;
 
@@ -55,8 +57,14 @@ pub struct Listening {
     pub own: Own,
     /// The songs in the library: what the hub's saved-songs source would answer.
     pub saved: Vec<Track>,
-    /// What the personal search reads of them, built as the hub builds it (`mine`).
+    /// What the personal search reads of them, built as the hub builds it (`mine`), with the
+    /// artist ids derived from the recorded rows (`ids`).
     pub snapshot: Snapshot,
+    /// The same without any artist id: how the eval measured before the ids were derived.
+    pub without_ids: Snapshot,
+    /// The songs played or liked, and the ids derived for their artists.
+    pub listened: Vec<Track>,
+    pub ids: DerivedIds,
 }
 
 impl WantedSong {
@@ -86,7 +94,12 @@ impl Listening {
         self.artists.iter().any(|a| a.kept && a.is(name))
     }
 
-    pub fn load(dir: &Path) -> Result<Listening, String> {
+    /// The artist has a trusted catalog id, derived from the rows recorded for their songs.
+    pub fn has_ids(&self, artist: &WantedArtist) -> bool {
+        self.ids.holds(&self.listened, &artist.loose)
+    }
+
+    pub fn load(dir: &Path, answers: &Answers) -> Result<Listening, String> {
         let read = |name: &str| -> Result<Value, String> {
             let path = dir.join(name);
             let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -174,15 +187,18 @@ impl Listening {
             .filter_map(|id| known.get(id))
             .map(|t| serde_json::from_value::<Track>((*t).clone()).map_err(|e| format!("a library track: {e}")))
             .collect::<Result<Vec<Track>, String>>()?;
-        let snapshot = Pages {
+        let pages = Pages {
             history: &history,
             likes: &likes,
             library: &library,
             playlists: &playlists,
             follows: &follows,
             known: &known,
-        }
-        .snapshot()?;
+        };
+        let listened = pages.listened()?;
+        let ids = ids::derive(&listened, answers)?;
+        let snapshot = pages.snapshot(&ids.by_artist)?;
+        let without_ids = pages.snapshot(&HashMap::new())?;
         Ok(Listening {
             songs,
             artists,
@@ -192,6 +208,9 @@ impl Listening {
             },
             saved,
             snapshot,
+            without_ids,
+            listened,
+            ids,
         })
     }
 }

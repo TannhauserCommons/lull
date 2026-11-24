@@ -1,15 +1,16 @@
 //! The listener's folder as the personal snapshot is built from it: the plays, likes, library,
 //! playlists and follows the hub's database would hold, in the shape `Snapshot::from_signals`
-//! takes. The export has no artist ids (`discovery_artist_ids` isn't in it), so none are given:
-//! the artist tier of the score isn't measured on this data.
+//! takes. The export has no artist ids (`discovery_artist_ids` isn't in it), so the caller gives
+//! the ones `ids` derives from recorded rows, or none.
 
 use std::collections::{HashMap, HashSet};
 
-use lull_core::ids::TrackId;
+use lull_core::ids::{ArtistId, TrackId};
 use lull_core::model::Track;
 use serde_json::Value;
 
 use crate::search::personal::index::Song;
+use crate::search::personal::score::CatalogId;
 use crate::search::personal::snapshot::Snapshot;
 use crate::taste::{Mark, Play, Signals};
 
@@ -25,7 +26,8 @@ pub struct Pages<'a> {
 }
 
 impl Pages<'_> {
-    pub fn snapshot(&self) -> Result<Snapshot, String> {
+    /// The snapshot, with `ids` as the catalog ids of the listener's artists.
+    pub fn snapshot(&self, ids: &HashMap<ArtistId, Vec<CatalogId>>) -> Result<Snapshot, String> {
         let plays = self.plays()?;
         // The export gives the day of a play but not of a like, so the likes count as made at the
         // last play: as new as anything the listener did.
@@ -40,13 +42,24 @@ impl Pages<'_> {
             ..Signals::default()
         };
         let songs = self.songs(&signals, &saved, &playlisted)?;
-        Ok(Snapshot::from_signals(
-            signals,
-            songs,
-            &playlisted,
-            &HashMap::new(),
-            now,
-        ))
+        Ok(Snapshot::from_signals(signals, songs, &playlisted, ids, now))
+    }
+
+    /// The songs played or liked, once each: what the hub's identity rule reads
+    /// (`Store::listener_songs`).
+    pub fn listened(&self) -> Result<Vec<Track>, String> {
+        let mut seen = HashSet::new();
+        let ids = strings(&self.likes["items"]).chain(
+            self.history["days"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(|day| day["items"].as_array().into_iter().flatten())
+                .filter_map(|p| p["trackId"].as_str()),
+        );
+        ids.filter(|id| seen.insert(*id))
+            .filter_map(|id| self.track(id).transpose())
+            .collect()
     }
 
     fn plays(&self) -> Result<Vec<Play>, String> {
@@ -156,4 +169,8 @@ impl Pages<'_> {
             .map(|t| serde_json::from_value::<Track>((*t).clone()).map_err(|e| format!("a track record: {e}")))
             .transpose()
     }
+}
+
+fn strings(list: &Value) -> impl Iterator<Item = &str> {
+    list.as_array().into_iter().flatten().filter_map(Value::as_str)
 }

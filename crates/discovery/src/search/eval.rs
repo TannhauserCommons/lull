@@ -4,8 +4,9 @@
 //! query is ranked twice, as today's hub does (`rank_rows`, the library emulated as a substring
 //! scan of the saved songs) and as the personal search does (`rank_personal`, the snapshot built
 //! from the folder's history, likes, library, playlists and follows answering for the library),
-//! and both are scored, so a change shows in one table. The folder has no artist ids, so the
-//! artist tier of the score isn't measured.
+//! and both are scored, so a change shows in one table. The folder has no artist ids: the
+//! artist tier uses ids derived from the recorded rows (`ids`, not the hub's own), and its own
+//! table shows the personal ranking with and without them.
 //!
 //! The data is private and never in the repo: the tests read the folder named by
 //! `LULL_SEARCH_EVAL_DIR` and skip, saying so, when it is unset. They are `#[ignore]`d, run with
@@ -20,6 +21,7 @@
 //! or credit; its reciprocal rank is 1/place in its own section (songs, artists), 0 past ten.
 
 mod answers;
+mod ids;
 mod listening;
 mod mine;
 mod queries;
@@ -109,9 +111,9 @@ fn record_the_answers() -> Result<(), String> {
         .enable_all()
         .build()
         .map_err(|e| e.to_string())?;
-    let listening = Listening::load(&dir)?;
-    let queries = queries::queries(&queries::plan(&listening));
     let mut answers = Answers::load(&dir)?;
+    let listening = Listening::load(&dir, &answers)?;
+    let queries = queries::queries(&queries::plan(&listening));
     println!("{} queries planned, {} recorded", queries.len(), answers.len());
     let country = std::env::var(COUNTRY_VAR).unwrap_or_else(|_| "US".into());
     let recorder = record::Recorder::new(country)?;
@@ -126,8 +128,8 @@ fn score_search_on_the_listeners_music() -> Result<(), String> {
     let Some(dir) = eval_dir("score_search_on_the_listeners_music") else {
         return Ok(());
     };
-    let listening = Listening::load(&dir)?;
     let answers = Answers::load(&dir)?;
+    let listening = Listening::load(&dir, &answers)?;
     let cases: Vec<Case> = queries::plan(&listening);
     let scored: Vec<Scored> = cases
         .iter()
@@ -146,6 +148,14 @@ fn score_search_on_the_listeners_music() -> Result<(), String> {
                 personal: judge(case.target, &listening, &q, &personal, Some(snapshot), |m| {
                     rank_personal(&q, m, snapshot)
                 }),
+                without_ids: judge(
+                    case.target,
+                    &listening,
+                    &q,
+                    &personal,
+                    Some(&listening.without_ids),
+                    |m| rank_personal(&q, m, &listening.without_ids),
+                ),
             })
         })
         .collect();
@@ -158,6 +168,10 @@ fn score_search_on_the_listeners_music() -> Result<(), String> {
         "{} of {} cases have recorded answers\n\n{tables}",
         scored.len(),
         cases.len()
+    );
+    println!(
+        "{}",
+        report::artist_tier(&scored, &artist_coverage(&listening, &answers, &cases))
     );
     println!("misses by cause\n{}", report::cause_counts(&scored));
     let worse = report::worse_forms(&scored);
@@ -172,6 +186,32 @@ fn score_search_on_the_listeners_music() -> Result<(), String> {
     let latest = format!("{tables}\n## Misses\n\n{}", report::misses(&scored));
     let path = dir.join("latest.md");
     std::fs::write(&path, latest).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// How far the derived ids reach: the artist targets that hold one, and the artist rows the
+/// answers to the full-name queries hold that the snapshot lifts.
+fn artist_coverage(listening: &Listening, answers: &Answers, cases: &[Case]) -> report::Coverage {
+    let targets = &listening.artists[..listening.artists.len().min(queries::ARTISTS)];
+    let (mut rows, mut lifted) = (0, 0);
+    for case in cases.iter().filter(|c| c.form == queries::Form::ArtistName) {
+        let Some(answer) = answers.get(&case.query) else {
+            continue;
+        };
+        let q = Query::new(&case.query);
+        let m = merged(listening.snapshot.found(&q), answer);
+        rows += m.artists.len();
+        lifted += m
+            .artists
+            .iter()
+            .filter(|a| listening.snapshot.artist(a).score > 0.0)
+            .count();
+    }
+    report::Coverage {
+        targets: targets.len(),
+        with_ids: targets.iter().filter(|a| listening.has_ids(a)).count(),
+        rows,
+        lifted,
+    }
 }
 
 /// The outcome of ranking `m` with `rank`, judged for the wanted target.
