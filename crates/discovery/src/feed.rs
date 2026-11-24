@@ -1326,7 +1326,8 @@ async fn similar_to(svc: &Service, id: &ArtistId) -> Result<Similar> {
         return Ok(Similar::Songs(Vec::new()));
     };
     let mut songs = svc.deezer.radio(deezer).await?;
-    songs.retain(|s| s.artist_source != Some(ArtistSource::Deezer(deezer)));
+    // Whichever of the artist's pages the song's row came from.
+    songs.retain(|s| !matches!(s.artist_source, Some(ArtistSource::Deezer(d)) if ids.holds(identity::Source::Deezer, &d.to_string())));
     mix::shuffle(&mut songs, mix::seed());
     songs.truncate(6);
     Ok(Similar::Songs(songs))
