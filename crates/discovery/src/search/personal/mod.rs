@@ -22,7 +22,8 @@ use index::Song;
 use snapshot::Snapshot;
 
 /// The bus topics after which the snapshot is out of date: a play ended, a like, a follow, a
-/// playlist, a save finished, the library switched, the Last.fm history came.
+/// playlist, a save finished, the library switched or its index changed (files added or removed
+/// outside lull), the Last.fm history came.
 const CHANGES: &[&str] = &[
     "play.ended",
     "like",
@@ -30,6 +31,7 @@ const CHANGES: &[&str] = &[
     "playlist",
     "save",
     "library.source",
+    "library.index",
     "lastfm.history",
 ];
 
@@ -192,7 +194,15 @@ mod tests {
 
     #[test]
     fn only_what_the_snapshot_holds_makes_it_stale() {
-        for topic in ["play.ended", "like", "follow", "playlist", "save", "library.source"] {
+        for topic in [
+            "play.ended",
+            "like",
+            "follow",
+            "playlist",
+            "save",
+            "library.source",
+            "library.index",
+        ] {
             assert!(is_change(topic), "{topic}");
         }
         for topic in ["stream", "transfer", "device.state", "search.more", "settings", "job"] {

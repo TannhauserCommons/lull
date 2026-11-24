@@ -227,6 +227,15 @@ impl Service {
             .set("library", state, format!("{mode}: {detail}"), extra);
     }
 
+    /// The index changed (a full read found other songs, files were added or removed, a save
+    /// finished): one `library.index` event for the refresh, never one per song.
+    fn index_changed(&self) {
+        let songs = self.index().len();
+        self.ctx
+            .bus
+            .publish("library.index", serde_json::json!({ "songs": songs }));
+    }
+
     /// The `library` status is `ok`: in Jellyfin mode, Jellyfin answered and was read.
     fn online(&self) -> bool {
         self.ctx

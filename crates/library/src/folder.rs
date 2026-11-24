@@ -293,7 +293,9 @@ async fn apply(svc: &Service, rel: &str, rows: Vec<Row>) -> Result<()> {
         changed = changed.len(),
         "music folder refreshed"
     );
-    persist(&svc.ctx.db, rel.to_owned(), rows, changed).await
+    persist(&svc.ctx.db, rel.to_owned(), rows, changed).await?;
+    svc.index_changed();
+    Ok(())
 }
 
 /// The whole folder index, read for a switch to folder mode.
