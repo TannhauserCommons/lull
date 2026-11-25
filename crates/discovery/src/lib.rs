@@ -211,8 +211,8 @@ pub struct Service {
     adventurousness: RwLock<f64>,
     /// How page sections that failed went, so a page read again says so (`pages::Unfinished`).
     unfinished: pages::Unfinished,
-    /// The listener's own music for search, with the `personal-search` switch on only.
-    personal: Option<search::personal::Personal>,
+    /// The listener's own music for search.
+    personal: search::personal::Personal,
     /// The listener's playlists, for search's index. Collection starts after discovery, so the hub
     /// hands it over later (`attach_collection`).
     collection: OnceLock<Arc<dyn Collection>>,
@@ -262,7 +262,7 @@ pub async fn start(
         resolver: search::resolve::Queue::default(),
         adventurousness: RwLock::new(DEFAULT_STEER),
         unfinished: pages::Unfinished::default(),
-        personal: search::personal::Personal::when(&ctx.config.flags),
+        personal: search::personal::Personal::new(),
         collection: OnceLock::new(),
         ctx: ctx.clone(),
     });
@@ -278,9 +278,7 @@ pub async fn start(
     ctx.spawn(search::catalog::keep_choosing(svc.clone()));
     ctx.spawn(search::resolve::work(svc.clone()));
     ctx.spawn(search::resolve::news(svc.clone()));
-    if svc.personal.is_some() {
-        ctx.spawn(search::personal::keep_fresh(svc.clone()));
-    }
+    ctx.spawn(search::personal::keep_fresh(svc.clone()));
     Ok(svc)
 }
 
@@ -350,11 +348,9 @@ impl Service {
         Ok(signals)
     }
 
-    /// Something personal search's snapshot holds changed (a no-op with the switch off).
+    /// Something personal search's snapshot holds changed.
     fn personal_changed(&self) {
-        if let Some(personal) = &self.personal {
-            personal.changed();
-        }
+        self.personal.changed();
     }
 }
 

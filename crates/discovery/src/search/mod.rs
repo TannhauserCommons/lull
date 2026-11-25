@@ -383,7 +383,7 @@ async fn fetch(svc: &Service, source: Source, q: &str) -> Result<Found> {
             }
             found
         }
-        Source::Library => match svc.personal.as_ref().and_then(personal::Personal::snapshot) {
+        Source::Library => match svc.personal.snapshot() {
             // The listener's index answers from memory, with no call to the library or the database.
             Some(snapshot) => Ok(snapshot.found(&Query::new(q))),
             None => Ok(Found {
@@ -546,7 +546,7 @@ async fn arrive(svc: &Arc<Service>, run: &Arc<Run>, source: Source, found: Resul
 
 /// `search.catalog`: the query's best tracks, for Soulseek's pre-warming.
 fn publish_catalog(svc: &Service, query: &str, merged: &Merged) {
-    let personal = svc.personal.as_ref().and_then(personal::Personal::snapshot);
+    let personal = svc.personal.snapshot();
     let fits = song_scores(&Query::new(query), merged, personal.as_deref());
     let track_ids = order(&fits, personal.as_deref(), |i| merged.songs[i].saved.is_some())
         .into_iter()
@@ -578,7 +578,7 @@ async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&To
         (Some(shown), None) => shown.clone(),
         _ => {
             // With the switch on, the snapshot holds the listener's own: no database call per search.
-            let personal = svc.personal.as_ref().and_then(personal::Personal::snapshot);
+            let personal = svc.personal.snapshot();
             let (liked, mut followed) = match personal {
                 Some(_) => Default::default(),
                 None => svc.store.own().await?,
@@ -673,9 +673,9 @@ struct Ranked {
     playlists: Vec<usize>,
 }
 
-/// The listener's own, which lifts their rows: liked songs and followed artists break ties
-/// (`merge::rank`), or, with `personal-search` on, their snapshot lifts each row by how much it is
-/// theirs (`merge::rank_blended`).
+/// The listener's own, which lifts their rows: their snapshot lifts each row by how much it is
+/// theirs (`merge::rank_blended`), or, until it is built, liked songs and followed artists break
+/// ties (`merge::rank`).
 struct Own<'a> {
     liked: &'a HashSet<TrackId>,
     followed: &'a HashSet<ArtistId>,
@@ -697,7 +697,7 @@ fn rank_rows(q: &Query, m: &Merged, liked: &HashSet<TrackId>, followed: &HashSet
     )
 }
 
-/// `rank_rows` with the listener's snapshot (the personal-search switch on): what the eval reads.
+/// `rank_rows` with the listener's snapshot, as the hub ranks once it is built: what the eval reads.
 #[cfg(test)]
 fn rank_personal(q: &Query, m: &Merged, snapshot: &Snapshot) -> Ranked {
     let none = HashSet::new();

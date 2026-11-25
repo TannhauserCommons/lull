@@ -22,7 +22,7 @@ The 0.2.2 release waited on features that were half done. Work that takes days e
 
 - **Big work lands dark.** Work that won't be finished in the commit that starts it lands behind a switch, in small commits through the queue. The switch is added in the first of them.
 - **Off must be exactly today's lull.** With the switch off, no new request, element, setting or cost appears, so the UI gates' goldens and budgets don't move.
-- **Finishing a feature removes its switch:** the code paths for off, the list entry and the tests that turned it on. A switch is never flipped on by default and left in place. `grep -rn "flags.on(\|App.flag(" crates web` lists what is still dark.
+- **Finishing a feature removes its switch:** the code paths for off, the list entry and the tests that turned it on. Its name moves to `flags::FINISHED`, still accepted in `LULL_FLAGS` and turning nothing on, so a hub that had it on still starts (added 2026-11-25 with the first removal, `personal-search`: an unknown name fails the settings). A switch is never flipped on by default and left in place. `grep -rn "flags.on(\|App.flag(" crates web` lists what is still dark.
 
 ## Rejected
 

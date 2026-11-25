@@ -43,15 +43,6 @@ pub const NAMESAKES: Flag = Flag {
     area: "search",
 };
 
-/// Search learns from the listener's own music: a cached index of what they keep, play and like answers it first,
-/// and one score from their listening lifts their rows among equally good matches (ADR-0036).
-pub const PERSONAL_SEARCH: Flag = Flag {
-    name: "personal-search",
-    about: "Search is led by the listener's own music: an index of their songs and a score from their listening",
-    owner: "discovery",
-    area: "search",
-};
-
 /// The listener's credentials live in the system keyring or a file only lull's user can read, never in the
 /// database (ADR-0091).
 pub const SECRETS: Flag = Flag {
@@ -61,8 +52,12 @@ pub const SECRETS: Flag = Flag {
     area: "hub",
 };
 
+/// Switches whose work is finished: their names are still accepted in `LULL_FLAGS` and turn
+/// nothing on, so a hub that had one on keeps starting after the release that removes it.
+const FINISHED: &[&str] = &["personal-search"];
+
 /// Every switch there is. Empty while nothing is unfinished.
-pub const FLAGS: &[&Flag] = &[&HUB_SELF_UPDATE, &KEEP_RUNNING, &NAMESAKES, &PERSONAL_SEARCH, &SECRETS];
+pub const FLAGS: &[&Flag] = &[&HUB_SELF_UPDATE, &KEEP_RUNNING, &NAMESAKES, &SECRETS];
 
 /// The switches that are on.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -87,7 +82,11 @@ impl Flags {
 
 fn parse_in(list: &str, known: &[&Flag]) -> Result<Flags, String> {
     let mut on = BTreeSet::new();
-    for name in list.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+    for name in list
+        .split(',')
+        .map(str::trim)
+        .filter(|n| !n.is_empty() && !FINISHED.contains(n))
+    {
         let flag = known.iter().find(|f| f.name == name).ok_or_else(|| match known.len() {
             0 => format!("{name:?} is not a switch (there are none now)"),
             _ => format!(
@@ -118,6 +117,17 @@ mod tests {
         let on = parse_in(" deep-cuts ,", KNOWN)?;
         assert!(on.on(&DEEP_CUTS));
         assert_eq!(on.names().collect::<Vec<_>>(), ["deep-cuts"]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_finished_switch_is_still_accepted_and_turns_nothing_on() -> Result<(), String> {
+        assert_eq!(
+            parse_in("personal-search, deep-cuts", KNOWN)?
+                .names()
+                .collect::<Vec<_>>(),
+            ["deep-cuts"]
+        );
         Ok(())
     }
 
