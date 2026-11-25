@@ -160,12 +160,7 @@ impl Pages<'_> {
     }
 
     fn tracks(&self, ids: &Value) -> Result<Vec<Track>, String> {
-        ids.as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .filter_map(|id| self.track(id).transpose())
-            .collect()
+        strings(ids).filter_map(|id| self.track(id).transpose()).collect()
     }
 
     /// The record of a track, when the export has one.

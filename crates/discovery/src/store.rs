@@ -239,15 +239,15 @@ impl Store {
         self.db.call(move |c| replace_ids(c, &id, &ids, checked)).await
     }
 
-    /// Adds ids the artist has no id of that source for yet; returns the ids it then has. A
-    /// new MBID drops what was kept for the old one (none), as `set_artist_ids` does.
+    /// Adds ids the artist doesn't hold yet (`Ids::holds`); returns the ids it then has. A new
+    /// MBID drops what was kept for the old one (none), as `set_artist_ids` does.
     pub async fn add_artist_ids(&self, id: ArtistId, rows: Vec<IdRow>) -> Result<Ids> {
         self.db
             .call(move |c| {
                 let tx = c.transaction()?;
                 let before = artist_ids(&tx, &id)?;
                 for row in &rows {
-                    if before.get(row.source).is_none() {
+                    if !before.holds(row.source, &row.id) {
                         put_artist_id(&tx, &id, row)?;
                     }
                 }
@@ -858,7 +858,7 @@ fn trusted_artist_ids(c: &Connection) -> Result<HashMap<ArtistId, Vec<crate::sea
         .map(|(artist, rows)| {
             let ids = rows
                 .into_iter()
-                .filter(|(_, _, e)| !matches!(e, Evidence::Recommended { .. } | Evidence::Searched))
+                .filter(|(_, _, e)| e.trusted())
                 .map(|(source, id, _)| (source, id))
                 .collect();
             (artist, ids)
@@ -1669,6 +1669,52 @@ mod tests {
             artist_source: None,
             isrc: None,
         }
+    }
+
+    /// Before an artist could hold several pages of one catalog, it held one id each: they carry
+    /// over, and a second page MusicBrainz links is added beside the first.
+    #[tokio::test]
+    async fn the_ids_held_before_several_pages_carry_over_and_a_second_page_is_added() -> Result<()> {
+        let db = lull_core::db::Db::memory()?;
+        db.migrate(&lull_core::catalog::MIGRATIONS)?;
+        let steps = crate::MIGRATIONS.steps;
+        db.migrate(&lull_core::db::Migrations {
+            owner: crate::MIGRATIONS.owner,
+            steps: &steps[..steps.len() - 1],
+        })?;
+        let artist = ArtistId("ar-1".into());
+        let first = IdRow {
+            source: Source::Deezer,
+            id: "4001".into(),
+            evidence: Evidence::Library,
+        };
+        let held = first.clone();
+        db.call(move |c| {
+            c.execute(
+                "INSERT INTO discovery_artist_ids (artist_id, source, id, evidence) VALUES ('ar-1', ?1, ?2, ?3)",
+                rusqlite::params![
+                    held.source.as_str(),
+                    held.id,
+                    serde_json::to_string(&held.evidence).unwrap_or_default()
+                ],
+            )?;
+            Ok(())
+        })
+        .await?;
+        db.migrate(&crate::MIGRATIONS)?;
+        let store = Store::new(db, std::sync::Arc::new(Shelves), false);
+        let second = IdRow {
+            source: Source::Deezer,
+            id: "8000002".into(),
+            evidence: Evidence::Link {
+                source: Source::Musicbrainz,
+            },
+        };
+        let ids = store
+            .add_artist_ids(artist, vec![first.clone(), second.clone()])
+            .await?;
+        assert_eq!(ids.all(Source::Deezer).collect::<Vec<_>>(), [&first, &second]);
+        Ok(())
     }
 
     /// Live, an album opened before asked its catalog again on every read, and when that answer

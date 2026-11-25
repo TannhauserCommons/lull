@@ -175,11 +175,7 @@ impl Query {
     /// One word typed names this song outright (`names`): its title or its artist's name, not
     /// just a start of one.
     pub fn names_song(&self, s: &SongHit) -> bool {
-        let names: Vec<String> = crate::radio::credited_names(&s.artist)
-            .iter()
-            .map(|n| loose_artist(n))
-            .collect();
-        let (exact, titled) = forms(&names, &s.title);
+        let (exact, titled) = forms(&credited(&s.artist), &s.title);
         exact.iter().chain(&titled).any(|f| self.names(f))
     }
 
@@ -194,10 +190,7 @@ impl Query {
     /// A song's or album's fit: exact also when the words are a credited artist's name and words
     /// of the title ("nirvana unplugged" is Nirvana's "MTV Unplugged In New York").
     fn named(&self, artist: &str, title: &str, text: &[&str]) -> Fit {
-        let names: Vec<String> = crate::radio::credited_names(artist)
-            .iter()
-            .map(|n| loose_artist(n))
-            .collect();
+        let names = credited(artist);
         let (exact, titled) = forms(&names, title);
         if self.artist_and_title_words(&names, title) {
             Fit::Exact
@@ -209,11 +202,7 @@ impl Query {
     /// The words are a song's credited artist and words of its title ("lose yourself eminem"):
     /// they name that song.
     pub fn names_artist_and_title(&self, s: &SongHit) -> bool {
-        let names: Vec<String> = crate::radio::credited_names(&s.artist)
-            .iter()
-            .map(|n| loose_artist(n))
-            .collect();
-        self.artist_and_title_words(&names, &s.title)
+        self.artist_and_title_words(&credited(&s.artist), &s.title)
     }
 
     fn artist_and_title_words(&self, names: &[String], title: &str) -> bool {
@@ -257,6 +246,14 @@ impl Query {
 /// either side, the artist alone (their songs and albums), the title alone; titles also without
 /// the tags of another version, as the version is ranked apart (`Score::version`). The second
 /// list holds the forms that start with the title, which fit when they begin with the words.
+/// The credited artists' names (`radio::credited_names`), as names are compared.
+fn credited(artist: &str) -> Vec<String> {
+    crate::radio::credited_names(artist)
+        .iter()
+        .map(|n| loose_artist(n))
+        .collect()
+}
+
 fn forms(names: &[String], title: &str) -> (Vec<String>, Vec<String>) {
     let full = loose_title(title);
     let plain = loose_title(&without_versions(title).0);

@@ -16,7 +16,7 @@ use lull_core::model::Track;
 
 use super::answers::Answers;
 use super::links::ArtistLinks;
-use crate::artist::identity::{self, Evidence, Listened, Source};
+use crate::artist::identity::{self, Listened, Source};
 use crate::search::merge::{SongHit, same_take};
 use crate::search::personal::score::CatalogId;
 
@@ -87,12 +87,11 @@ pub fn derive(
                 |_| async { Ok(Vec::new()) },
             ))
             .map_err(|e| e.to_string())?;
-        // What the hub's `listener_artist_ids` keeps: everything but a recommender's or a
-        // search row's id, none of which come out here.
+        // What the hub's `trusted_artist_ids` keeps.
         let trusted: Vec<CatalogId> = ids
             .rows()
             .iter()
-            .filter(|r| !matches!(r.evidence, Evidence::Recommended { .. } | Evidence::Searched))
+            .filter(|r| r.evidence.trusted())
             .map(|r| (r.source, r.id.clone()))
             .collect();
         if !trusted.is_empty() {
