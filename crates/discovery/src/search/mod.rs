@@ -112,6 +112,41 @@ struct RunState {
     gap: Option<Found>,
 }
 
+impl RunState {
+    /// Merges `source`'s answer (`songs`: the source of the catalog's songs) and returns what it
+    /// changed. A slow source's waits for the first answer (`held`). YouTube Music's waits while
+    /// the catalog's songs are pending (`gap`) and adds only what they lack once they are in or
+    /// failed, whatever answers in between: taken on any other arrival, it was lost, and with it
+    /// every song only YouTube Music has and every play count.
+    fn take(&mut self, songs: Source, source: Source, found: std::result::Result<Found, String>) -> Touched {
+        self.pending.remove(&source);
+        let touched = match found {
+            Ok(mut found) => {
+                if let Some(problem) = found.problem.take() {
+                    self.errors.insert(source, problem);
+                }
+                if source == Source::YoutubeMusic && self.pending.contains(&songs) {
+                    self.gap = Some(found);
+                    Touched::default()
+                } else if self.board.is_none() && !FAST.contains(&source) {
+                    self.held.push(found);
+                    Touched::default()
+                } else {
+                    self.merged.absorb(found)
+                }
+            }
+            Err(e) => {
+                self.errors.insert(source, e);
+                Touched::default()
+            }
+        };
+        match self.gap.take_if(|_| source == songs) {
+            Some(gap) => touched.and(merge::fill_gaps(&mut self.merged, gap)),
+            None => touched,
+        }
+    }
+}
+
 /// A playlist row of an answer (`playlists.rs`): not an entity, as it isn't in lull's catalog.
 #[derive(Debug, Clone, Serialize)]
 pub struct PlaylistRow {
@@ -466,34 +501,11 @@ fn saved(t: Track) -> SongHit {
 /// Merges a source's answer; after the first answer, announces what it added.
 async fn arrive(svc: &Arc<Service>, run: &Arc<Run>, source: Source, found: Result<Found>) {
     let mut st = run.state.lock().await;
-    st.pending.remove(&source);
-    let touched = match found {
-        Ok(mut found) => {
-            if let Some(problem) = found.problem.take() {
-                st.errors.insert(source, problem);
-            }
-            if source == Source::YoutubeMusic && st.pending.contains(&run.songs) {
-                st.gap = Some(found);
-                Touched::default()
-            } else if st.board.is_none() && !FAST.contains(&source) {
-                st.held.push(found);
-                Touched::default()
-            } else {
-                st.merged.absorb(found)
-            }
-        }
-        Err(e) => {
-            tracing::info!(query = %run.query, ?source, error = %e, "a search source failed");
-            run.failed.store(true, Ordering::Relaxed);
-            st.errors.insert(source, e.to_string());
-            Touched::default()
-        }
-    };
-    // The catalog's songs are in (or failed): YouTube Music's answer adds what they lack.
-    let touched = match st.gap.take().filter(|_| source == run.songs) {
-        Some(gap) => touched.and(merge::fill_gaps(&mut st.merged, gap)),
-        None => touched,
-    };
+    if let Err(e) = &found {
+        tracing::info!(query = %run.query, ?source, error = %e, "a search source failed");
+        run.failed.store(true, Ordering::Relaxed);
+    }
+    let touched = st.take(run.songs, source, found.map_err(|e| e.to_string()));
     // The catalog and YouTube Music have answered and nothing holds the words typed: YouTube's
     // own uploads are the last gap-filler ("clairo mount airy georgia": only fans uploaded it).
     let asked = |s: &Source| !st.pending.contains(s);
@@ -747,13 +759,17 @@ fn rank_own(q: &Query, m: &Merged, own: &Own) -> Ranked {
             // The listener's lift orders rows inside a section; which kind of row leads is the
             // catalogs' call (with the short-search rule's mark), or their own songs and albums
             // would always beat the artist's name.
+            // A gap-filler's song its plays rank among the catalog's (`merge::counted_fillers`)
+            // orders the songs but doesn't choose the kind: its count isn't on the scale the
+            // catalogs' artists and albums are ("bill conti" is the artist, not his Rocky theme).
+            let counted = |i: usize| m.filler_song(i) && !song_scores.marked[i].filler;
             let personal = own.personal.is_some();
             let kind = merge::top(
                 kind_leader(personal, &artist_scores.marked, &artists, &artist_scores.lifted, |i| {
                     !borrowed[i]
                 }),
                 kind_leader(personal, &album_scores.marked, &albums, &album_scores.lifted, |_| true),
-                kind_leader(personal, &song_scores.marked, &songs, fits, |_| true),
+                kind_leader(personal, &song_scores.marked, &songs, fits, |i| !counted(i)),
             );
             let top = kind.map(|kind| match kind {
                 Kind::Artist => Top::of("artist", m.artists[artists[0]].id().0),
@@ -908,11 +924,12 @@ fn catalog_song_scores(q: &Query, m: &Merged) -> Vec<Score> {
         })
         .collect();
     merge::known(m, &mut scores);
+    merge::counted_fillers(m, &mut scores);
     scores
 }
 
-/// The score of a section's best row for choosing the top result's kind: the first as ranked, or,
-/// with a snapshot, the first by the catalogs' scores alone (`catalog`, with the short-search
+/// The score of a section's best row (of those `allowed`) for choosing the top result's kind: the
+/// first as ranked, or, with a snapshot, the first by the catalogs' scores alone (`catalog`, with the short-search
 /// rule's mark).
 fn kind_leader(
     personal: bool,
@@ -924,7 +941,7 @@ fn kind_leader(
     if personal {
         catalog_leader(catalog, allowed).map(|i| catalog[i])
     } else {
-        ranked.first().map(|&i| lifted[i])
+        ranked.iter().find(|&&i| allowed(i)).map(|&i| lifted[i])
     }
 }
 
