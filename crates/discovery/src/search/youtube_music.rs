@@ -111,6 +111,7 @@ pub fn answer_of(answer: &Value) -> Found {
                 title: item.title,
                 artist: item.artist,
                 popularity: item.plays.map_or(0.0, |n| popularity(n, FULL_PLAYS)),
+                plays: item.plays,
                 ..SongHit::default()
             }),
             (_, Some(kind)) => {

@@ -192,9 +192,10 @@ fn hello_leads_with_lionel_richies_for_his_listener() {
 
 #[test]
 fn one_stray_play_leads_a_short_search_but_not_a_longer_one_over_a_far_better_known_match() {
-    // "hello" is one word: the listener's KES Hello, played once, is theirs and leads (the
-    // short-search rule). "stairway to" is two: Mastodon's, played once, is as good a match as Led
-    // Zeppelin's, and far less known, so it stays behind (`AFFINITY_WEIGHT`'s high end).
+    // "hello" is one word and names Adele's (`merge::names_row`), and the listener's KES Hello,
+    // played once, is that name too: theirs, it leads (the short-search rule). "stairway to" is
+    // two: Mastodon's, played once, is as good a match as Led Zeppelin's, and far less known, so
+    // it stays behind (`AFFINITY_WEIGHT`'s high end).
     let (m, r) = lead("hello", &query_set_answers("hello"), "stray-play");
     assert_eq!(first_songs(&m, &r, 1), ["KES - Hello"]);
     let answers = query_set_answers("stairway to");
@@ -262,21 +263,29 @@ fn the_listeners_radiohead_leads_every_other_song_for_ra_even_one_named_ra() {
     assert!(top, "the top result is theirs, a song or an album: {:?}", r.top);
 }
 
-#[test]
-fn a_well_known_artist_named_exactly_leads_a_short_search_over_a_song_of_theirs_it_merely_starts() {
-    // "muse" names the band for anyone; a listener's "Musetta's Waltz" starts it, and stays a song.
-    let answers = query_set_answers("muse");
-    let (m, r) = lead("muse", &answers, "museum-visitor");
-    let (m_empty, r_empty) = lead("muse", &answers, "empty");
+/// A short search the catalogs name `q` for anyone leads as it does for a listener with none of
+/// it, and the listener's song that the letters merely start (`theirs`) is still found.
+fn named_for_anyone(q: &str, who: &str, theirs: &str) {
+    let answers = query_set_answers(q);
+    let (m, r) = lead(q, &answers, who);
+    let (m_empty, r_empty) = lead(q, &answers, "empty");
     assert_eq!(
         r.top, r_empty.top,
-        "the same top result as for a listener with none of it"
+        "{q}: the same top result as for a listener with none of it"
     );
-    assert_eq!(first_songs(&m, &r, 1), first_songs(&m_empty, &r_empty, 1));
+    assert_eq!(first_songs(&m, &r, 1), first_songs(&m_empty, &r_empty, 1), "{q}");
     assert!(
-        r.songs.iter().any(|&i| m.songs[i].title.starts_with("Musetta")),
-        "their song is still found"
+        r.songs.iter().any(|&i| m.songs[i].title.starts_with(theirs)),
+        "{q}: their song is still found"
     );
+}
+
+#[test]
+fn a_well_known_artist_or_song_named_exactly_leads_a_short_search_over_a_song_of_theirs_it_merely_starts() {
+    // "muse" names the band for anyone, "creep" Radiohead's song: a listener's "Musetta's Waltz"
+    // or "Creeping Death" starts the word, and stays behind.
+    named_for_anyone("muse", "museum-visitor", "Musetta");
+    named_for_anyone("creep", "creeping-death-fan", "Creeping Death");
 }
 
 #[test]
