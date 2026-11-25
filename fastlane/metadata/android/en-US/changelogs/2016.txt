@@ -1,0 +1,7 @@
+Search led by your own music.
+* Search ranks what you play, like, save and keep in playlists among equally good matches, and short searches lead with your own music
+* Songs only YouTube Music has, such as Radiohead's Creep, show in search and rank by their plays
+* An artist's name finds the artist first, and a famous song you name stays first
+* Play here carries the whole queue and its modes
+* A song that can't play says why
+* Theme Studio saves reliably while a save is running
