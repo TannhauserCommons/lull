@@ -52,7 +52,7 @@ use crate::art::{self, Pictured};
 use crate::sources::ArtistSource;
 use crate::store::{self, entities};
 use catalog::Choice;
-use merge::{ArtistHit, Found, Kind, Merged, Score, SongHit, Source, Touched};
+use merge::{ArtistHit, Found, Kind, Lead, Merged, Score, SongHit, Source, Touched};
 use personal::score::Affinity;
 use personal::snapshot::Snapshot;
 use query::{Fit, Query};
@@ -812,50 +812,67 @@ fn sections(q: &Query, m: &Merged, personal: Option<&Snapshot>) -> Sections {
     let mut artists: Vec<Score> = m.artists.iter().map(|a| Score::artist(q, a)).collect();
     merge::overshadow(&m.artists, &mut artists);
     let borrowed = merge::borrowed(&m.artists);
-    let own_first = personal.is_some() && own_first_search(q, &m.artists, &artists, &albums, &songs, &borrowed);
+    let lead = personal.and_then(|_| own_first_lead(q, m, &artists, &albums, &songs, &borrowed));
+    let bar = |kind: Kind| lead.and_then(|l| l.bar(kind));
     Sections {
-        songs: Scored::new(&songs, &m.songs, personal.map(|p| |s: &SongHit| p.song(s)), own_first),
+        songs: Scored::new(
+            &songs,
+            &m.songs,
+            personal.map(|p| |s: &SongHit| p.song(s)),
+            bar(Kind::Track),
+        ),
         albums: Scored::new(
             &albums,
             &m.albums,
             personal.map(|p| |a: &merge::AlbumHit| p.album(a)),
-            own_first,
+            bar(Kind::Album),
         ),
         artists: Scored::new(
             &artists,
             &m.artists,
             personal.map(|p| |a: &ArtistHit| p.artist(a)),
-            own_first,
+            bar(Kind::Artist),
         ),
         borrowed,
     }
 }
 
-/// Whether the listener's own leads this search: it is short (`Query::is_short`) and the catalogs
-/// don't clearly name an artist (`merge::names_artist`), whose name the listener wants whatever
-/// of theirs the letters start.
-fn own_first_search(
+/// Which of the listener's own lead this search (`merge::Lead`), when it is short
+/// (`Query::is_short`): theirs that the letters start, or, when the catalogs clearly name one row
+/// (`merge::names_row`), an artist or a song everyone means, theirs that are that name too. An
+/// album is never named: no catalog counts an album's audience.
+fn own_first_lead(
     q: &Query,
-    artist_rows: &[ArtistHit],
+    m: &Merged,
     artists: &[Score],
     albums: &[Score],
     songs: &[Score],
     borrowed: &[bool],
-) -> bool {
-    let leader = catalog_leader(artists, |i| !borrowed[i]);
+) -> Option<Lead> {
+    if !q.is_short() {
+        return None;
+    }
+    let artist = catalog_leader(artists, |i| !borrowed[i]);
+    let album = catalog_leader(albums, |_| true);
+    let song = catalog_leader(songs, |_| true);
     let top = merge::top(
-        leader.map(|i| artists[i]),
-        catalog_leader(albums, |_| true).map(|i| albums[i]),
-        catalog_leader(songs, |_| true).map(|i| songs[i]),
+        artist.map(|i| artists[i]),
+        album.map(|i| albums[i]),
+        song.map(|i| songs[i]),
     );
-    q.is_short() && !merge::names_artist(artist_rows, artists, leader, top)
+    let named = top.filter(|&kind| match kind {
+        Kind::Artist => artist.is_some_and(|n| merge::names_row(artists, n, |i| m.artists[i].audience)),
+        Kind::Track => song.is_some_and(|n| merge::names_row(songs, n, |i| m.songs[i].plays)),
+        Kind::Album => false,
+    });
+    Some(named.map_or(Lead::Started, Lead::Named))
 }
 
 impl Scored {
     /// The rows' scores from the catalogs (`catalog`), with the snapshot's answer for each row
-    /// (`affinity`) when there is one: marked by the short-search rule when it `applies`, then
-    /// lifted.
-    fn new<T>(catalog: &[Score], rows: &[T], affinity: Option<impl Fn(&T) -> Affinity>, applies: bool) -> Scored {
+    /// (`affinity`) when there is one: marked by the short-search rule with the search's `bar`,
+    /// then lifted.
+    fn new<T>(catalog: &[Score], rows: &[T], affinity: Option<impl Fn(&T) -> Affinity>, bar: Option<Fit>) -> Scored {
         let Some(affinity) = affinity else {
             return Scored {
                 marked: catalog.to_vec(),
@@ -866,7 +883,7 @@ impl Scored {
         let marked: Vec<Score> = catalog
             .iter()
             .zip(&affinities)
-            .map(|(s, &a)| s.leading(a, applies))
+            .map(|(s, &a)| s.leading(a, bar))
             .collect();
         let lifted = marked
             .iter()

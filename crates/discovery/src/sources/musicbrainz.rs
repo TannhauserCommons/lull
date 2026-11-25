@@ -793,6 +793,7 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
             isrcs: r.isrcs,
             mbid: Some(r.id),
             popularity: known,
+            plays: None,
             art,
             album_source: None,
             artist_source: None,

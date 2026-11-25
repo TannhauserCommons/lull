@@ -146,6 +146,10 @@ pub struct SongHit {
     pub mbid: Option<String>,
     /// 0..1 (`popularity`).
     pub popularity: f64,
+    /// How many times it was played, where a catalog counts them (YouTube Music): the one count of
+    /// a song's audience, as `popularity` is mostly a catalog's order.
+    #[serde(default)]
+    pub plays: Option<u64>,
     /// The album's cover: an outside URL where `{size}` is the size in pixels.
     pub art: Option<String>,
     /// The album in the catalog that found the song, for its tracklist.
@@ -407,6 +411,7 @@ fn add_gaps(m: &mut Merged, mut found: Found) -> Touched {
         .retain(|s| match m.songs.iter_mut().find(|row| same_take(row, s)) {
             Some(row) => {
                 row.popularity = row.popularity.max(s.popularity);
+                row.plays = row.plays.max(s.plays);
                 false
             }
             None => true,
@@ -513,6 +518,7 @@ fn fill_song(row: &mut SongHit, hit: SongHit, may_rename: bool) -> bool {
     row.mbid = row.mbid.take().or(hit.mbid);
     row.art = row.art.take().or(hit.art);
     row.popularity = row.popularity.max(hit.popularity);
+    row.plays = row.plays.max(hit.plays);
     for isrc in hit.isrcs {
         if !row.isrcs.contains(&isrc) {
             row.isrcs.push(isrc);
@@ -639,38 +645,62 @@ impl Score {
     }
 }
 
-/// The one rule of short searches: the listener's own songs, albums and artists that the typed
-/// letters start (a word of the row begins with them: `Fit::Words` or better) lead strangers' rows
-/// that fit exactly. A looser fit never jumps. Whether the search is one this applies to is
-/// `Query::is_short` and no artist being clearly named (`names_artist`); a row's `own_first` is
-/// this, asked once per row (`Score::leading`) and read by the order and by the top result.
-pub fn own_leads(fit: Fit, a: Affinity) -> bool {
-    fit >= Fit::Words && a.theirs()
+/// The one rule of short searches: the listener's own songs, albums and artists that fit the
+/// search at least as well as `bar` (`Lead::bar`) lead every other row of their section,
+/// strangers' better fits included. A looser fit never jumps. A row's `own_first` is this, asked
+/// once per row (`Score::leading`) and read by the order and by the top result.
+pub fn own_leads(fit: Fit, a: Affinity, bar: Fit) -> bool {
+    fit >= bar && a.theirs()
 }
 
-/// The catalogs clearly name an artist: `leader`, the best artist row by their scores alone, fits
-/// exactly and is the top result (`top`), and no other artist the letters start (`Fit::Words` or
-/// better) has a bigger audience, so the letters could not be the start of someone better known.
-/// "radiohead" names the band, "muse" the band; "ra" names no one, though an artist is called Ra:
-/// a bigger one starts with it. Only the catalogs' own signals decide it (fit, popularity, the lean
-/// toward artists, `overshadow`, audience).
-pub fn names_artist(artists: &[ArtistHit], scores: &[Score], leader: Option<usize>, top: Option<Kind>) -> bool {
-    let Some(named) = leader else { return false };
-    top == Some(Kind::Artist)
-        && scores[named].fit == Fit::Exact
-        && !artists
+/// Which of the listener's own rows lead a short search (`own_leads`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lead {
+    /// Nothing is clearly named: theirs that the typed letters start, a word of the row beginning
+    /// with them ("ra": their Radiohead).
+    Started,
+    /// The catalogs clearly name a row of this kind (`names_row`): only theirs of that kind that
+    /// are that name too lead it ("hello": a Hello they played, over Adele's). The rest keep "a good
+    /// match wins", so "muse" stays the band's for a listener of its songs.
+    Named(Kind),
+}
+
+impl Lead {
+    /// The fit a row of `kind` must have to lead, if any may.
+    pub fn bar(self, kind: Kind) -> Option<Fit> {
+        match self {
+            Lead::Started => Some(Fit::Words),
+            Lead::Named(named) => (named == kind).then_some(Fit::Exact),
+        }
+    }
+}
+
+/// The catalogs clearly name one row, so a short search is for it, not for what of the listener's
+/// the letters merely start: `named`, the best row of the top result's kind by their scores alone, fits
+/// exactly, is the thing itself rather than another version of it, has a known `audience` (a
+/// count: an artist's fans or listeners, a song's plays), and no other row of its kind that the
+/// letters start (`Fit::Words` or better) has a bigger one, so the letters could not be the start
+/// of something better known. "muse" names the band, "creep" the song; "ra" names no one, though
+/// an artist is called Ra: a bigger one starts with it. A row with no count names nothing, as a
+/// catalog's order alone says what matches, not what everyone means. Only the catalogs' own
+/// signals decide it, with no number of its own.
+pub fn names_row(scores: &[Score], named: usize, audience: impl Fn(usize) -> Option<u64>) -> bool {
+    let row = scores[named];
+    let Some(known) = audience(named) else { return false };
+    row.fit == Fit::Exact
+        && !row.version
+        && !scores
             .iter()
-            .zip(scores)
             .enumerate()
-            .any(|(i, (other, score))| i != named && score.fit >= Fit::Words && smaller_than(&artists[named], other, 1))
+            .any(|(i, s)| i != named && s.fit >= Fit::Words && audience(i).is_some_and(|n| n > known))
 }
 
 impl Score {
-    /// This row as the short-search rule leads it (`own_leads`), when the rule `applies` to the
-    /// search.
-    pub fn leading(self, a: Affinity, applies: bool) -> Score {
+    /// This row as the short-search rule leads it (`own_leads`), with the search's `bar` when the
+    /// rule applies to it.
+    pub fn leading(self, a: Affinity, bar: Option<Fit>) -> Score {
         Score {
-            own_first: applies && own_leads(self.fit, a),
+            own_first: bar.is_some_and(|bar| own_leads(self.fit, a, bar)),
             ..self
         }
     }

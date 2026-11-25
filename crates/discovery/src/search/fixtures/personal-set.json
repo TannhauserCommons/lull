@@ -4002,6 +4002,28 @@
     ]
    }
   },
+  "creeping-death-fan": {
+   "songs": [
+    {
+     "artist": "Metallica",
+     "title": "Creeping Death",
+     "album": "Ride the Lightning",
+     "year": 1984,
+     "tags": [],
+     "saved": true,
+     "playedDaysAgo": [
+      1,
+      2,
+      3
+     ],
+     "skippedDaysAgo": [],
+     "likedDaysAgo": 2,
+     "playlisted": true
+    }
+   ],
+   "follows": [],
+   "artistIds": {}
+  },
   "museum-visitor": {
    "songs": [
     {
