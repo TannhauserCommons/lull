@@ -1,6 +1,6 @@
 # ADR-0036: Search leads with the listener's own music, within equally good matches
 
-- Status: accepted (behind the `personal-search` switch, ADR-0096)
+- Status: accepted; behind the `personal-search` switch (ADR-0096) until 2026-11-25, when the owner asked for it to be released
 - Date: 2026-11-20; amended 2026-11-24 (short searches, below) and 2026-11-25 (a song can be clearly named too)
 
 ## Context
@@ -22,7 +22,7 @@ Search ranked a row by how well its words fit, then popularity in tenths, and on
 - **Taste in tiers:** a song's own signals are the strongest (plays, a like, saved, in a playlist); an artist's weight counts for half, reached **only through ids** (a row's catalog artist id against the ids the listener's own songs gave, never a name, so a namesake gets nothing); genres and similar artists are not used (no call per search). A genre tier was tried on the owner's listening (a song's score gaining 0.2 of its best genre's standing in taste): top-1 did not move (25.1% both) and MRR@10 rose 0.364 to 0.367 while three queries fell out of the answers, so it was dropped. Rows from a catalog reach a genre only through an artist id, which the eval's export lacks, so only the listener's own songs could be lifted.
 - **A take the listener has is the song itself.** A version they play ("Creep (Acoustic)") isn't ranked behind other songs as "another version".
 - **An index of their music in memory** (`search/personal/`): saved songs, and songs played, liked or in a playlist, with album, year and genre, matched by the same `Query` as every row. A year or genre finds their songs, ranked below name matches. It replaces the library half as a fast source. It is built when lull starts and rebuilt after a bus event that changes what it holds (a play ended, a like, a follow, a playlist, a save, the library switched, Last.fm's history, a taste reset, a hidden artist, the library's index changing), several in a row coalescing; a search reads the snapshot and calls no database.
-- **Off means off:** with the switch off no snapshot exists, nothing is built or read, and search is as it was. Until the first build finishes, a search with the switch on goes as it does off.
+- **Before the first build:** until the snapshot is built (at start), or while every build fails, search ranks as it did before personal search: the catalogs, then the listener's likes and follows breaking ties. (Until 2026-11-25 the `personal-search` switch also kept all of it off.)
 
 ## Rejected
 

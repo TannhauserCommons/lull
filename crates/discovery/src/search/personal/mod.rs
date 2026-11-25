@@ -1,4 +1,4 @@
-//! Search led by the listener's own music (ADR-0036), behind the `personal-search` switch.
+//! Search led by the listener's own music (ADR-0036).
 //!
 //! A snapshot of their music and what it is worth to them (`snapshot`) is built when lull starts
 //! and again when something it holds changes, never per search: a search reads the snapshot and
@@ -12,7 +12,6 @@ use std::collections::HashSet;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use lull_core::Result;
-use lull_core::flags::{Flags, PERSONAL_SEARCH};
 use lull_core::ids::TrackId;
 use lull_core::model::Playlist;
 use tokio::sync::Notify;
@@ -40,22 +39,15 @@ pub fn is_change(topic: &str) -> bool {
     CHANGES.contains(&topic)
 }
 
-/// The shared snapshot and the nudge that rebuilds it. Present in the service only with the
-/// switch on: with it off nothing here exists.
+/// The shared snapshot and the nudge that rebuilds it.
 pub struct Personal {
     snapshot: RwLock<Option<Arc<Snapshot>>>,
     stale: Notify,
 }
 
 impl Personal {
-    /// The snapshot's keeper, when the `personal-search` switch is on; with it off, nothing: no
-    /// index is built, no event is read for it, no search asks it.
-    pub fn when(flags: &Flags) -> Option<Personal> {
-        flags.on(&PERSONAL_SEARCH).then(Personal::new)
-    }
-
     /// Stale from the start: the first build is the first thing `keep_fresh` does.
-    fn new() -> Personal {
+    pub fn new() -> Personal {
         let personal = Personal {
             snapshot: RwLock::new(None),
             stale: Notify::new(),
@@ -64,8 +56,9 @@ impl Personal {
         personal
     }
 
-    /// The snapshot, once the first build has finished. Until then searches go as they do with
-    /// the switch off, rather than answer as a listener with no music.
+    /// The snapshot, once the first build has finished. Until then (or while every build fails)
+    /// searches rank by the catalogs and the listener's likes and follows alone (`merge::rank`),
+    /// rather than answer as a listener with no music.
     pub fn snapshot(&self) -> Option<Arc<Snapshot>> {
         self.snapshot.read().unwrap_or_else(PoisonError::into_inner).clone()
     }
@@ -83,9 +76,7 @@ impl Personal {
 
 /// Builds the snapshot, then again each time it is stale. Runs for the life of the service.
 pub async fn keep_fresh(svc: Arc<Service>) {
-    let Some(personal) = svc.personal.as_ref() else {
-        return;
-    };
+    let personal = &svc.personal;
     loop {
         personal.stale.notified().await;
         let started = std::time::Instant::now();
@@ -171,14 +162,6 @@ pub fn first_met<'a>(ids: impl IntoIterator<Item = &'a TrackId>) -> Vec<&'a Trac
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn with_the_switch_off_there_is_no_keeper_and_so_no_index_no_rebuild_and_no_read() {
-        let off = Flags::parse("").unwrap_or_default();
-        assert!(Personal::when(&off).is_none());
-        let on = Flags::parse("personal-search").unwrap_or_default();
-        assert!(Personal::when(&on).is_some());
-    }
 
     #[test]
     fn until_the_first_build_searches_go_as_they_do_without_it() {
