@@ -839,8 +839,9 @@ fn sections(q: &Query, m: &Merged, personal: Option<&Snapshot>) -> Sections {
 
 /// Which of the listener's own lead this search (`merge::Lead`), when it is short
 /// (`Query::is_short`): theirs that the letters start, or, when the catalogs clearly name one row
-/// (`merge::names_row`), an artist or a song everyone means, theirs that are that name too. An
-/// album is never named: no catalog counts an album's audience.
+/// (`merge::names_row`) and the letters are its name, not a start of it (`Query::names_song`), an
+/// artist or a song everyone means, theirs that are that name too. An album is never named: no
+/// catalog counts an album's audience.
 fn own_first_lead(
     q: &Query,
     m: &Merged,
@@ -861,8 +862,11 @@ fn own_first_lead(
         song.map(|i| songs[i]),
     );
     let named = top.filter(|&kind| match kind {
-        Kind::Artist => artist.is_some_and(|n| merge::names_row(artists, n, |i| m.artists[i].audience)),
-        Kind::Track => song.is_some_and(|n| merge::names_row(songs, n, |i| m.songs[i].plays)),
+        Kind::Artist => artist
+            .is_some_and(|n| q.names_artist(&m.artists[n]) && merge::names_row(artists, n, |i| m.artists[i].audience)),
+        Kind::Track => {
+            song.is_some_and(|n| q.names_song(&m.songs[n]) && merge::names_row(songs, n, |i| m.songs[i].plays))
+        }
         Kind::Album => false,
     });
     Some(named.map_or(Lead::Started, Lead::Named))

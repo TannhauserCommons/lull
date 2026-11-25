@@ -93,12 +93,25 @@ impl Query {
     }
 
     /// The query is `s`, a leading "the" aside on either side ("dark side of the moon" is
-    /// "The Dark Side of the Moon"), or a typo away from it ("radiohed creep").
+    /// "The Dark Side of the Moon"), or a typo away from it ("radiohed creep"), `s` cut short
+    /// included ("halleluja"): it ranks as `s`.
     fn is(&self, s: &str) -> bool {
+        self.spells(s, true)
+    }
+
+    /// As `is`, but never `s` cut short: the letters may be a longer name still being typed, so
+    /// they don't name `s` outright.
+    fn names(&self, s: &str) -> bool {
+        self.spells(s, false)
+    }
+
+    fn spells(&self, s: &str, cut_short: bool) -> bool {
         let bare = s.strip_prefix("the ").unwrap_or(s);
-        self.loose
-            .iter()
-            .any(|l| l == s || l == bare || misspelt_phrase(l, s) || misspelt_phrase(l, bare))
+        self.loose.iter().any(|l| {
+            [s, bare]
+                .iter()
+                .any(|f| l == f || (misspelt_phrase(l, f) && (cut_short || !f.starts_with(l.as_str()))))
+        })
     }
 
     /// `s` begins with the whole words typed: a title being typed ("smells like teen", "stairway
@@ -152,6 +165,22 @@ impl Query {
         } else {
             Fit::Loose
         }
+    }
+
+    /// One word typed names this artist outright (`names`), not just a start of the name.
+    pub fn names_artist(&self, a: &ArtistHit) -> bool {
+        self.names(&loose_artist(&a.name))
+    }
+
+    /// One word typed names this song outright (`names`): its title or its artist's name, not
+    /// just a start of one.
+    pub fn names_song(&self, s: &SongHit) -> bool {
+        let names: Vec<String> = crate::radio::credited_names(&s.artist)
+            .iter()
+            .map(|n| loose_artist(n))
+            .collect();
+        let (exact, titled) = forms(&names, &s.title);
+        exact.iter().chain(&titled).any(|f| self.names(f))
     }
 
     pub fn song(&self, s: &SongHit) -> Fit {
