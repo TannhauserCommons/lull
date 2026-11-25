@@ -918,6 +918,83 @@ fn a_gap_fillers_other_take_is_its_own_row_and_lends_no_plays() {
 }
 
 #[test]
+fn youtube_musics_answer_waits_for_the_catalogs_songs_whatever_answers_in_between() {
+    // Live, "creep": YouTube Music answered before iTunes and Deezer's artists in between, and
+    // its songs were dropped: Radiohead's Creep, which Apple's US store lacks, never showed.
+    let mut st = super::RunState {
+        pending: [
+            merge::Source::Itunes,
+            merge::Source::Deezer,
+            merge::Source::YoutubeMusic,
+        ]
+        .into(),
+        ..super::RunState::default()
+    };
+    let listed = Found {
+        songs: vec![song("Radiohead", "Creep", "", None)],
+        ..Found::default()
+    };
+    let youtube_music = Found {
+        fillers: Some(Box::new(listed)),
+        ..Found::default()
+    };
+    let songs = merge::Source::Itunes;
+    st.take(songs, merge::Source::YoutubeMusic, Ok(youtube_music));
+    st.take(songs, merge::Source::Deezer, Ok(Found::default()));
+    let apple = Found {
+        songs: vec![song("TLC", "Creep", "CrazySexyCool", Some(268))],
+        ..Found::default()
+    };
+    st.take(songs, songs, Ok(apple));
+    let artists: Vec<&str> = st.merged.songs.iter().map(|s| s.artist.as_str()).collect();
+    assert_eq!(artists, ["TLC", "Radiohead"]);
+}
+
+#[test]
+fn a_gap_fillers_song_with_a_play_count_ranks_by_it_among_the_catalogs() {
+    let mut m = merged(vec![
+        SongHit {
+            popularity: 0.7,
+            plays: Some(232_000_000),
+            ..song("TLC", "Creep", "CrazySexyCool", Some(268))
+        },
+        SongHit {
+            popularity: 0.68,
+            ..song("Stone Temple Pilots", "Creep", "Thank You", Some(332))
+        },
+    ]);
+    let plays = 2_400_000_000;
+    let listed = Found {
+        songs: vec![
+            SongHit {
+                popularity: merge::popularity(plays, 1e9),
+                plays: Some(plays),
+                ..song("Radiohead", "Creep", "", None)
+            },
+            SongHit {
+                popularity: 0.9,
+                ..song("Nameless", "Creep", "", None)
+            },
+        ],
+        ..Found::default()
+    };
+    merge::fill_gaps(
+        &mut m,
+        Found {
+            fillers: Some(Box::new(listed)),
+            ..Found::default()
+        },
+    );
+    let r = super::rank_rows(&Query::new("creep"), &m, &HashSet::new(), &HashSet::new());
+    let artists: Vec<&str> = r.songs.iter().map(|&i| m.songs[i].artist.as_str()).collect();
+    assert_eq!(
+        artists,
+        ["Radiohead", "TLC", "Stone Temple Pilots", "Nameless"],
+        "more plays than the catalog's counted rows rank it; a row with none still goes after"
+    );
+}
+
+#[test]
 fn a_rows_artist_ids_come_from_its_catalog_never_from_the_name() {
     // Artist pages and taste tell artists by exact catalog ids, never by name.
     let apple = itunes::songs(json!({ "results": [

@@ -577,7 +577,8 @@ pub struct Score {
     pub fit: Fit,
     /// Another version than the words name (`Query::other_version`): it goes after the song.
     pub version: bool,
-    /// Only a gap-filler's list has it: it goes after the catalog's rows of the same fit.
+    /// Only a gap-filler's list has it: it goes after the catalog's rows of the same fit, unless
+    /// its plays outnumber theirs (`counted_fillers`).
     pub filler: bool,
     pub popularity: f64,
     /// How far the top result leans toward it over the other kinds (`top`).
@@ -748,6 +749,35 @@ pub fn rank(rows: &[Score], own: impl Fn(usize) -> bool) -> Vec<usize> {
         })
     });
     order
+}
+
+/// A gap-filler's song with more plays than every catalog row of its fit that has a count ranks
+/// among those rows, by its count: "creep" is Radiohead's (2.4B plays on YouTube Music, a song
+/// Apple's US store lacks) before TLC's (232M) and the covers, where it went behind 22 covers.
+/// Where no catalog row of its fit has a count, nothing says it is better known, and it stays
+/// after them: for "hello", YouTube Music listed a namesake popular where it was asked, not
+/// Adele's, which Apple ranks first.
+pub fn counted_fillers(m: &Merged, scores: &mut [Score]) {
+    let most = |fit: Fit| {
+        m.songs
+            .iter()
+            .zip(scores.iter())
+            .filter(|(_, s)| !s.filler && s.fit == fit)
+            .filter_map(|(row, _)| row.plays)
+            .max()
+    };
+    let better_known: Vec<usize> = (0..scores.len())
+        .filter(|&i| scores[i].filler)
+        .filter(|&i| {
+            m.songs[i]
+                .plays
+                .zip(most(scores[i].fit))
+                .is_some_and(|(p, most)| p > most)
+        })
+        .collect();
+    for i in better_known {
+        scores[i].filler = false;
+    }
 }
 
 /// Raises each song's popularity by the other takes of it its own artists have in the answers:
