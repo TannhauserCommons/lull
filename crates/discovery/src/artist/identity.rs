@@ -35,7 +35,7 @@ use crate::{Service, feed};
 /// The listener's evidence for an artist is weighed again after this: new songs, new links.
 const RECHECK_S: i64 = 7 * 86_400;
 /// The rule's version: a new one weighs every stored artist again, once (`recheck`).
-const RULE: &str = "exact-ids-1";
+const RULE: &str = "exact-ids-2";
 
 /// A source of artist ids.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -79,6 +79,14 @@ pub enum Evidence {
     Recommended { by: String },
     /// A search row (the catalog's own artist row, or a song's) named the artist by this id.
     Searched,
+}
+
+impl Evidence {
+    /// The listener's own evidence or a link from it, not a recommender's or a search row's
+    /// word: what personal search lifts by (`store::trusted_artist_ids`).
+    pub fn trusted(&self) -> bool {
+        !matches!(self, Evidence::Recommended { .. } | Evidence::Searched)
+    }
 }
 
 /// One id of an artist.
@@ -474,8 +482,8 @@ where
     Ok(ids)
 }
 
-/// Fills the sources `ids` has none of through MusicBrainz's links: its catalog ids to the one
-/// artist they all link to, its MBID to the Apple and Deezer artists it links to.
+/// Fills `ids` through MusicBrainz's links: its catalog ids to the one artist they all link to,
+/// its MBID to every Apple and Deezer page it links to (`Ids::add`).
 pub async fn expand<U, UF, K, KF>(ids: &mut Ids, country: &str, url_artists: U, links: K) -> Result<()>
 where
     U: Fn(Vec<String>) -> UF,

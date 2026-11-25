@@ -883,17 +883,15 @@ impl Scored {
                 lifted: catalog.to_vec(),
             };
         };
-        let affinities: Vec<Affinity> = rows.iter().map(affinity).collect();
-        let marked: Vec<Score> = catalog
+        let (marked, lifted) = catalog
             .iter()
-            .zip(&affinities)
-            .map(|(s, &a)| s.leading(a, bar))
-            .collect();
-        let lifted = marked
-            .iter()
-            .zip(&affinities)
-            .map(|(s, &a)| s.with_affinity(a))
-            .collect();
+            .zip(rows)
+            .map(|(s, row)| {
+                let a = affinity(row);
+                let marked = s.leading(a, bar);
+                (marked, marked.with_affinity(a))
+            })
+            .unzip();
         Scored { marked, lifted }
     }
 }

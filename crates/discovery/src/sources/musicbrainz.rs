@@ -176,7 +176,7 @@ impl MusicBrainz {
             resource: String,
         }
         self.cache
-            .get(format!("mb:artist-links-all:{mbid}"), 30 * DAY, || async {
+            .get(format!("mb:artist-links:{mbid}"), 30 * DAY, || async {
                 let raw: Raw = self
                     .get(&format!("artist/{mbid}"), &[("inc", "tags genres url-rels")])
                     .await?;
