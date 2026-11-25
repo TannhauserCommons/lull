@@ -515,6 +515,27 @@ fn a_song_from_the_work_typed_fits_it_only_in_part() {
 }
 
 #[test]
+fn a_title_cut_short_ranks_as_the_title_but_does_not_name_it() {
+    // "halleluja" is one edit from "Hallelujah" and ranks as it, but it may be a longer title
+    // still being typed ("Hallelujah Money"): only the whole title, or a typo of it, names it.
+    let hallelujah = song("Jeff Buckley", "Hallelujah", "Grace", None);
+    for (typed, names) in [("hallelujah", true), ("halelujah", true), ("halleluja", false)] {
+        let q = Query::new(typed);
+        assert_eq!(
+            (q.song(&hallelujah), q.names_song(&hallelujah)),
+            (Fit::Exact, names),
+            "{typed}"
+        );
+    }
+    let artist = ArtistHit {
+        name: "Metallica".into(),
+        ..ArtistHit::default()
+    };
+    assert!(Query::new("metallica").names_artist(&artist));
+    assert!(!Query::new("metallic").names_artist(&artist));
+}
+
+#[test]
 fn itunes_album_search_names_soundtracks_compilations_and_singles() {
     let found = itunes::albums(fixture("itunes-album-soundtrack")).unwrap_or_default();
     assert_eq!(found.albums.len(), 9);
