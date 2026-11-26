@@ -116,8 +116,8 @@ fn summary(p: &Playlist, shown: &[(usize, &Track)]) -> Value {
         "public": false,
         "songCount": shown.len(),
         "duration": shown.iter().map(|(_, t)| t.duration.unwrap_or(0)).sum::<u32>(),
-        "created": shape::iso(p.created_at),
-        "changed": shape::iso(p.updated_at),
+        "created": lull_core::iso_utc(p.created_at),
+        "changed": lull_core::iso_utc(p.updated_at),
         // getCoverArt serves the playlist's own cover, else its first song's album's.
         "coverArt": p.id,
     })

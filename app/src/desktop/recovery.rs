@@ -21,7 +21,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry};
 
 /// This many deaths of one window's content within `LOOP_WINDOW` is a loop: reloading won't help.
@@ -385,28 +385,7 @@ fn log_path(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn utc_now() -> String {
-    let secs = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    utc(secs)
-}
-
-/// `2026-11-03T09:41:07Z` from unix seconds (Howard Hinnant's days-to-civil).
-fn utc(secs: u64) -> String {
-    let (days, rest) = ((secs / 86_400) as i64, secs % 86_400);
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
-        rest / 3_600,
-        rest % 3_600 / 60,
-        rest % 60
-    )
+    lull_core::iso_utc(lull_core::now())
 }
 
 #[cfg(test)]
@@ -467,12 +446,5 @@ mod tests {
         // Two minutes after the first two, only the last one and this one count.
         let mut deaths = vec![start, start + Duration::from_secs(10)];
         assert!(!a_loop(&mut deaths, start + Duration::from_secs(200)));
-    }
-
-    #[test]
-    fn log_lines_carry_utc_time() {
-        assert_eq!(utc(0), "1970-01-01T00:00:00Z");
-        assert_eq!(utc(1_793_659_267), "2026-11-02T22:41:07Z");
-        assert_eq!(utc(951_782_400), "2000-02-29T00:00:00Z");
     }
 }
