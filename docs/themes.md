@@ -692,7 +692,7 @@ look for a check (ADR-0101).
   - **What it skips as decoration:** text drawn at under 50% opacity (its own times its ancestors'), and text blurred by a `filter` on it or round it. A blurred, faded copy of a title behind it is not checked; the title itself is. Text hidden from screen readers (`aria-hidden="true"`) is still checked when it shows: a sighted listener reads it.
   - **What it can't check:** text in form fields, SVG and `::before`/`::after`, and text filled with a picture (`background-clip: text`). 
   - **Advisory, for every theme:** contrast is shown in amber with the line and its ratio, for you to weigh, and never counts towards the exit code, on the built-in designs and on yours alike. Build your design as it is drawn; change it for a ratio only if you agree with it.
-- **Visual goldens:** after a visible change, push and run `mise run ui:approve` to recapture the gates' goldens. `mise run ui:update` recaptures the full visual matrix. Review the pictures and commit them with the change.
+- **Visual goldens:** after a visible change, push and run `mise run ui:approve` to recapture the gates' goldens. Review the pictures and commit them with the change.
 - **A new built-in design** also joins the lists of built-ins:
   - `D.builtIn` in `web/designs/designs.js`;
   - `BUILT_IN` in `crates/themes/src/package.rs`;

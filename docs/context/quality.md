@@ -44,20 +44,20 @@ The rest is the Webamp bundle, fonts, SVG and images. Brotli over the old raw tr
 
 ## Visual matrix
 
-`tests/ui/` (Playwright, pinned; `mise` is not needed, `npm ci` in that folder). `matrix.spec.mjs` makes one test per picture:
+`tests/ui/` (Playwright, pinned; `mise` is not needed, `npm ci` in that folder). `matrix.spec.mjs` makes one test per page:
 - **Routes** (`routes.mjs`): every fixed route, every Settings section, plus an album, artist, tag and playlist page found in the hub's library by `global-setup.mjs` once there is one. Add a route there when a screen registers one.
 - **Designs and themes:** `lull skydeck starlight petal glasshouse` × `day night`, set through the `lull:prefs` the UI reads before first paint.
 - **Viewports:** `phone` 390×844 (mobile, touch) and `desktop` 1440×900 for every route; `laptop` 1366×768, `xwide` 1920×1080 and `ultra` 2560×1440 (ADR-0007's sizes) only for the screens whose layout follows the window (`layoutRoutes` in `routes.mjs`: Home, Search, Library albums and songs, Now Playing, album, artist, playlist), so the run stays within its hour.
-- **Per picture it asserts:** no horizontal overflow (names the widest element), no title squeezed under 48 px (a grid counting its columns from the window instead of its own width), no console error or uncaught exception, no failed or 4xx/5xx request, then compares the viewport screenshot (animations disabled, caret hidden, fixed clock and timezone, 0.2% of pixels tolerated).
+- **Per page it asserts:** no horizontal overflow (names the widest element), no title squeezed under 48 px (a grid counting its columns from the window instead of its own width), no console error or uncaught exception, no failed or 4xx/5xx request (a fixed clock and timezone). It takes no pictures: how screens look is the key screens' goldens (UI gates).
 - **Tolerated requests** are listed with their reason in `expected-failures.json`. Delete an entry when its cause lands; don't add one to get green.
 
 **The CI hub.** `run-hub.sh` runs the built image (`lull:ui`) on host networking next to:
 - `stub-slskd.mjs`: an slskd that is logged in, shares a library, answers the server's status check that every connection check makes, and gets the same one-peer, one-song answer to every search. Any call it doesn't answer would raise the Soulseek banner and shift every page under Lighthouse (2026-11-06: 0.13 on every route, once the hub began the status check), so it 404s anything else loudly and the ui job fails on those calls by name. `crates/soulseek/src/slskd.rs` changing runs the ui job for that reason.
 - a fixture library (`fixtures/make-library.mjs`, ffmpeg): 4 albums, 14 tracks of 6 s sine tones, invented artists, real tags, embedded and folder covers, in `Artist/Album (Year)/NN - Title.ext`. Never commit generated media. It is mounted at `/music`.
-- a dead proxy for everything outside localhost, so MusicBrainz, Cover Art Archive and the rest fail identically on every run rather than changing the pictures.
+- a dead proxy for everything outside localhost, so MusicBrainz, Cover Art Archive and the rest fail identically on every run rather than changing the pages.
 - `LULL_SETUP_CODE` and `LULL_LIBRARY=folder` are passed only once `crates/core` reads those keys (the hub refuses unknown keys), and `global-setup.mjs` claims the hub and keeps the `lull_device` cookie only once `GET /api/setup` exists (ADR-0002). Before that the hub is open.
 
-**Goldens are not committed by the Quality session.** With no `tests/ui/goldens/`, or with `UI_CAPTURE=1`, a run writes the pictures instead of comparing, and the `ui` workflow uploads them as the `goldens` artifact. `mise run ui:update` triggers a capture run on the current branch and downloads them into `tests/ui/goldens/`; review and commit them. Pictures from any other machine differ by fonts and anti-aliasing, so only CI's image captures them. Failing runs upload `diffs` (expected, actual, diff images and the HTML report).
+Failing runs upload `diffs` (the HTML report and the failing tests' results).
 
 ## Budgets
 
@@ -103,7 +103,7 @@ One version, held by these files (`scripts/ci/version.mjs`, tested by `tests/web
 
 ## Checks on a branch
 
-A branch's checks run on its pull request (`mise run ship <topic>`, Landing a change). Only `main.yml` publishes the image and starts Pages; a Release comes only from a `v*` tag. `ui.yml` and `ui-gates.yml` run by hand on a branch only to take new goldens (`mise run ui:update`, `mise run ui:approve`).
+A branch's checks run on its pull request (`mise run ship <topic>`, Landing a change). Only `main.yml` publishes the image and starts Pages; a Release comes only from a `v*` tag. `ui-gates.yml` runs by hand on a branch only to take new goldens (`mise run ui:approve`).
 
 ## The check: one gate
 

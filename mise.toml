@@ -81,10 +81,6 @@ run = "node tests/ui/themes-check.mjs"
 description = "Approve how the key screens look now: capture the UI gates' goldens on CI into tests/ui/gates/goldens/linux"
 run = "sh tests/ui/gates/approve.sh"
 
-[tasks."ui:update"]
-description = "Recapture the visual goldens on CI's image and download them into tests/ui/goldens"
-run = "sh tests/ui/update-goldens.sh"
-
 # The web UI checks the `check` workflow runs (docs/context/quality.md, The check). Each is a script a person can
 # run too; the image and the hub need Linux and Docker. `check:ui` above takes GATES=perf|fit|rest and SHARD=2/3.
 [tasks."image:save"]
