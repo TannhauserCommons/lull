@@ -38,8 +38,8 @@
      LullWebamp.localSkins()           [{ md5, name, file, blob, added }] kept on this device, newest first
      LullWebamp.keepLocal(entry), dropLocal(md5)
      LullWebamp.pickSkin(own, favourites, current, random)   Random skin, the one rule every player follows
-                                       (tests/skin-pick.json has its cases): one of the listener's own skins (the
-                                       hub's folder and this device's files), or of the favourites when there are
+                                       (tests/web/skin-pick.test.mjs has its cases): one of the listener's own skins
+                                       (the hub's folder and this device's files), or of the favourites when there are
                                        none of their own, never the one in use (current: its md5, or null). null
                                        when there is no other. random() is Math.random's range
 

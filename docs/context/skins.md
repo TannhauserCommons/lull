@@ -45,7 +45,7 @@
 
 ## Random skin
 
-- **The rule** (`LullWebamp.pickSkin` in `web/desktop/webamp-session.js`, the only copy; cases in `tests/skin-pick.json`): uniformly one of the listener's own skins (Your skins: the hub's, plus `.wsz` files an older lull kept on this device); when they have none, one of the favourites. Never the skin in use; `null` when there is no other (one skin of their own, in use, says so instead of falling back to favourites).
+- **The rule** (`LullWebamp.pickSkin` in `web/desktop/webamp-session.js`, the only copy; cases in `tests/web/skin-pick.test.mjs`): uniformly one of the listener's own skins (Your skins: the hub's, plus `.wsz` files an older lull kept on this device); when they have none, one of the favourites. Never the skin in use; `null` when there is no other (one skin of their own, in use, says so instead of falling back to favourites).
 - **Random skin** (Settings › Appearance › Classic) chooses the pick as choosing it by hand does (a hub skin is downloaded through the hub first, then `classic-skin` and the `storage` event), so an open Classic follows at once.
 - **New random skin each time Classic opens** is per device: localStorage `lull:classicRandom` (`true`). Classic asks `App.classicSkin.opening()` before Webamp gets a skin, in the browser's stage and in `main` before it builds the app window's hand-off, so the app's Classic window (and a native one fed the same hand-off) opens in the pick without picking itself. The pick becomes the device's choice once its file can be had; otherwise the choice stays.
 
