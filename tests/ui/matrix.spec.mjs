@@ -1,6 +1,7 @@
 // Every route x design x theme, on the phone and desktop projects (playwright.config.mjs): each
-// page must settle without console errors, failed requests or sideways scrolling, and match its
-// golden screenshot. One test per picture, so a failure names the exact route, design and theme.
+// page must settle without console errors, failed requests, sideways scrolling or a squeezed title.
+// One test per page, so a failure names the exact route, design and theme. How the key screens look
+// is gates/screens.spec.mjs's, against its goldens.
 
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -32,7 +33,6 @@ for (const route of [...fixedRoutes, ...detailRoutes()]) {
         expect.soft(await squeezed(page), 'a title squeezed to a few letters').toBeNull();
         expect.soft(problems.console, 'console errors').toEqual([]);
         expect.soft(problems.requests, 'failed requests').toEqual([]);
-        await expect(page).toHaveScreenshot(`${slug(route)}-${design}-${theme}.png`);
       });
     }
   }
