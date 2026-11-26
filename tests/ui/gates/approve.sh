@@ -1,8 +1,9 @@
 #!/bin/sh
 # Approve the key screens as they look now (`mise run ui:approve`): runs the ui-gates workflow in capture mode on the
-# current branch, waits, and replaces tests/ui/gates/goldens/linux with its pictures. Review the changed pictures
-# (git diff --stat, then open them), then commit them with the change that made them. Pictures from any other
-# system differ by fonts and anti-aliasing, so only CI's are committed. Needs `gh` signed in and the branch pushed.
+# current branch, waits, and replaces tests/ui/gates/goldens/linux with its pictures: the screens.spec.mjs `pictured`
+# ones only, so no golden outlives its comparison. Review the changed pictures (git diff --stat, then open them), then
+# commit them with the change that made them. Pictures from any other system differ by fonts and anti-aliasing, so only
+# CI's are committed. Needs `gh` signed in and the branch pushed.
 set -eu
 cd "$(git rev-parse --show-toplevel)"
 branch=$(git branch --show-current)

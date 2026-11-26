@@ -1,7 +1,7 @@
 name: ui-gates
 # The UI gates on the fixture hub (tests/ui/fixture-hub, Node only, no image): performance budgets under a 4x CPU
-# slowdown, the key screens against their goldens in every design, theme and size, accessibility, and the chrome
-# fitting at every width.
+# slowdown, the key screens in every design, theme and size (the pictured ones against their goldens), accessibility,
+# and the chrome fitting at every width.
 # check.yml's `gates` runs them on every pull request and on main; this run, by hand on a branch, is the one that
 # takes the screens' pictures: `capture` writes them instead of comparing, and `mise run ui:approve` takes them from
 # the run. docs/context/quality.md#ui-gates.

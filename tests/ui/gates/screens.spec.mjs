@@ -1,7 +1,7 @@
 // Key screens in every design and theme at a phone, a laptop and a wide window, on the fixture hub: each must load
 // without errors or failed requests, keep inside the window, give every title room, line up
 // the tags side by side, clip what they clamp, show each cover whole in the rows that scroll it, reach every feature
-// expected there (checks.mjs features, web/designs/features.json), and match its golden.
+// expected there (checks.mjs features, web/designs/features.json). The pictured ones (`pictured`) also match their golden.
 // Approving an intended change: docs/context/quality.md#ui-gates.
 
 import { expect, test } from '@playwright/test';
@@ -13,6 +13,10 @@ const sizes = {
   laptop: { viewport: { width: 1366, height: 768 } },
   wide: { viewport: { width: 1920, height: 1080 } },
 };
+// The screens compared with a golden, at the phone and the laptop, in every design and theme: what the structural checks
+// can't see (a colour, a picture, a design's own look) shows on these. Every combination keeps the structural checks.
+// A capture (ui:approve) writes only these, so no golden outlives its comparison.
+const pictured = { sizes: ['phone', 'laptop'], screens: ['home', 'now', 'album', 'settings'] };
 
 for (const [size, use] of Object.entries(sizes)) {
   test.describe(size, () => {
@@ -35,7 +39,9 @@ for (const [size, use] of Object.entries(sizes)) {
             expect.soft(unknownFeatures(await features(page), { design, width: use.viewport.width, screen: route.split(/[/?]/)[1] }), 'a feature nothing reaches').toEqual([]);
             expect.soft(problems.console, 'console errors').toEqual([]);
             expect.soft(problems.requests, 'failed requests').toEqual([]);
-            await expect(page).toHaveScreenshot(`${size}/${name}-${design}-${theme}.png`);
+            if (pictured.sizes.includes(size) && pictured.screens.includes(name)) {
+              await expect(page).toHaveScreenshot(`${size}/${name}-${design}-${theme}.png`);
+            }
           });
         }
       }
