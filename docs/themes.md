@@ -1261,7 +1261,7 @@ for the playing song need no `data-id`.
 | `repeat` | repeat off, all, one, in turn (`data-bind="repeat"`) |
 | `mute` | mute or unmute (`data-bind="mute"`) |
 | `now-vol` | the volume a step up (`data-dir="1"`) or down (`data-dir="-1"`) |
-| `like` | like the playing song, or unlike it (`data-bind="like"`) |
+| `like` | like the playing song, or unlike it (`data-bind="like"`); held or right-clicked, adds it to a playlist (a picker opens) |
 | `save` | save the playing song to the library, or try a failed save again (`data-bind="save"`) |
 | `add-to-playlist` | add the playing song to a playlist (a picker opens) |
 | `start-radio-current` | a radio from the playing song |

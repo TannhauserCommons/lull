@@ -96,3 +96,27 @@ test('a right-click on a Stats artist, a Stats song and "Playing from" opens tha
   const f = await menuOf(page, from);
   expect(f.share).toBe(`album/${albumId}`);
 });
+
+/* a heart's menu is the playlist picker: a click likes, a right-click adds to a playlist and likes nothing; on a
+   selected row it takes the whole selection, as the row's own menu does. Its tooltip says so, for any heart */
+test('a right-click on a heart opens the playlist picker for its song, or the selection, and likes nothing', async ({ page }) => {
+  await openScreen(page, `/album/${ids.album}`);
+  const rows = page.locator('#view .trow[data-track-id]');
+  const heart = rows.nth(1).locator('[data-act="like"]');
+  const before = await heart.getAttribute('aria-pressed');
+  await heart.hover();
+  await expect(page.locator('#tooltip')).toHaveText(/· right-click for playlists$/);
+  await heart.click({ button: 'right' });
+  const title = await rows.nth(1).locator('.trow__title').textContent();
+  await expect(page.locator('.lib-picker__what')).toHaveText(`Adding ${title}. Tick every playlist it goes in, then Done.`);
+  await expect(heart, 'the right-click liked nothing').toHaveAttribute('aria-pressed', before);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.lib-picker')).toHaveCount(0);
+  // three rows selected (a click on a row's empty space, then Shift): the heart of one of them takes all three
+  const spot = async (i) => ({ x: (await rows.nth(i).boundingBox()).width * 0.6, y: 20 });
+  await rows.nth(1).click({ position: await spot(1) });
+  await rows.nth(3).click({ position: await spot(3), modifiers: ['Shift'] });
+  await expect(page.locator('#view .trow.is-selected')).toHaveCount(3);
+  await rows.nth(2).locator('[data-act="like"]').click({ button: 'right' });
+  await expect(page.locator('.lib-picker__what')).toHaveText('Adding 3 songs. Tick every playlist it goes in, then Done.');
+});

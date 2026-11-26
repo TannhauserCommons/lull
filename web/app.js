@@ -279,8 +279,12 @@
   App.toggleLike = function (id, force) {
     var on = force === undefined ? !state.liked[id] : !!force;
     setLiked([id], on);
-    App.toast(on ? 'Added to Liked songs' : 'Removed from Liked songs', {
-      confirms: true, group: on ? 'like' : 'unlike', together: on ? liked : unliked, icon: on ? 'heart-fill' : 'heart', action: 'Undo', onAction: function () { App.toggleLike(id, !on); }, quiet: true
+    /* a held heart opens the playlist picker (contextMenuFor), which a touch has no tooltip to say: the first like by
+       touch on this device says it, once, even with Confirmations: Quiet, since it teaches rather than confirms */
+    var hint = on && touching && !storage('heartHint');
+    if (hint) storage('heartHint', true);
+    App.toast(on ? 'Added to Liked songs' + (hint ? '. Hold ♥ to add a song to a playlist' : '') : 'Removed from Liked songs', {
+      confirms: !hint, group: on ? 'like' : 'unlike', together: on ? liked : unliked, icon: on ? 'heart-fill' : 'heart', action: 'Undo', onAction: function () { App.toggleLike(id, !on); }, quiet: true
     });
   };
   /* setLiked(ids, on): many at once (album and selection actions). With "Save songs you like" on
@@ -1850,6 +1854,8 @@
   function cutOff(el) { return el.scrollWidth > el.clientWidth + 1; }
   function showTip(target, asked) {
     var text = target.getAttribute('data-tip'); if (!text) return;
+    // any heart, a design's or a theme's, has the playlist picker as its menu (contextMenuFor)
+    if (target.matches('[data-act="like"]')) text += ' · right-click for playlists';
     if (target.hasAttribute('data-tip-cut') && !cutOff(target)) return;
     var lbl = target.querySelector('.nav-item__label'); if (lbl && lbl.offsetParent) return;   // rail labels visible: no tooltip
     if (!tipEl) { tipEl = document.createElement('div'); tipEl.className = 'tooltip'; tipEl.setAttribute('role', 'tooltip'); tipEl.id = 'tooltip'; document.body.appendChild(tipEl); }
@@ -4563,6 +4569,11 @@
   ];
   var ITEM_LINK = /^#\/(album|artist|playlist)\/([^/?#]+)/;
   function contextMenuFor(target) {
+    // a heart's own menu is the playlist picker: a click likes, a right-click or a hold adds to a playlist (on a selected
+    // row, the whole selection, as the row's own menu does)
+    var heart = target.closest('[data-act="like"]'), liked = heart && (heart.getAttribute('data-id') || P.currentId());
+    var picked = heart && heart.closest('.trow.is-selected[data-track-id]');
+    if (liked) return function () { App.hooks.addToPlaylist(picked ? App.selectedIds(picked) : [liked], heart); };
     for (var i = 0; i < MENU_OF.length; i++) {
       var item = target.closest(MENU_OF[i][0]); if (!item) continue;
       var scope = MENU_OF[i][1] ? item.closest(MENU_OF[i][1]) : item;
