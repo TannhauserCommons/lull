@@ -1,0 +1,125 @@
+name: nightly
+
+# Once a night on main: `check` with every job, whatever paths changed, and the
+# checks main.yml runs beside it (graphics, Lighthouse). main.yml runs only the
+# checks whose paths changed since its
+# newest green run, so this is the backstop for what path selection skipped
+# (docs/context/quality.md, The nightly; ADR-0104). A red job here that main
+# skipped since it last ran it green is an escape: `escapes` files it, with the
+# commits main skipped it for, so .github/ci/paths.yml gets the missing path.
+# Publishes nothing.
+on:
+  schedule:
+    - cron: "37 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+    # What main.yml grants and passes: the same check, on the same image.
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      all: true
+    secrets:
+      PRIVATE_PATTERNS: ${{ secrets.PRIVATE_PATTERNS }}
+      LULL_LASTFM_API_KEY: ${{ secrets.LULL_LASTFM_API_KEY }}
+      LULL_LASTFM_API_SECRET: ${{ secrets.LULL_LASTFM_API_SECRET }}
+
+  # The Linux app on a computer with no graphics card (graphics.yml).
+  graphics:
+    uses: ./.github/workflows/graphics.yml
+    with:
+      ref: ${{ github.sha }}
+
+  # Lighthouse's budgets (tests/ui/lighthouse.sh): two machines, each with its
+  # own hub from the image check built.
+  lighthouse:
+    name: lighthouse (${{ matrix.part }})
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { part: "1 of 2", shard: "1/2", slot: 1 }
+          - { part: "2 of 2", shard: "2/2", slot: 2 }
+    env:
+      # The hub in the image listens here (tests/ui/run-hub.sh); the stub slskd next to it on :5030.
+      LULL_URL: http://127.0.0.1:8080
+      LULL_SETUP_CODE: ui-test-setup
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+          path: ${{ runner.temp }}
+      # The key check's `ui` jobs save on main (the same Chromium and ffmpeg).
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/apt-cache/*.deb
+            ~/.cache/ms-playwright
+          key: ui-browsers-${{ runner.os }}-${{ runner.arch }}-chromium-ffmpeg-${{ hashFiles('tests/ui/package-lock.json') }}
+          restore-keys: ui-browsers-${{ runner.os }}-${{ runner.arch }}-chromium-ffmpeg-
+      - name: mise run ui:setup
+        run: mise run ui:setup
+      - name: mise run ui:hub
+        run: mise run ui:hub
+      - name: mise run ui:lighthouse
+        run: mise run ui:lighthouse
+        env:
+          LH_SHARD: ${{ matrix.shard }}
+      - name: mise run ui:stub
+        if: ${{ !cancelled() }}
+        run: mise run ui:stub
+      - name: mise run ui:logs
+        if: ${{ failure() }}
+        run: mise run ui:logs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: lighthouse-${{ matrix.slot }}
+          path: tests/ui/lhci
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Which jobs are red, and for each whether main skipped it since it last ran
+  # it green (scripts/ci/nightly-escapes.mjs): opens or comments on the one
+  # `nightly is red` issue, and closes it on a green night. It runs whatever the
+  # others concluded, and fails only when the script itself breaks.
+  escapes:
+    needs: [check, graphics, lighthouse]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      # Main's history, for the commits and files since main last ran a red job.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: mise run nightly:escapes
+        run: mise run nightly:escapes ${{ github.run_id }}
+        env:
+          GH_TOKEN: ${{ github.token }}

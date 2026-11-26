@@ -33,9 +33,11 @@ permissions:
   contents: read
 
 # A newer push to a pull request cancels the older run of it (main.yml runs one
-# at a time). Cancelled is neither red nor green.
+# at a time). Cancelled is neither red nor green. The caller's name is in the
+# group (a called workflow's `github` is its caller's): main.yml's and
+# nightly.yml's calls both run on main and must not cancel each other.
 concurrency:
-  group: check-${{ github.ref }}
+  group: check-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
