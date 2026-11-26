@@ -245,9 +245,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # Seven machines at once: performance split two ways, each machine running one test at a time (its task lengths
-  # must not share the CPU); `fit`, about half the rest's time, two ways; and every other gate three ways, by
-  # Playwright's --shard. `mise run check:ui` takes the group and the shard from GATES and SHARD, so a person runs
+  # Seven machines at once, split by how long each part runs (5-7 minutes of tests each, from CI's per-test times), not by
+  # how many tests: performance on one, running one test at a time (its task lengths must not share the CPU); `fit` on
+  # one; `mobile` two ways (as Android, then as an iPhone); and every other gate three ways, by Playwright's --shard,
+  # which cuts by count. `mise run check:ui` takes the group and the shard from GATES and SHARD, so a person runs
   # one machine's share the same way. The key screens compare with their goldens; taking new ones stays with
   # ui-gates.yml (`mise run ui:approve`). `browsers` is the cache key's: it must name what run.sh installs for the group.
   gates:
@@ -260,10 +261,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { part: "perf 1 of 2", gates: perf, shard: "1/2", browsers: chromium, slot: p1 }
-          - { part: "perf 2 of 2", gates: perf, shard: "2/2", browsers: chromium, slot: p2 }
-          - { part: "fit 1 of 2", gates: fit, shard: "1/2", browsers: chromium, slot: f1 }
-          - { part: "fit 2 of 2", gates: fit, shard: "2/2", browsers: chromium, slot: f2 }
+          - { part: "perf", gates: perf, browsers: chromium, slot: p }
+          - { part: "fit", gates: fit, browsers: chromium, slot: f }
+          - { part: "mobile 1 of 2", gates: mobile, shard: "1/2", browsers: chromium webkit, slot: m1 }
+          - { part: "mobile 2 of 2", gates: mobile, shard: "2/2", browsers: chromium webkit, slot: m2 }
           - { part: "1 of 3", gates: rest, shard: "1/3", browsers: chromium webkit, slot: 1 }
           - { part: "2 of 3", gates: rest, shard: "2/3", browsers: chromium webkit, slot: 2 }
           - { part: "3 of 3", gates: rest, shard: "3/3", browsers: chromium webkit, slot: 3 }
