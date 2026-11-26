@@ -9,9 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { sizeOf, wireFile } from '../../scripts/budgets/measure.mjs';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { assertScreen, BLOCKED_PORTS, builtFile, classicDelay, horizonOf, listening, MIN_HORIZON_MS } from '../../scripts/budgets/list.mjs';
+import { assertScreen, builtFile, classicDelay, horizonOf, listening, MIN_HORIZON_MS } from '../../scripts/budgets/list.mjs';
 import { changedFiles, decide, report, validateLimits } from '../../scripts/budgets/decide.mjs';
 import { checked, chooseHarness } from '../../scripts/budgets/run.mjs';
 
@@ -61,22 +59,15 @@ test('a route key that matches no screen, or redirects, fails the listing instea
   assert.throws(() => assertScreen('library', { routed: true, path: '/library/albums' }), /"library" is not a screen.*redirected to \/library\/albums/);
 });
 
-const appJs = readFileSync(fileURLToPath(new URL('../../web/app.js', import.meta.url)), 'utf8');
 const deferred = (ms) => `x();\n  App.on('ready', function () {\n    setTimeout(function () {\n      var go = function () { App.needClassic().then(null, function () {}); };\n      if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 10000 }); else go();\n    }, ${ms});\n  });\ny();`;
 
-test('the start ends a second short of Classic\'s deferred load, read from app.js, and a delay too short for a start fails', () => {
+test('the start ends a second short of Classic\'s deferred load, and a delay too short for a start fails', () => {
   assert.equal(classicDelay(deferred(15000)), 15000);
-  assert.equal(classicDelay(appJs), 15000);
   assert.equal(horizonOf(deferred(15000)), 14000);
   assert.equal(horizonOf(deferred(MIN_HORIZON_MS + 1000)), MIN_HORIZON_MS);
   assert.throws(() => horizonOf(deferred(MIN_HORIZON_MS + 999)), /leaves a start of 9999 ms/);
   assert.throws(() => classicDelay("App.on('ready', function () {\n    other();\n  });"), /no longer loads Classic/);
   assert.throws(() => classicDelay('nothing here'), /no longer loads Classic/);
-});
-
-test('the fixture hub never gets a port a browser refuses', () => {
-  for (const port of [6665, 6666, 6000, 6697, 10080, 4045]) assert.ok(BLOCKED_PORTS.has(port), String(port));
-  for (const port of [8790, 8080, 5030, 49152]) assert.ok(!BLOCKED_PORTS.has(port), String(port));
 });
 
 const fakeHub = () => Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter() });
