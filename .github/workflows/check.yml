@@ -120,8 +120,8 @@ jobs:
   # The web UI. `image` builds the hub's image once; `ui` runs the functional tests on it, four shards; `gates` runs
   # the behaviour gates on the fixture hub, seven shards. A UI test that fails runs once more (`retries` in the
   # Playwright configs); one that passes on it is written to `flakes/` and uploaded as a `flakes-*` artifact, which
-  # `after` files an issue from. These jobs file no issue themselves and have no token to. Lighthouse and the app's
-  # graphics run after the merge (main.yml).
+  # `after` files an issue from. These jobs file no issue themselves and have no token to. Lighthouse runs in
+  # nightly.yml, the app's graphics after the merge (main.yml).
   # The browsers' install is a task; what it downloads comes from the cache (the `ui-browsers-...` keys, the ones
   # .github/actions/ui-browsers saves), which a run on main saves after the install and any other run only reads.
 
@@ -129,7 +129,7 @@ jobs:
   # pull request's check has none: its image has no built-in key (the Dockerfile builds without; a listener then brings
   # their own), and the expression below keeps a pull request's own run from reading the repository's secrets. The
   # build reads main's layer cache; a run on main writes it back.
-  # Main always builds it (`base` is set there): main.yml publishes the image and Lighthouse runs on it.
+  # Main always builds it (`base` is set there): main.yml publishes the image.
   image:
     needs: changes
     if: ${{ inputs.base != '' || contains(fromJSON(needs.changes.outputs.run), 'image') || contains(fromJSON(needs.changes.outputs.run), 'ui') }}
@@ -161,7 +161,7 @@ jobs:
 
   # Four machines at once, each with its own hub from the image: the visual matrix split four ways by Playwright's
   # --shard, and on the first the hub contract (the image holds the same contract as the Linux package, ADR-0090).
-  # Lighthouse's two shards run in main.yml: a time measured on a shared runner belongs to main, not to a check on a
+  # Lighthouse's two shards run in nightly.yml: a time measured on a shared runner belongs to main, not to a check on a
   # change.
   ui:
     name: ui (${{ matrix.part }})

@@ -109,7 +109,7 @@ description = "Fail when that hub called a slskd route the stub doesn't answer"
 run = "sh tests/ui/hub.sh stub"
 
 [tasks."ui:lighthouse"]
-description = "Lighthouse's budgets on that hub: LH_SHARD=1/2 measures half the routes (main.yml)"
+description = "Lighthouse's budgets on that hub: LH_SHARD=1/2 measures half the routes (nightly.yml)"
 run = "sh tests/ui/hub.sh lighthouse"
 
 [tasks."ui:logs"]
