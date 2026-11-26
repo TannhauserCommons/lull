@@ -4,8 +4,9 @@ name: main
 # of this workflow (all of them when there is none), on the merged result, then what
 # the merge brings (the image, Pages, the share Worker, the YouTube Music
 # contract, the release draft, the bundles' caches) and the check that runs
-# only on main (graphics). Lighthouse runs in nightly.yml. Blocks nothing;
-# after.yml opens the issue when it is red.
+# only on main (graphics), when its inputs changed. Lighthouse runs in
+# nightly.yml, which also runs everything every night. Blocks nothing; after.yml
+# opens the issue when it is red.
 on:
   push:
     branches: [main]
@@ -56,6 +57,7 @@ jobs:
       pages: ${{ steps.plan.outputs.pages }}
       share: ${{ steps.plan.outputs.share }}
       youtube_contract: ${{ steps.plan.outputs.youtube_contract }}
+      graphics: ${{ steps.plan.outputs.graphics }}
       warm: ${{ steps.plan.outputs.warm }}
       notes: ${{ steps.plan.outputs.notes }}
     steps:
@@ -203,9 +205,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-  # The Linux app on a computer with no graphics card (graphics.yml). It needs
-  # no image, so it runs beside check, not after it. A red one turns main red.
+  # The Linux app on a computer with no graphics card (graphics.yml), when
+  # what it builds or runs changed since main's newest green run, or with every
+  # check when there is none (mise run main:plan); nightly.yml runs it every
+  # night. It needs no image, so it runs beside check, not after it. A red one
+  # turns main red.
   graphics:
+    needs: plan
+    if: ${{ needs.plan.outputs.base == '' || needs.plan.outputs.graphics == 'true' }}
     uses: ./.github/workflows/graphics.yml
     with:
       ref: ${{ github.sha }}
