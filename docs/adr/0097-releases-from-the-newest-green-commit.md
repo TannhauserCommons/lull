@@ -1,6 +1,6 @@
 # ADR-0097: Releases come from the newest green commit and build from warm caches
 
-- Status: accepted; amended by ADR-0102 (newest green is main.yml's run, the version lands by pull request)
+- Status: accepted; amended by ADR-0102 (newest green is main.yml's run, the version lands by pull request); amended by ADR-0103 (the tag is pushed after the version's pull request passed check / gate)
 - Date: 2026-11-04
 
 ## Context

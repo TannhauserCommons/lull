@@ -4,7 +4,7 @@ name: app
 # (x64 and arm64) and the Android APK on a v* tag (attached to the tag's Release, with the signed updater
 # files and latest.json) or by hand (workflow artifacts, no updater files). A run by hand on main also
 # saves the bundles' caches for the next tag (ADR-0097).
-# `mise run release X.Y.Z` makes the tag (scripts/release.sh).
+# `mise run release X.Y.Z` makes the tag (scripts/release.sh), pushed once its commit passed check / gate (ADR-0103).
 on:
   push:
     tags: ["v*"]
@@ -29,7 +29,25 @@ env:
   LINUX_DEPS: libwebkit2gtk-4.1-dev build-essential file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev
 
 jobs:
+  # A tag builds and publishes only once check / gate passed on its commit (ADR-0103): a tag pushed before that fails
+  # here, and its run can be re-run when the gate is green. A run on main passes straight through.
+  release-gate:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      checks: read
+    steps:
+      - if: github.ref_type == 'tag'
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout: scripts
+      - if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/release-gate.sh "$GITHUB_REF_NAME"
+
   bundle:
+    needs: release-gate
     if: ${{ !inputs.gradle-verification }}
     strategy:
       fail-fast: false
@@ -141,6 +159,7 @@ jobs:
   # scanner), and `clean`, unsigned from a clean clone in another folder. android-compare then requires
   # the two to match except for the signature, which is what lets F-Droid ship the release APK.
   android:
+    needs: release-gate
     strategy:
       fail-fast: false
       matrix:
@@ -313,6 +332,7 @@ jobs:
 
   # The Linux server package and the hub kits (ADR-0090), both architectures, held to the hub contract.
   server-package:
+    needs: release-gate
     if: github.ref_type == 'tag'
     uses: ./.github/workflows/server-package.yml
     with:

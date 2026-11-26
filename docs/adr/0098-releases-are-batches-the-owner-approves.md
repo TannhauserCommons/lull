@@ -1,6 +1,6 @@
 # ADR-0098: Releases are batches of related updates, which the owner approves
 
-- Status: accepted
+- Status: accepted; amended by ADR-0103 (release.yml pushes the version's branch; the tag, which starts app.yml and the image, goes up after check / gate)
 - Date: 2026-11-05
 
 ## Context
