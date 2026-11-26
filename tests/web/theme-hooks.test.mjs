@@ -4,81 +4,22 @@
 // - every data-* attribute web/ sets or styles is listed in one of the two;
 // - every hook a built-in design names exists in web/ (a rule for a hook that is gone never matches);
 // - every name the reference lists still exists in web/.
+// A stable hook is a promise to theme authors: a theme that styles it keeps working from one release to the next. So
+// every name the reference has ever listed stable (tests/web/stable-hooks.json) stays stable unless lull says where it
+// went (a MOVED entry, which Theme Studio and an import tell the theme's author of). scripts/hooks.mjs reads web/ and
+// the reference, and writes from them web/designs/hooks.js and that list (`mise run hooks`); this only checks.
 // Run: node --test tests/web
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import {
+  HOOKS_JS, LEDGER, OWN, ROOT, attrsOf, block, classesOf, cut, designs, docs, exists, hooksFile, internal, known, ledgerFile,
+  listed, ref, shared, source, stable,
+} from '../../scripts/hooks.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const WEB = join(ROOT, 'web');
-const DESIGNS = ['lull', 'skydeck', 'starlight', 'petal', 'glasshouse'];
-const OWN = /^(lull|sd|sl|pt|gh)-/;              // a built-in design's own classes (docs/themes.md, versioning)
-
-function walk(dir) {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
-    if (name === 'vendor' || name === 'node_modules') return [];
-    return statSync(path).isDirectory() ? walk(path) : [relative(WEB, path).replace(/\\/g, '/')];
-  });
-}
-const files = walk(WEB);
-const read = (f) => readFileSync(join(WEB, f), 'utf8');
-// a built-in design's pack.css (packs/<id>/pack.css, the looks of its easter eggs) is that design's, with its own classes
-const designCss = (f) => DESIGNS.some((d) => f === `designs/${d}/theme.css` || f === `packs/${d}/pack.css`);
-const generated = (f) => DESIGNS.some((d) => f === `designs/${d}.js`);    // theme.json + slots, written by lull-themes
-const hooksJs = (f) => f === 'designs/hooks.js';                            // this reference, written by the test below
-
-const sharedCss = files.filter((f) => f.endsWith('.css') && !designCss(f));
-const markup = files.filter((f) => /\.(js|html)$/.test(f) && !generated(f) && !hooksJs(f) && !f.endsWith('.min.js'));
-
-/* the selectors of a stylesheet (comments and strings dropped, declarations skipped) */
-function selectors(css) {
-  css = css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""');
-  const out = [];
-  let seg = '';
-  for (const ch of css) {
-    if (ch === '{') { const s = seg.slice(seg.lastIndexOf(';') + 1).trim(); if (!s.startsWith('@')) out.push(s); seg = ''; }
-    else if (ch === '}') seg = '';
-    else seg += ch;
-  }
-  return out.join('\n');
-}
-const classesOf = (sel) => new Set((sel.match(/\.[a-zA-Z_][\w-]*/g) || []).map((c) => c.slice(1)));
-const attrsOf = (text) => new Set(text.match(/data-[a-z][a-z0-9]*(?:-[a-z0-9]+)*/g) || []);
-/* a BEM block: .trow__num and .trow--dense are .trow's; state classes (.is-*, .has-*) stand alone */
-const block = (c) => (/^(is|has)-/.test(c) ? c : c.replace(/(__|--).*$/, ''));
-
-const shared = selectors(sharedCss.map(read).join('\n'));
-const designs = DESIGNS.map((d) => ({
-  name: d, sel: selectors(read(`designs/${d}/theme.css`) + (files.includes(`packs/${d}/pack.css`) ? '\n' + read(`packs/${d}/pack.css`) : '')),
-}));
-const source = markup.map(read).join('\n') + '\n' + shared;
-
-/* names markup builds from a prefix (`now-ly--${key}`, 'c' + n): the prefix stands for all of them */
-const dynamic = [...source.matchAll(/([a-zA-Z][\w-]*?(?:-|__))(?:\$\{|['"]\s*\+)/g)].map((m) => m[1]);
-const literal = (name) => new RegExp(`(?<![\\w-])${name.replace(/-/g, '\\-')}(?![\\w-])`).test(source);
-const exists = (name) => literal(name) || dynamic.some((p) => name.startsWith(p) && name.length > p.length);
-
-/* the reference: section 11 of docs/themes.md; "### Internal" and below is internal, the rest stable */
-const docs = readFileSync(join(ROOT, 'docs/themes.md'), 'utf8');
-const from = docs.indexOf('\n## 11. ');
-const next = docs.indexOf('\n## ', from + 1);
-const ref = from < 0 ? '' : docs.slice(from, next < 0 ? undefined : next);
-const cut = ref.indexOf('\n### Internal');
-function names(md) {
-  const spans = (md.match(/`[^`\n]+`/g) || []).join(' ');
-  return {
-    classes: new Set((spans.match(/(?<![\w-])\.[a-zA-Z_][\w-]*\*?/g) || []).map((c) => c.slice(1))),
-    attrs: new Set(spans.match(/data-[a-z][a-z0-9-]*\*?/g) || []),
-  };
-}
-const stable = names(ref.slice(0, cut));
-const internal = names(ref.slice(cut));
-const listed = (set, name) => set.has(name) || [...set].some((n) => n.endsWith('*') && name.startsWith(n.slice(0, -1)));
-const known = (kind, name) => listed(stable[kind], name) || listed(internal[kind], name);
+const Hooks = createRequire(import.meta.url)(HOOKS_JS);
 const missing = (label, list) => {
   const uniq = [...new Set(list)].sort();
   return uniq.length ? `${label} (${uniq.length}): ${uniq.join(' ')}` : '';
@@ -145,53 +86,37 @@ test('no style reads a part that gave way through :has()', () => {
   assert.equal(bad.length, 0, missing('selectors with [data-fit-out] in a :has() (read the row\'s data-fit-gave)', bad));
 });
 
-/* the classes lull's markup sets: class="" (with the quoted names inside its ${}), className, classList */
-function markupClasses() {
-  const out = new Set(), word = /^[a-zA-Z_][\w-]*$/;
-  const add = (text) => text.split(/\s+/).forEach((w) => { if (word.test(w)) out.add(w); });
-  const quoted = (text) => { for (const s of text.matchAll(/'([^'\n]*)'/g)) add(s[1]); };
-  for (const f of markup) {
-    const src = read(f);
-    for (const m of src.matchAll(/class(?:Name)?\s*=\s*"((?:[^"$]|\$\{(?:[^{}]|\{[^{}]*\})*\})*)"/g)) {
-      add(m[1].replace(/\$\{(?:[^{}]|\{[^{}]*\})*\}/g, (e) => { quoted(e); return ' '; }));
-    }
-    for (const m of src.matchAll(/classList\.(?:add|remove|toggle|contains)\(([^)]*)\)/g)) quoted(m[1]);
-    for (const m of src.matchAll(/className\s*\+?=\s*([^;\n]*)/g)) quoted(m[1]);
-  }
-  return out;
-}
-// Theme Studio and an import warn about a theme's rules for hooks lull moved, removed or keeps internal
-// (web/designs/hooks.js): it carries this reference, and the names lull's markup sets that it doesn't list
-test('designs/hooks.js carries the hook reference and the names lull sets', () => {
-  const path = join(WEB, 'designs/hooks.js');
-  const sorted = (s) => [...s].sort();
-  const isListed = (kind, n) => known(kind, kind === 'classes' ? block(n) : n);
-  const data = {
-    stable: { classes: sorted(stable.classes), attrs: sorted(stable.attrs) },
-    internal: { classes: sorted(internal.classes), attrs: sorted(internal.attrs) },
-    classes: sorted([...markupClasses()].filter((c) => !isListed('classes', c))),
-    attrs: sorted([...attrsOf(source)].filter((a) => !isListed('attrs', a))),
-    prefixes: sorted(new Set(dynamic)),
-  };
-  const line = `  var HOOKS = ${JSON.stringify(data)};`;
-  const have = readFileSync(path, 'utf8');
-  const want = have.split('\n').map((l) => (l.startsWith('  var HOOKS = ') ? line : l)).join('\n');
-  if (process.env.LULL_WRITE_PACKAGES) writeFileSync(path, want);
-  assert.ok(readFileSync(path, 'utf8') === want && want.includes(`\n${line}\n`),
-    'web/designs/hooks.js: HOOKS is stale: run LULL_WRITE_PACKAGES=1 node --test tests/web/theme-hooks.test.mjs');
+// Theme Studio and an import warn about a theme's rules for hooks lull moved, removed or keeps internal from this copy
+test('web/designs/hooks.js carries the hook reference and the names lull sets', () => {
+  assert.ok(readFileSync(HOOKS_JS, 'utf8') === hooksFile(), 'web/designs/hooks.js: HOOKS is stale: run mise run hooks');
+});
+
+test('every hook listed stable now is in the list of promises', () => {
+  assert.ok(readFileSync(LEDGER, 'utf8') === ledgerFile(),
+    'tests/web/stable-hooks.json lacks hooks docs/themes.md section 11 now lists stable: run mise run hooks');
+});
+
+/* a name as a theme writes it (one a wildcard, is-*, stands for), and whether a rule styling it gets a `moved` hint */
+const sample = (name) => (name.endsWith('*') ? name.slice(0, -1) + 'x' : name);
+const moved = (kind, name) => Hooks.find(`${kind === 'classes' ? '.' + sample(name) : '[' + sample(name) + ']'} { color: red; grid-area: a; order: 1; }`)
+  .some((h) => h.kind === 'moved');
+test('every hook ever listed stable is still stable, or lull says where it moved', () => {
+  const ledger = JSON.parse(readFileSync(LEDGER, 'utf8'));
+  const gone = ['classes', 'attrs'].flatMap((kind) => ledger[kind]
+    .filter((name) => !moved(kind, name) && !listed(stable[kind], sample(name)))
+    .map((name) => (kind === 'classes' ? '.' + name : name)));
+  assert.deepEqual(gone, [], 'stable hooks docs/themes.md section 11 no longer lists stable, with no MOVED entry (web/designs/hooks.js, docs/themes.md section 9) saying what to use instead');
 });
 
 // The theme the theme-API gate keeps working (tests/ui/fixtures/themes/theme-api-v1, gates/theme-api.spec.mjs) is the
 // promise to theme authors, so it names stable hooks only: none lull moved, has no more, or keeps internal
 test('the theme-API gate\'s theme styles stable hooks only', () => {
-  const { find } = createRequire(import.meta.url)('../../web/designs/hooks.js');
   const css = readFileSync(join(ROOT, 'tests/ui/fixtures/themes/theme-api-v1/theme.css'), 'utf8');
-  assert.deepEqual(find(css).map((h) => `${h.kind} ${h.name}`), []);
+  assert.deepEqual(Hooks.find(css).map((h) => `${h.kind} ${h.name}`), []);
 });
 
 test('every hook lull moved is in docs/themes.md, Hooks that changed', () => {
-  const { MOVED } = createRequire(import.meta.url)('../../web/designs/hooks.js');
   const at = docs.indexOf('### Hooks that changed'), part = at < 0 ? '' : docs.slice(at, docs.indexOf('\n## ', at));
-  const bad = MOVED.filter((m) => !part.includes(m.since) || !part.includes(m.name)).map((m) => `${m.since} ${m.name}`);
+  const bad = Hooks.MOVED.filter((m) => !part.includes(m.since) || !part.includes(m.name)).map((m) => `${m.since} ${m.name}`);
   assert.equal(bad.length, 0, missing('moves docs/themes.md section 9, Hooks that changed, doesn\'t list', bad));
 });
