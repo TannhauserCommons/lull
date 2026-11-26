@@ -251,3 +251,45 @@ for (const design of designs) {
     expect(covered, 'controls under a note').toEqual([]);
   });
 }
+
+/* a touch held on a heart opens the playlist picker for its song, before the finger lifts, and the lift likes
+   nothing */
+test('a touch held on a heart opens the playlist picker and likes nothing', async ({ page }) => {
+  await open(page, `/playlist/${ids.playlist}`);
+  const id = await page.locator('#view .trow[data-track-id] [data-act="like"][aria-pressed="false"]').nth(1).getAttribute('data-id');
+  const heart = page.locator(`#view [data-act="like"][data-id="${id}"]`);
+  await heart.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  const b = await heart.boundingBox();
+  await page.evaluate(({ x, y }) => {
+    const t = document.elementFromPoint(x, y);
+    if (!t.closest('[data-act="like"]')) throw new Error('the heart is covered by ' + t.className);
+    const o = { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: x, clientY: y, bubbles: true, cancelable: true, composed: true };
+    t.dispatchEvent(new PointerEvent('pointerdown', o));
+    window.__lift = () => { t.dispatchEvent(new PointerEvent('pointerup', o)); t.dispatchEvent(new MouseEvent('click', o)); };
+  }, { x: b.x + b.width / 2, y: b.y + b.height / 2 });
+  await page.waitForTimeout(700);
+  const shown = await page.locator('.lib-picker').isVisible().catch(() => false);
+  await page.evaluate(() => window.__lift());
+  expect(shown, 'the picker, open while the finger is still down').toBe(true);
+  await expect(page.locator('.lib-picker.is-open')).toBeVisible();
+  await expect(heart, 'the lift liked nothing').toHaveAttribute('aria-pressed', 'false');
+});
+
+/* a tap on a heart likes as ever, and the first like by touch on the device says the heart can be held, once (a held
+   heart has no tooltip on a phone to say it) */
+test('the first like by touch says a heart can be held, once', async ({ page }) => {
+  // its likes are its own (X-Fixture-Client), so the songs it likes stay unliked for every other gate
+  await page.context().setExtraHTTPHeaders({ 'x-fixture-client': `${test.info().testId}:${test.info().repeatEachIndex}` });
+  await open(page, `/playlist/${ids.playlist}`);
+  const unliked = page.locator('#view .trow[data-track-id] [data-act="like"][aria-pressed="false"]');
+  for (const [n, hint] of [[1, true], [0, false]]) {
+    const heart = page.locator(`#view [data-act="like"][data-id="${await unliked.nth(n).getAttribute('data-id')}"]`);
+    await heart.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    await heart.tap();
+    await expect(heart).toHaveAttribute('aria-pressed', 'true');
+    const toast = page.locator('.toast', { hasText: 'Added to Liked songs' });
+    await expect(toast).toHaveText(hint ? /Added to Liked songs\. Hold ♥ to add a song to a playlist/ : /^Added to Liked songs\s*Undo/);
+    await toast.locator('[data-toast-close]').tap();
+    await expect(toast).toHaveCount(0);
+  }
+});
