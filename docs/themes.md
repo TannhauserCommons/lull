@@ -703,7 +703,7 @@ look for a check (ADR-0101).
 
 ## 11. Hook reference
 
-Every class lull's CSS styles and every `data-*` attribute lull's markup sets, each stable or internal. `mise run check` fails when one is missing here, so this list is complete. A class stands for its BEM block: `.trow` covers `.trow__num` and `.trow--dense`. State classes (`.is-*`, `.has-*`) stand alone and mean the same wherever they appear.
+Every class lull's CSS styles and every `data-*` attribute lull's markup sets, each stable or internal. `mise run check` fails when one is missing here, so this list is complete. It is the one place a hook is classified: after changing it, `mise run hooks` writes Theme Studio's copy (`web/designs/hooks.js`) and adds each newly stable hook to the list of every hook lull has promised (`tests/web/stable-hooks.json`), which a hook leaves only by a move in section 9. A class stands for its BEM block: `.trow` covers `.trow__num` and `.trow--dense`. State classes (`.is-*`, `.has-*`) stand alone and mean the same wherever they appear.
 
 **Stable** hooks are the API (section 9): style them freely. **Internal** ones (at the end) are lull's plumbing and may change in any release: a theme that styles them may break.
 

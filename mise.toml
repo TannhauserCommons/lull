@@ -44,6 +44,10 @@ run = "sh scripts/privacy-check.sh"
 description = "Tests only"
 run = ["cargo test --workspace --locked", "node --test tests/web/*.test.mjs"]
 
+[tasks.hooks]
+description = "Write web/designs/hooks.js (Theme Studio's hook check) and the list of stable hooks ever promised (tests/web/stable-hooks.json) from docs/themes.md section 11 and web/"
+run = "node scripts/hooks.mjs"
+
 [tasks.dev]
 description = "Run lull locally with settings from .env (UI files reload from disk)"
 run = "cargo run --bin lull"
