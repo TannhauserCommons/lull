@@ -172,6 +172,8 @@ fn keep_trying(
     report: &dyn Fn(Status),
 ) -> Option<bool> {
     let (mut attempt, mut error) = (1u32, error);
+    // a wake that came while the last probe ran: the next attempt follows it at once
+    let mut pending: Option<Wake> = None;
     loop {
         let wait = timing
             .backoff
@@ -185,7 +187,11 @@ fn keep_trying(
             error: error.clone(),
             next_in: wait.as_secs(),
         });
-        match rx.recv_timeout(wait) {
+        let woken = match pending.take() {
+            Some(why) => Ok(Msg::Wake(why)),
+            None => rx.recv_timeout(wait),
+        };
+        match woken {
             Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => return None,
             Ok(Msg::Wake(Wake::Network)) => {
                 if matches!(
@@ -210,8 +216,11 @@ fn keep_trying(
             next_in: 0,
         });
         let outcome = within(timing.limit, probe);
-        if matches!(rx.try_recv(), Ok(Msg::Stop)) {
-            return None;
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                Msg::Stop => return None,
+                Msg::Wake(why) => pending = Some(why),
+            }
         }
         match outcome {
             Ok(paired) => return Some(paired),
@@ -344,6 +353,39 @@ mod tests {
             );
             assert_eq!(calls.load(Ordering::SeqCst), 1);
             drop(waker.join());
+        }
+    }
+
+    #[test]
+    fn a_wake_while_it_probes_is_the_next_attempt_at_once() {
+        for why in [Wake::Network, Wake::Now] {
+            let long = Timing {
+                backoff: vec![Duration::from_secs(3600)],
+                ..timing()
+            };
+            let (tx, rx) = mpsc::channel();
+            // the first wait is woken at once; the first probe fails, and a wake comes while it runs
+            let _ = tx.send(Msg::Wake(Wake::Now));
+            let calls = Arc::new(AtomicU32::new(0));
+            let c = calls.clone();
+            let p: Probe = Arc::new(move || {
+                if c.fetch_add(1, Ordering::SeqCst) == 0 {
+                    let _ = tx.send(Msg::Wake(why));
+                    Err("down".into())
+                } else {
+                    Ok(true)
+                }
+            });
+            let (done, result) = mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = done.send(keep_trying(&rx, "down".into(), &long, &p, &|_| {}));
+            });
+            assert_eq!(
+                result.recv_timeout(Duration::from_secs(10)).ok(),
+                Some(Some(true)),
+                "{why:?}: the wake that came while probing was lost to the hour's wait"
+            );
+            assert_eq!(calls.load(Ordering::SeqCst), 2);
         }
     }
 
