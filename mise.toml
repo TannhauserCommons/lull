@@ -84,7 +84,7 @@ run = "sh tests/ui/update-goldens.sh"
 # The web UI checks the `check` workflow runs (docs/context/quality.md, The check). Each is a script a person can
 # run too; the image and the hub need Linux and Docker. `check:ui` above takes GATES=perf|fit|rest and SHARD=2/3.
 [tasks."image:save"]
-description = "Build the hub image as CI does (main's layer cache read, never written) and save it as a tar: image:save [tar]"
+description = "Build the hub image as CI does (main's layer cache read; written back only by a run on main) and save it as a tar: image:save [tar]"
 run = "sh scripts/image-save.sh"
 
 [tasks."ui:setup"]

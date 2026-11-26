@@ -8,7 +8,7 @@ set -eu
 die() { echo "ship: $*" >&2; exit 1; }
 topic=${1:-}
 echo "$topic" | grep -Eq '^[a-z0-9][a-z0-9.-]*$' || die "name the change: mise run ship <topic> (lower case, digits, dashes)"
-case "$topic" in main|queue|queue-*) die "$topic is not a topic name" ;; esac
+[ "$topic" != main ] || die "main is not a topic name"
 git diff --quiet && git diff --cached --quiet || die "commit or set aside your changes first"
 git fetch -q origin main
 [ -n "$(git rev-list origin/main..HEAD)" ] || die "nothing on HEAD that main doesn't have"
