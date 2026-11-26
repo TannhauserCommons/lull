@@ -73,8 +73,8 @@ desktop/     the desktop app's wrapper pages and bridge (`LullDesktop`), owned b
 Code that belongs to one screen or panel loads on its first use, not from index.html. What a browser fetches at start
 is what every visit needs before it can show anything: the shell, the player, Home, the pairing gate. Each file there
 is listed with its reason in tests/ui/gates/start-files.json, and the on-use gate (gates/on-use.spec.mjs) fails on a
-file at start that isn't, so a new screen can't join the start by default. Lighthouse's transfer budget
-(tests/ui/budgets.json) is for the start; a feature that stays out of it doesn't spend it.
+file at start that isn't, so a new screen can't join the start by default. The budgets check's allowance
+(scripts/budgets/shipped-bytes.json) is for the start; a feature that stays out of it doesn't spend it.
 
 The way to do it (app.js, beside the router):
 

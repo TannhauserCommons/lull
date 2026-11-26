@@ -1,10 +1,10 @@
 name: nightly
 
 # Once a night on main: `check` with every job, whatever paths changed, and the
-# checks main.yml runs beside it (graphics, Lighthouse). main.yml runs only the
-# checks whose paths changed since its
+# checks that need main's quiet: graphics, and Lighthouse, which runs only
+# here. main.yml runs only the checks whose paths changed since its
 # newest green run, so this is the backstop for what path selection skipped
-# (docs/context/quality.md, The nightly; ADR-0104). A red job here that main
+# (docs/context/quality.md, The check: one gate; ADR-0104). A red job here that main
 # skipped since it last ran it green is an escape: `escapes` files it, with the
 # commits main skipped it for, so .github/ci/paths.yml gets the missing path.
 # Publishes nothing.
