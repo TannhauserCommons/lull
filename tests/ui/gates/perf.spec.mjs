@@ -1,8 +1,8 @@
 // Performance budgets, on the fixture hub with the CPU slowed to one device (a low-end phone or an old laptop): 4x on a
-// runner of the speed the budgets were met on, and less on a slower one, as for the Lighthouse budgets. Most gates are
-// counts from a Chrome trace (elements restyled, layouts, frames), which do not move between runs; the few on task
-// length have room for a noisy CI runner and still catch a page that blocks for a noticeable moment. The numbers and
-// why they sit where they do: perf-budgets.json, docs/context/quality.md#ui-gates.
+// runner of the speed the budgets were met on, and less on a slower one, as for the Lighthouse budgets. The gates are
+// counts from a Chrome trace (elements restyled, layouts, frames, nodes, bytes), which do not move between runs. Times
+// (a longest task, main-thread ms) are measured and shown beside them, but never fail (`timed`). The numbers and why
+// they sit where they do: perf-budgets.json, docs/context/quality.md#ui-gates.
 
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -18,6 +18,17 @@ const { rate, budgets: B } = JSON.parse(readFileSync(join(here, 'perf-budgets.js
 const { benchmarkIndex } = JSON.parse(readFileSync(join(here, '..', 'budgets.json'), 'utf8'));
 const device = { rate };
 const opts = (design) => ({ design, theme: 'day', get rate() { return device.rate; } });
+
+// A time against its budget (ms): shown on the test (an annotation, in the HTML and JSON reports), and over it, a warning
+// in the log too, but it never fails the gate. Every slowdown the gate has caught was a count; the times only moved with
+// the runner, and their reds held changes that did nothing slower (#6, #7, #13). A test with only a warning passes, so
+// it is never filed as flaky (scripts/playwright-flakes.mjs).
+function timed(ms, budget, what) {
+  const info = test.info(), over = ms > budget;
+  const line = `${what}: ${Math.round(ms)} ms, budget ${budget}`;
+  info.annotations.push({ type: over ? 'over its time budget' : 'time', description: line });
+  if (over) console.log(`::warning title=Over a time budget::${info.titlePath.slice(1).join(' › ')}: ${line}`);
+}
 
 // GitHub's runners differ by 2x in speed, and a fixed slowdown on top of a slow one failed task-length budgets that a
 // fast one passed with room (startup's longest task 611-651 ms against 600 on queue run 43530220411, a change to CI
@@ -52,8 +63,9 @@ for (const design of designs) {
       // a hover only repaints; the one layout allowed is a tooltip opening where the pointer rested (on a slow runner)
       expect(s.layouts, 'layouts while hovering').toBeLessThanOrEqual(B.hoverLayouts);
       expect(s.restyled[0] ?? 0, 'most elements restyled in one hover').toBeLessThanOrEqual(B.hoverRestyleElements);
+      // the one time that gates: the bug that made the highlight trail spent 320 ms here, three times its budget
       expect(s.handlersMs, 'time in event handlers over the sweep (ms)').toBeLessThanOrEqual(B.hoverHandlersMs);
-      expect(s.longestMs, 'longest task while hovering (ms)').toBeLessThanOrEqual(B.hoverLongestMs);
+      timed(s.longestMs, B.hoverLongestMs, 'longest task while hovering');
     });
 
     // paused and left alone, in both themes: the main thread idle, and the design's loops drawn cheaply (each at the rate
@@ -86,8 +98,8 @@ for (const design of designs) {
         const who = over && what === 'frames' ? `; ${await S.whoDraws(browser, page)}` : '';
         expect(s.perSecond[what], `${what} per second while playing, on Now Playing (per second: ${JSON.stringify(s.perSecond)}, ${Math.round(s.perSecondMs)} ms)${who}`).toBeLessThanOrEqual(per[design]);
       }
-      // the backstop: a page that blocks for a noticeable moment, whatever its counts
-      expect(s.perSecondMs, 'main-thread ms per second while playing, on Now Playing').toBeLessThanOrEqual(B.playingMsPerSecond);
+      // shown, not gated: a page that blocks for a noticeable moment, whatever its counts
+      timed(s.perSecondMs, B.playingMsPerSecond, 'main-thread ms per second while playing, on Now Playing');
       expect(s.loops, 'loops drawn dearly while playing, on Now Playing').toEqual([]);
       expect(s.restyled[0] ?? 0, 'most elements restyled by one clock tick').toBeLessThanOrEqual(B.tickRestyleElements);
     });
@@ -137,8 +149,8 @@ test.describe('lull', () => {
 
   test('startup', async ({ browser, page }) => {
     const s = await S.startup(browser, page, o);
-    expect(s.longestMs, 'longest task while starting (ms)').toBeLessThanOrEqual(B.startupLongestMs);
-    expect(s.busyMs, 'main-thread ms until Home has rendered').toBeLessThanOrEqual(B.startupBusyMs);
+    timed(s.longestMs, B.startupLongestMs, 'longest task while starting');
+    timed(s.busyMs, B.startupBusyMs, 'main-thread ms until Home has rendered');
     // the page becoming ready, its fonts and sheets arriving: one pass over the rows, not one for each (layout.js refitSoon)
     expect(s.refits, 'passes that fit the rows again for the page around them').toBe(1);
     expect(s.domNodes, 'elements on Home').toBeLessThanOrEqual(B.homeDomNodes);
@@ -146,7 +158,7 @@ test.describe('lull', () => {
 
   test('scrolling a long playlist', async ({ browser, page }) => {
     const s = await S.scroll(browser, page, o);
-    expect(s.longestMs, 'longest task while scrolling (ms)').toBeLessThanOrEqual(B.scrollLongestMs);
+    timed(s.longestMs, B.scrollLongestMs, 'longest task while scrolling');
     // only the rows near the screen have contents (ui.row): every row drawn was ~50k elements here
     expect(s.domNodes, 'elements on the 1,200-song playlist, scrolled part way down').toBeLessThanOrEqual(B.longPlaylistDomNodes);
   });
@@ -168,30 +180,30 @@ test.describe('lull', () => {
 
   test('moving between screens', async ({ browser, page }) => {
     const s = await S.navigate(browser, page, o);
-    expect(s.longestMs, 'longest task of a screen change (ms)').toBeLessThanOrEqual(B.navigateLongestMs);
+    timed(s.longestMs, B.navigateLongestMs, 'longest task of a screen change');
   });
 
   test('typing a search', async ({ browser, page }) => {
     const s = await S.typeSearch(browser, page, o);
-    expect(s.longestMs, 'longest task while typing (ms)').toBeLessThanOrEqual(B.typingLongestMs);
+    timed(s.longestMs, B.typingLongestMs, 'longest task while typing');
   });
 
   test('opening a song menu', async ({ browser, page }) => {
     const s = await S.openMenu(browser, page, o);
-    expect(s.longestMs, 'longest task opening a menu (ms)').toBeLessThanOrEqual(B.menuLongestMs);
+    timed(s.longestMs, B.menuLongestMs, 'longest task opening a menu');
     expect(s.restyled[0] ?? 0, 'most elements restyled opening a menu').toBeLessThanOrEqual(B.menuRestyleElements);
   });
 
   test('dragging in the queue', async ({ browser, page }) => {
     const s = await S.queueDrag(browser, page, o);
-    expect(s.longestMs, 'longest task while dragging (ms)').toBeLessThanOrEqual(B.dragLongestMs);
+    timed(s.longestMs, B.dragLongestMs, 'longest task while dragging');
     expect(s.forcedLayouts, 'layouts forced by script while dragging').toBeLessThanOrEqual(B.dragForcedLayouts);
   });
 
   test('resizing the side panel', async ({ browser, page }) => {
     const s = await S.resizePanel(browser, page, o);
     test.skip(!s, 'no docked panel at this size');
-    expect(s.longestMs, 'longest task while resizing (ms)').toBeLessThanOrEqual(B.resizeLongestMs);
+    timed(s.longestMs, B.resizeLongestMs, 'longest task while resizing');
   });
 
   test('playing beside a long list', async ({ browser, page }) => {
@@ -199,7 +211,7 @@ test.describe('lull', () => {
     for (const [what, per] of Object.entries(B.playingBesideList)) {
       expect(s.perSecond[what], `${what} per second while playing, on a 1,200-song playlist`).toBeLessThanOrEqual(per);
     }
-    expect(s.perSecondMs, 'main-thread ms per second while playing, on a 1,200-song playlist').toBeLessThanOrEqual(B.playingMsPerSecond);
+    timed(s.perSecondMs, B.playingMsPerSecond, 'main-thread ms per second while playing, on a 1,200-song playlist');
   });
 
   test('a long listening session leaves nothing behind', async ({ page, browser }) => {
