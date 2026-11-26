@@ -1,7 +1,7 @@
 // The live model (ADR-0101, docs/themes.md section 14) in a real page: a listener's theme that names clock values gets
-// them in its slot's words, on its live hosts and on :root, and they turn at the minute's edge, not while the page is
-// hidden; a built-in design, which names none, loads none of it and costs what it did. On a fixture hub of the gate's
-// own, which lists a theme's live values as the hub does (crates/themes live.rs).
+// them in its slot's words, on its live hosts and on :root, and they turn at the minute's edge (that nothing turns while
+// the page is hidden is tests/web/live.test.mjs's); a built-in design, which names none, loads none of it and costs what
+// it did. On a fixture hub of the gate's own, which lists a theme's live values as the hub does (crates/themes live.rs).
 
 import { expect, test } from '@playwright/test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -83,23 +83,6 @@ test('a theme that names the clock shows it, and it turns at the minute\'s edge'
   await page.clock.runFor(3000);
   await expect(page.locator('.ck b').first()).toHaveText('22');
   expect(await shown(page)).toEqual({ hour: '22', minute: '00', time: '22:00', hand: '0', daypart: 'night' });
-  await ctx.close();
-});
-
-test('nothing turns while the page is hidden; it catches up once shown', async ({ browser }) => {
-  const ctx = await context(browser), page = await ctx.newPage();
-  await page.clock.install({ time: new Date('2026-11-08T10:15:30Z') });
-  await openScreen(page, '/home', { design: 'clocked', clock: false });
-  await expect(page.locator('.ck b').nth(1)).toHaveText('15');
-  const visibility = (hidden) => page.evaluate((h) => {
-    Object.defineProperty(document, 'hidden', { configurable: true, get: () => h });
-    document.dispatchEvent(new Event('visibilitychange'));
-  }, hidden);
-  await visibility(true);
-  await page.clock.runFor(5 * 60000);
-  expect((await shown(page)).minute, 'hidden: no minute published').toBe('15');
-  await visibility(false);
-  await expect(page.locator('.ck b').nth(1)).toHaveText('20');
   await ctx.close();
 });
 
