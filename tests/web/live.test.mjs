@@ -54,14 +54,16 @@ function page(at, kids = []) {
     document: doc, Date: FakeDate, Intl, Object, Array, String, Math, JSON,
     MutationObserver: class { observe() {} takeRecords() { return []; } },
     setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
-    clearTimeout: () => {},
+    clearTimeout: (id) => { if (timers[id - 1]) timers[id - 1].cleared = true; },
     CSS: { registered: [], registerProperty(p) { this.registered.push(p); } },
   };
   ctx.window = ctx;
   vm.createContext(ctx);
   vm.runInContext(MODEL_SRC, ctx);
   vm.runInContext(SRC, ctx);
-  return { Live: ctx.Live, root, doc, timers, ctx, kids, advance(ms) { now += ms; }, at: (ms) => { now = ms; } };
+  /* the timers that are due, as the browser runs them: each once, none that was cleared */
+  const run = () => { for (const t of [...timers]) if (!t.cleared && !t.ran) { t.ran = true; t.fn(); } };
+  return { Live: ctx.Live, root, doc, timers, ctx, kids, run, advance(ms) { now += ms; }, at: (ms) => { now = ms; } };
 }
 
 test('live.js carries every value of web/designs/live.json, with its type and pace', () => {
@@ -112,13 +114,14 @@ test('a minute later the words change in place; nothing runs while hidden, and i
   p.Live.use(['clock.minute']);
   assert.equal(words.textContent, '12');
   p.advance(200);
-  p.timers.at(-1).fn();
+  p.run();
   assert.equal(words.textContent, '13');
   const armed = p.timers.length;
   p.doc.hidden = true;
   p.doc.listeners.visibilitychange.forEach((fn) => fn());
   p.advance(5 * 60000);
-  p.timers.at(-1).fn();          // a timer set before hiding fires: it publishes and arms nothing more
+  p.run();                       // the minutes pass with the page hidden
+  assert.equal(words.textContent, '13', 'hidden: no minute published');
   assert.equal(p.timers.length, armed, 'no timer armed while hidden');
   p.doc.hidden = false;
   p.doc.listeners.visibilitychange.forEach((fn) => fn());

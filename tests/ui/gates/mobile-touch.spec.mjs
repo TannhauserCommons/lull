@@ -59,11 +59,17 @@ for (const design of designs) {
   // a listener's report (2026-11): the play key on Now Playing was squeezed to a sliver on an iPhone
   test(`Now Playing's play key is whole, round and on top / ${design}`, async ({ page }) => {
     await withSong(page, design, '/now?tab=art');
-    const key = await page.evaluate(() => {
+    const key = await page.evaluate((width) => {
       const b = [...document.querySelectorAll('#view [data-act="play"]')].find((e) => e.getClientRects().length);
       if (!b) return null;
       const r = b.getBoundingClientRect();
       const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      // what fingers on a grid over the key reach: the key itself, not the part that clips it or something over it
+      let reached = 0;
+      for (const fx of [.15, .35, .5, .65, .85]) for (const fy of [.15, .35, .5, .65, .85]) {
+        const at = document.elementFromPoint(r.left + r.width * fx, r.top + r.height * fy);
+        if (at && b.contains(at)) reached++;
+      }
       // what clips it: an ancestor that hides overflow and ends inside the key
       let cut = null;
       for (let e = b.parentElement; e; e = e.parentElement) {
@@ -71,12 +77,17 @@ for (const design of designs) {
         const c = e.getBoundingClientRect();
         if (c.top > r.top + 2 || c.bottom < r.bottom - 2 || c.left > r.left + 2 || c.right < r.right - 2) { cut = e.className; break; }
       }
-      return { w: r.width, h: r.height, onTop: !!hit && b.contains(hit), cut };
-    });
+      return { w: r.width, h: r.height, onTop: !!hit && b.contains(hit), cut, reached, left: r.left, right: r.right, width,
+        hit: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hit')) };
+    }, page.viewportSize().width);
     expect(key, 'a play key on Now Playing').not.toBeNull();
     expect(key.cut, 'nothing clips it').toBeNull();
     expect(key.onTop, 'a tap at its centre reaches it').toBe(true);
-    expect(Math.min(key.w, key.h), 'at least 44 px').toBeGreaterThanOrEqual(44);
+    expect(key.reached, 'of 25 points over the key, those that reach it (a round key has corners)').toBeGreaterThanOrEqual(17);
+    expect(key.left, 'inside the screen').toBeGreaterThanOrEqual(0);
+    expect(key.right, 'inside the screen').toBeLessThanOrEqual(key.width);
+    expect(key.hit, '--hit, the touch target').toBeGreaterThan(0);
+    expect(Math.min(key.w, key.h), 'at least 44 px, and the touch target').toBeGreaterThanOrEqual(Math.max(44, key.hit));
     expect(key.w / key.h, 'as wide as it is tall').toBeGreaterThan(0.85);
     expect(key.w / key.h).toBeLessThan(1.18);
   });
@@ -97,6 +108,23 @@ for (const design of designs) {
     await expect(page.locator('.menu, [role="menu"]').first()).toBeVisible();
   });
 }
+
+/* the Search tab readies the field for typing: the keyboard's stand-in gone, the words typed reaching it, and pressed
+   again on search, the cursor back after the words */
+test('the Search tab puts the cursor in the search field, from another page and on search itself', async ({ page }) => {
+  await open(page, '/home');
+  const field = page.locator('#disc-q');
+  const tab = page.locator('[data-region="tabbar"] [data-nav="search"]');
+  await tab.tap();
+  await expect(field).toBeFocused();
+  await expect(page.locator('input[aria-hidden="true"][type="search"]'), 'the stand-in for the keyboard is gone').toHaveCount(0);
+  await page.keyboard.type('amber');
+  await expect(field).toHaveValue('amber');
+  await field.blur();
+  await tab.tap();
+  await expect(field, 'pressed again on search').toBeFocused();
+  await expect.poll(() => page.evaluate(() => document.querySelector('#disc-q').selectionStart), 'the cursor after the words').toBe(5);
+});
 
 /* a touch held on a row, as a finger does: a touch's pointerdown, nothing for 700 ms, then the menu is expected open
    before the finger lifts. iOS sends no contextmenu for a long press, so lull has to see the hold itself */

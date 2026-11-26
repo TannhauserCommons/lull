@@ -83,8 +83,6 @@ export default defineConfig({
     { name: 'player-paint', testMatch: 'player-paint.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // a tooltip never shows away from its control: a sheet's Close takes focus while the sheet still slides up
     { name: 'sheet-tip', testMatch: 'sheet-tip.spec.mjs', fullyParallel: true },
-    // the phone's chrome: Now Playing's play button, the Search tab, inputs that never zoom the page
-    { name: 'phone', testMatch: 'phone.spec.mjs', fullyParallel: true },
     // Esc on search goes back to the page before it, where it was
     { name: 'search-esc', testMatch: 'search-esc.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // source presets (ADR-0017): made, edited, chosen per device and deleted in Settings › Sources; a phone uses Phone

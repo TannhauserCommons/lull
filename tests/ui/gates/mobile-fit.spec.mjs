@@ -9,9 +9,10 @@ import { expect, test } from '@playwright/test';
 import { designs, ids } from './lib.mjs';
 import { go, insets, isWebkit, open, withSong } from './mobile.mjs';
 
-/* what reaches past the window's right edge, outside anything that scrolls or clips sideways */
-const pastTheEdge = () => {
-  const W = innerWidth, out = [];
+/* what reaches past the window's right edge (W, the screen's width: a phone widens innerWidth to a page wider than the
+   screen), outside anything that scrolls or clips sideways */
+const pastTheEdge = (W) => {
+  const out = [];
   const clipped = (el) => { for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) if (getComputedStyle(e).overflowX !== 'visible') return true; return false; };
   for (const el of document.querySelectorAll('body *')) {
     const r = el.getBoundingClientRect();
@@ -70,7 +71,7 @@ test.describe('the smallest phone (360x780)', () => {
       await withSong(page, design);
       for (const route of routes) {
         await go(page, route);
-        const o = await page.evaluate(pastTheEdge);
+        const o = await page.evaluate(pastTheEdge, page.viewportSize().width);
         expect(o.past, `${route}: past the right edge`).toEqual([]);
         expect(o.page, `${route}: the page scrolls sideways`).toBeLessThanOrEqual(0);
       }
@@ -131,7 +132,7 @@ test.describe('a phone held sideways', () => {
       await withSong(page, design);
       for (const route of ['/home', `/album/${ids.album}`, '/now', '/settings/playback']) {
         await go(page, route);
-        const o = await page.evaluate(pastTheEdge);
+        const o = await page.evaluate(pastTheEdge, page.viewportSize().width);
         expect(o.past, `${route}: past the right edge`).toEqual([]);
         expect(o.page, `${route}: the page scrolls sideways`).toBeLessThanOrEqual(0);
       }
@@ -140,18 +141,35 @@ test.describe('a phone held sideways', () => {
 });
 
 /* every field a listener types in, at the size iOS reads it at: under 16 px, iOS zooms the page in on focus and leaves
-   it zoomed after */
-const smallFields = () => [...document.querySelectorAll('input, textarea, select')]
+   it zoomed after; so does a page wider than the screen (it starts zoomed out) */
+const smallFields = () => [...document.querySelectorAll('input, textarea, select, [contenteditable=""], [contenteditable="true"]')]
   .filter((el) => !/^(hidden|checkbox|radio|range|file|color)$/.test(el.type) && el.getClientRects().length && !el.closest('[hidden]'))
-  .map((el) => ({ field: el.id || el.className, px: parseFloat(getComputedStyle(el).fontSize) }))
+  .map((el) => ({ field: el.id || el.className || el.tagName.toLowerCase(), px: parseFloat(getComputedStyle(el).fontSize) }))
   .filter((f) => f.px < 16);
 
-for (const design of designs) {
-  test(`no field makes iOS zoom the page / ${design}`, async ({ page }) => {
-    await open(page, '/search', { design });
-    for (const route of ['/search', '/playlists', '/settings/appearance', '/settings/sources', '/settings/library']) {
-      await go(page, route);
-      expect(await page.evaluate(smallFields), route).toEqual([]);
+// every screen a listener can type on, and the others the key screens cover
+const typedOn = ['/home', '/search', '/search?q=velvet', '/library', '/library/songs', '/playlists', `/playlist/${ids.playlist}`,
+  `/album/${ids.album}`, `/artist/${ids.artist}`, '/now', '/stats', '/settings', '/settings/playback', '/settings/appearance',
+  '/settings/sources', '/settings/library', '/liked', '/history', '/downloads'];
+
+for (const [size, use] of Object.entries({ phone: {}, 'tablet (the header search shows)': { viewport: { width: 820, height: 1180 } } })) {
+  test.describe(size, () => {
+    test.use(use);
+    for (const design of designs) {
+      for (const theme of ['day', 'night']) {
+        test(`no field makes iOS zoom the page, and no page scrolls sideways / ${design} / ${theme}`, async ({ page }) => {
+          const found = [];
+          await open(page, '/home', { design, theme });
+          for (const route of typedOn) {
+            await go(page, route);
+            for (const f of await page.evaluate(smallFields)) found.push(`${route}: ${f.field} is ${f.px}px`);
+            // against the screen's width, not innerWidth: a phone widens its layout to a page wider than the screen
+            const wide = await page.evaluate((w) => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - w, page.viewportSize().width);
+            if (wide > 0) found.push(`${route}: the page is ${wide}px wider than the screen`);
+          }
+          expect(found, 'fields iOS zooms into, and pages wider than the screen').toEqual([]);
+        });
+      }
     }
   });
 }
