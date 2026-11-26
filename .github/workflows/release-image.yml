@@ -1,9 +1,10 @@
 name: release-image
 # Self-hosters follow releases (ADR-0098): the hub's image of a version tag, as :X.Y.Z, and :latest when the tag is
-# the newest release. It runs on the tag itself, so every way of releasing publishes it: release.yml starts it (a tag
-# its job token pushes starts no workflow), and a tag a person pushes (`mise run release`) starts it here. 0.2.8 to
-# 0.2.10 were tagged that way while this lived in release.yml, and no image was published. A dispatch from main with
-# `tag` publishes a tag that has none. :main and :sha-<short> stay main.yml's.
+# the newest release. It runs on the tag itself, so every way of releasing publishes it: the tag is pushed once its
+# commit passed check / gate (ADR-0103), and that push starts it here. 0.2.8 to 0.2.10 were tagged by hand while this
+# lived in release.yml, and no image was published. A dispatch from main with `tag` publishes a tag that has none.
+# Either way it publishes nothing unless check / gate passed on the tag's commit. :main and :sha-<short> stay
+# main.yml's.
 on:
   push:
     tags: ["v*"]
@@ -28,6 +29,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      checks: read
     steps:
       - id: tag
         env:
@@ -37,6 +39,14 @@ jobs:
           echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]{1,3}\.[0-9]{1,3}$' || { echo "::error::$TAG isn't a release tag vX.Y.Z"; exit 1; }
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+      # The check comes from this run's own commit (main's, on a dispatch), so an older tag is held to today's.
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: scripts
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: sh scripts/release-gate.sh "$TAG"
       - uses: actions/checkout@v5
         with:
           ref: ${{ steps.tag.outputs.tag }}

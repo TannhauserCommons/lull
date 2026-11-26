@@ -1,9 +1,11 @@
 name: release
 # Cuts a release on the owner's word (ADR-0098): the integrator session runs this when the owner says to release, or the
 # owner runs it from the Actions tab or the GitHub app. scripts/release.sh makes the release commit on main's newest
-# green commit (ADR-0097) with the draft's notes and tags it; then the tag starts app.yml (installers, updater files,
-# APK, the GitHub Release), the version commit goes to the branch release-X.Y.Z for a pull request, and release-image.yml publishes the hub's image of
-# the tag as :X.Y.Z and :latest for self-hosters. `rehearse` does everything but push and publish.
+# green commit (ADR-0097) with the draft's notes and tags it, and the version commit goes to the branch release-X.Y.Z
+# for a pull request. The tag stays here: pushing it publishes (app.yml's installers, updater files, APK and GitHub
+# Release, release-image.yml's :X.Y.Z and :latest, F-Droid's build), so the session pushes it only once check / gate
+# passed on the version's pull request (ADR-0103), with the commands this run writes in its summary. `rehearse` does
+# everything but push.
 on:
   workflow_dispatch:
     inputs:
@@ -29,8 +31,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
-      statuses: read
-      actions: write
+      actions: read
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       commit: ${{ steps.tag.outputs.commit }}
@@ -72,24 +73,25 @@ jobs:
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse "v$VERSION^{commit}")" >> "$GITHUB_OUTPUT"
           git log -1 --stat "v$VERSION" >> "$GITHUB_STEP_SUMMARY"
-      - name: Publish the tag, push the version's branch, build the apps
+      - name: Push the version's branch
         if: ${{ !inputs.rehearse }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.tag }}
+          COMMIT: ${{ steps.tag.outputs.commit }}
         run: |
           set -eu
-          git push origin "$TAG" "$TAG^{commit}:refs/heads/release-${TAG#v}"
-          # Pushes with the job's token start no workflow: start the two that a person's push would.
-          gh workflow run app.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
-          gh workflow run release-image.yml --repo "$GITHUB_REPOSITORY" --ref main -f tag="$TAG"
-          # A pull request opened with this token would start no check either, so the session that ran the release
-          # opens it with the App's token.
+          git push origin "$COMMIT:refs/heads/release-${TAG#v}"
+          # A pull request opened with this token would start no check, so the session that ran the release opens it
+          # with the App's token. The tag goes up last, once check / gate passed on the commit (ADR-0103); a push
+          # with this job's token would start no workflow anyway.
           {
-            echo "### The version for main"
-            echo "Open its pull request with the App's token, so \`check\` runs on it, then merge it as any change:"
+            echo "### The version for main, then the tag"
+            echo "Open its pull request with the App's token, so \`check\` runs on it. Once \`check / gate\` is green, tag the commit and push the tag, which publishes the release; then merge the pull request as any change:"
             echo '```'
             echo "gh pr create --repo $GITHUB_REPOSITORY --base main --head release-${TAG#v} --fill"
+            echo "gh pr checks release-${TAG#v} --repo $GITHUB_REPOSITORY --watch"
+            echo "git fetch origin release-${TAG#v} && sh scripts/release-gate.sh $COMMIT && TZ=UTC git tag -a $TAG -m \"lull ${TAG#v}\" $COMMIT && git push origin $TAG"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           # The next landing drafts the release after this one.

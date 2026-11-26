@@ -4,8 +4,9 @@
 # app, which embeds the hub, ADR-0006; Android's versionCode; what's new) and tags it v0.2.0. Nothing
 # leaves this clone: pushing the tag publishes, because .github/workflows/app.yml then builds the
 # installers, the signed updater files, latest.json and the Android APK, and attaches them to the tag's
-# GitHub Release. F-Droid and IzzyOnDroid pick the tag up from there (packaging/fdroid/). The version commit
-# reaches main through a pull request from the branch release-X.Y.Z, merged like any other change.
+# GitHub Release, release-image.yml moves :latest, and F-Droid and IzzyOnDroid pick the tag up
+# (packaging/fdroid/). So the version commit goes first, to the branch release-X.Y.Z and its pull request,
+# and the tag follows only once check / gate passed on it (ADR-0103; the steps are printed at the end).
 set -eu
 
 die() { echo "release: $*" >&2; exit 1; }
@@ -87,6 +88,11 @@ git worktree add -q --detach "$work" "$base"
   git tag -a "v$version" -m "lull $version"
 )
 [ -z "$draft" ] || rm "$draft"
-echo "Tagged v$version on $(git rev-parse --short "v$version^{commit}") (Android versionCode $code). Publish the release, and put the version up for main, with:"
-echo "  git push origin v$version v$version^{commit}:refs/heads/release-$version"
+commit=$(git rev-parse "v$version^{commit}")
+echo "Tagged v$version on $(git rev-parse --short "$commit") (Android versionCode $code), in this clone only. The tag publishes, so"
+echo "it goes up last, once check / gate passed on the version commit (ADR-0103):"
+echo "  git push origin $commit:refs/heads/release-$version"
 echo "  gh pr create --repo $repo --base main --head release-$version --fill    # with the App's token, so check runs on it"
+echo "  gh pr checks release-$version --repo $repo --watch"
+echo "  sh scripts/release-gate.sh $commit && git push origin v$version"
+echo "Then merge the pull request as any change."
