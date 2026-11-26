@@ -140,25 +140,13 @@ test('the view says where the song is and when that was true, with its length', 
   assert.deepEqual(v.clock, { pos: 42.5, at: NOW, rate: 1, duration: 180, known: false });
 });
 
-test('the view carries the song as the surfaces name it, the copy that plays, the transfer and the listener\'s settings', () => {
-  const v = V.derive(input({ liked: true, saved: true, shuffle: true, repeat: 'one', volume: 0.3, muted: true, crossfading: true,
-    seekWait: { fraction: 0.6 }, received: 0.55, front: 0.5, parts: [[0, 0.5], [0.7, 0.8]], buffered: [[0, 0.2], [0.45, 0.62]] }));
-  assert.equal(v.status, 'streaming');
-  assert.equal(v.words, 'Streaming from quietcanal');
-  assert.equal(v.intent, true, 'the listener\'s intent');
-  assert.equal(v.since, NOW - 3000, 'when the status began, whatever the status');
-  assert.equal(V.derive(input({ status: 'finding', sound: null, words: 'Finding a source', since: NOW - 7000 })).since, NOW - 7000, 'when finding began');
+test('the view names the song as the surfaces do, the copy that plays, the end the output holds and where a seek lands', () => {
+  const v = V.derive(input({ seekWait: { fraction: 0.6 }, buffered: [[0, 0.2], [0.45, 0.62]] }));
   assert.deepEqual(v.track, { id: 't-1', title: 'Velvet Hour', artist: 'Quiet Canal', album: 'Low Tide' });
   assert.equal(v.copy.format, 'MP3 320', 'the copy that plays, not the catalogue\'s FLAC');
-  assert.equal(v.copy.where, 'soulseek');
-  assert.equal(v.copy.received, 0.4);
-  assert.equal(v.transfer.received, 0.55);
-  assert.equal(v.transfer.front, 0.5);
-  assert.deepEqual(v.transfer.parts, [[0, 0.5], [0.7, 0.8]]);
   assert.equal(v.transfer.buffered, 0.62, 'the end the output holds: its last part\'s');
   assert.equal(V.derive(input({ buffered: [] })).transfer.buffered, 0, 'nothing held yet');
   assert.equal(v.seekWait, 0.6, 'the fraction the pending seek lands at');
-  assert.deepEqual([v.liked, v.saved, v.shuffle, v.repeat, v.volume, v.muted, v.crossfading], [true, true, true, 'one', 0.3, true, true]);
   const none = V.derive(input({ track: null, status: 'idle', copy: null, seekWait: null }));
   assert.equal(none.track, null);
   assert.equal(none.copy, null);

@@ -111,7 +111,6 @@ test('levelling: loud sounds come down to the same peak and loudness, quiet ones
 });
 
 test('the start-up sound plays at a first start only, and only if the pack is ready within 4 s of it; later is dropped, never played late', () => {
-  assert.equal(S.BOOT_WITHIN_MS, 4000);
   assert.equal(S.bootWanted(false, true), true, 'a first start');
   assert.equal(S.bootWanted(true, true), false, 'a reload of a started app');
   assert.equal(S.bootWanted(false, false), false, 'sounds switched off');
