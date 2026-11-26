@@ -1,6 +1,6 @@
 # ADR-0102: Changes land as pull requests behind one check
 
-- Status: accepted (the owner's call in the CI review, 2026-11-23: remove the queue and its custom code). Supersedes ADR-0095; amends ADR-0097. Amended 2026-11-24: main's check is path-gated against its newest green run, not full.
+- Status: accepted (the owner's call in the CI review, 2026-11-23: remove the queue and its custom code). Supersedes ADR-0095; amends ADR-0097. Amended 2026-11-24: main's check is path-gated against its newest green run, not full. Amended by ADR-0104: a nightly full run backs that up.
 - Date: 2026-11-23
 
 ## Context
