@@ -24,7 +24,6 @@ For v0.2.16 and v0.2.17 the tag's runs started 11 and 19 seconds before the pull
 
 - **The tag's workflows wait for the gate:** a runner polling for ten minutes, and F-Droid reads the tag whatever the workflows do.
 - **Build on the tag, gate only the publishing jobs:** a tag that runs before its gate would still be public for F-Droid.
-- **A tag ruleset requiring the status:** it is a repository setting outside the code, and changing settings needs the owner.
 
 ## Consequences
 
