@@ -581,6 +581,7 @@ In the browser every template is also sanitized (DOMPurify), and the page's Cont
 - `api` is the theme API version a theme is written for. lull speaks one version (now `1`) and refuses a theme that asks for a newer one, so update lull to use it.
 - The API is: the tokens in section 4, the hooks in sections 5 and 11 (the stable ones), the slots, fields and parts in section 6, the live model's values (section 14, `web/designs/live.json`), and the package format. Adding a token, hook, field, part or slot keeps the version. Section 11's internal hooks may change in any release.
 - Renaming or removing any of them, or changing what one means, is a breaking change: it raises `api`, and the release notes say what moved. A theme written for an older `api` keeps loading; whatever it relied on that moved is ignored, never an error.
+- lull checks this on every change to its screens: a theme written for `api` 1 that styles each stable hook Home, Now Playing, an album, a playlist, an artist, a search, Library, Settings and Stats draw (`tests/ui/fixtures/themes/theme-api-v1`) must still match and restyle each one, over every built-in design (`tests/ui/gates/theme-api.spec.mjs`).
 - Built-in designs' own classes (`.lull-*`, `.sd-*`, `.sl-*`, `.pt-*`, `.gh-*`) are not part of the API; extend a design for its look, but target the hooks above in your own rules.
 
 ### Hooks that changed

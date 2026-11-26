@@ -1,0 +1,315 @@
+/* A listener's theme written for theme api 1 (docs/themes.md), frozen: gates/theme-api.spec.mjs opens Home, Now
+   Playing, an album, a playlist, an artist, a search, Library, Settings › Appearance and Stats over every built-in design
+   with this theme on it, and each rule must match on its screen and its values land there.
+   Never change a rule to make it pass: a rule that stops matching is a theme that broke. A stable hook may leave only as
+   docs/themes.md section 9 says (raising api, with a MOVED entry). When the gate names a stable hook no rule styles yet,
+   add its rule, on a screen that draws it. */
+
+/* Each region, restyled over its design: a theme's rules come after every design's, whatever their selectors (section 3) */
+.app[data-screen="home"] .header { background-color: rgb(250, 240, 1); }
+.app[data-screen="home"] .nav-item { color: rgb(250, 240, 2); }
+.app[data-screen="home"] .pbar { background-color: rgb(250, 240, 3); }
+.app[data-screen="home"] .ctx { background-color: rgb(250, 240, 4); }
+.app[data-screen="home"] .card { background-color: rgb(250, 240, 5); }
+.app[data-screen="now"] .now-head { color: rgb(250, 240, 6); }
+.app[data-screen="album"] .lib-hero { color: rgb(250, 240, 7); }
+.app[data-screen="album"] .trow { color: rgb(250, 240, 8); }
+.app[data-screen="search"] .disc-search { color: rgb(250, 240, 9); }
+.app[data-screen="library"] .lib-tile { color: rgb(250, 240, 10); }
+.app[data-screen="settings"] .sys-card { background-color: rgb(250, 240, 11); }
+.app[data-screen="stats"] .sys-tile { color: rgb(250, 240, 12); }
+.app[data-screen="home"][data-size="compact"] .mini { background-color: rgb(250, 240, 13); }
+
+/* Hooks as section 5 writes them: by id, on the page's root, and by the values they hold */
+.app[data-screen="home"] #pbar { --v1-id-pbar: 1; }
+.app[data-screen="home"] #mini { --v1-id-mini: 1; }
+.app[data-screen="home"] #pbar[data-status][data-status-text] { --v1-pbar-status: 1; }
+.app[data-screen="home"] #mini[data-status][data-status-text] { --v1-mini-status: 1; }
+.app[data-screen="home"] #pbar[data-playing="true"] { --v1-pbar-playing: 1; }
+.app[data-screen="home"] #pbar[data-liked][data-saved] { --v1-pbar-liked: 1; }
+:root[data-theme="day"][data-playing="true"][data-player] .app[data-screen="home"] { --v1-root-playing: 1; }
+.app[data-screen="home"][data-view="page"] { --v1-view-page: 1; }
+.app[data-screen="now"][data-view="now"] { --v1-view-now: 1; }
+.app[data-screen="home"] [data-region="rail"] { --v1-region-rail: 1; }
+.app[data-screen="home"] [data-region="header"] { --v1-region-header: 1; }
+.app[data-screen="home"] [data-region="topnav"] { --v1-region-topnav: 1; }
+.app[data-screen="home"] [data-region="content"] { --v1-region-content: 1; }
+.app[data-screen="home"] [data-region="ctx"] { --v1-region-ctx: 1; }
+.app[data-screen="home"] [data-region="playerbar"] { --v1-region-playerbar: 1; }
+.app[data-screen="home"] [data-region="mini"] { --v1-region-mini: 1; }
+.app[data-screen="home"] [data-region="tabbar"] { --v1-region-tabbar: 1; }
+.app[data-screen="home"] [data-region="lead"] { --v1-region-lead: 1; }
+.app[data-screen="home"] [data-act="play"] { --v1-act-play: 1; }
+.app[data-screen="home"] [data-act="next"] { --v1-act-next: 1; }
+.app[data-screen="home"] [data-act="like"] { --v1-act-like: 1; }
+.app[data-screen="home"] [data-act="shuffle"] { --v1-act-shuffle: 1; }
+.app[data-screen="home"] [data-nav="home"] { --v1-nav-home: 1; }
+.app[data-screen="home"] [data-nav="library"] { --v1-nav-library: 1; }
+.app[data-screen="home"] .disc-modules > .disc-mod[data-module="new"] > .card[data-region] { --v1-module-new: 1; }
+.app[data-screen="now"] .now__dev[data-liked][data-saved] { --v1-hero-liked: 1; }
+
+/* A value of the theme's own on each stable hook, on a screen that draws it: Home has the shell's */
+
+/* home */
+.app[data-screen="home"] .badge { --v1-badge: 1; }
+.app[data-screen="home"] .badge-saved { --v1-badge-saved: 1; }
+.app[data-screen="home"] .banner-slot { --v1-banner-slot: 1; }
+.app[data-screen="home"] .bezel-thumb { --v1-bezel-thumb: 1; }
+.app[data-screen="home"] .btn { --v1-btn: 1; }
+.app[data-screen="home"] .btn-gloss { --v1-btn-gloss: 1; }
+.app[data-screen="home"] .btn-icon { --v1-btn-icon: 1; }
+.app[data-screen="home"] .c4 { --v1-c4: 1; }
+.app[data-screen="home"] .c5 { --v1-c5: 1; }
+.app[data-screen="home"] .c6 { --v1-c6: 1; }
+.app[data-screen="home"] .c8 { --v1-c8: 1; }
+.app[data-screen="home"] .card { --v1-card: 1; }
+.app[data-screen="home"] .card-head { --v1-card-head: 1; }
+.app[data-screen="home"] .chip { --v1-chip: 1; }
+.app[data-screen="home"] .chip-reason { --v1-chip-reason: 1; }
+.app[data-screen="home"] .col-resize { --v1-col-resize: 1; }
+.app[data-screen="home"] .cover { --v1-cover: 1; }
+.app[data-screen="home"] .cover-zoom { --v1-cover-zoom: 1; }
+.app[data-screen="home"] .ctx { --v1-ctx: 1; }
+.app[data-screen="home"] .ctx-scrim { --v1-ctx-scrim: 1; }
+.app[data-screen="home"] .disc-home { --v1-disc-home: 1; }
+.app[data-screen="home"] .disc-lead { --v1-disc-lead: 1; }
+.app[data-screen="home"] .disc-mod { --v1-disc-mod: 1; }
+.app[data-screen="home"] .disc-modules { --v1-disc-modules: 1; }
+.app[data-screen="home"] .disc-pick { --v1-disc-pick: 1; }
+.app[data-screen="home"] .disc-pick__why { --v1-disc-pick__why: 1; }
+.app[data-screen="home"] .disc-picks { --v1-disc-picks: 1; }
+.app[data-screen="home"] .disc-starter { --v1-disc-starter: 1; }
+.app[data-screen="home"] .disc-starters { --v1-disc-starters: 1; }
+.app[data-screen="home"] .disc-tag { --v1-disc-tag: 1; }
+.app[data-screen="home"] .disc-tags { --v1-disc-tags: 1; }
+.drop-overlay { --v1-drop-overlay: 1; }
+.app[data-screen="home"] .eq { --v1-eq: 1; }
+.app[data-screen="home"] .from { --v1-from: 1; }
+.app[data-screen="home"] .has-art { --v1-has-art: 1; }
+.app[data-screen="home"] .header { --v1-header: 1; }
+.app[data-screen="home"] .header__search { --v1-header__search: 1; }
+.app[data-screen="home"] .ic { --v1-ic: 1; }
+.app[data-screen="home"] .ic-16 { --v1-ic-16: 1; }
+.app[data-screen="home"] .ic-24 { --v1-ic-24: 1; }
+.app[data-screen="home"] .input { --v1-input: 1; }
+.app[data-screen="home"] .is-liked { --v1-is-liked: 1; }
+.app[data-screen="home"] .is-playing { --v1-is-playing: 1; }
+.app[data-screen="home"] .is-playing-now { --v1-is-playing-now: 1; }
+.app[data-screen="home"] .is-wide { --v1-is-wide: 1; }
+.app[data-screen="home"] .kbd { --v1-kbd: 1; }
+.app[data-screen="home"] .label-rule { --v1-label-rule: 1; }
+.app[data-screen="home"] .main { --v1-main: 1; }
+.app[data-screen="home"] .mini { --v1-mini: 1; }
+.app[data-screen="home"] .mosaic { --v1-mosaic: 1; }
+.app[data-screen="home"] .nav-item { --v1-nav-item: 1; }
+.app[data-screen="home"] .nav-pill { --v1-nav-pill: 1; }
+.app[data-screen="home"] .now-q { --v1-now-q: 1; }
+.app[data-screen="home"] .nowcol { --v1-nowcol: 1; }
+.app[data-screen="home"] .pbar { --v1-pbar: 1; }
+.app[data-screen="home"] .q-chip { --v1-q-chip: 1; }
+.app[data-screen="home"] .rail { --v1-rail: 1; }
+.app[data-screen="home"] .region-meta { --v1-region-meta: 1; }
+.app[data-screen="home"] .region-title { --v1-region-title: 1; }
+.app[data-screen="home"] .resolve { --v1-resolve: 1; }
+.s-card { --v1-s-card: 1; }
+.app[data-screen="home"] .s-panel { --v1-s-panel: 1; }
+.app[data-screen="home"] .search-field { --v1-search-field: 1; }
+.app[data-screen="home"] .seek { --v1-seek: 1; }
+.app[data-screen="home"] .seek-row { --v1-seek-row: 1; }
+.app[data-screen="home"] .seek__target { --v1-seek__target: 1; }
+.app[data-screen="home"] .seg { --v1-seg: 1; }
+.app[data-screen="home"] .sg { --v1-sg: 1; }
+.app[data-screen="home"] .sheet-bar { --v1-sheet-bar: 1; }
+.skip-link { --v1-skip-link: 1; }
+.sky-specks { --v1-sky-specks: 1; }
+.app[data-screen="home"] .sparkle { --v1-sparkle: 1; }
+.app[data-screen="home"] .src-badge { --v1-src-badge: 1; }
+.app[data-screen="home"] .switch { --v1-switch: 1; }
+.app[data-screen="home"] .switch-row { --v1-switch-row: 1; }
+.app[data-screen="home"] .tab { --v1-tab: 1; }
+.app[data-screen="home"] .tabbar { --v1-tabbar: 1; }
+.app[data-screen="home"] .tlist { --v1-tlist: 1; }
+.toast-region { --v1-toast-region: 1; }
+.app[data-screen="home"] .tray { --v1-tray: 1; }
+.app[data-screen="home"] .tray__pill { --v1-tray__pill: 1; }
+.app[data-screen="home"] .trow { --v1-trow: 1; }
+.app[data-screen="home"] .trow--dense { --v1-trow--dense: 1; }
+.app[data-screen="home"] .view { --v1-view: 1; }
+.app[data-screen="home"] .vol { --v1-vol: 1; }
+.app[data-screen="home"] .wordmark { --v1-wordmark: 1; }
+.app[data-screen="home"] [data-act] { --v1-data-act: 1; }
+.app[data-screen="home"] [data-activity-count] { --v1-data-activity-count: 1; }
+.app[data-screen="home"] [data-art] { --v1-data-art: 1; }
+.app[data-screen="home"] [data-better-copy] { --v1-data-better-copy: 1; }
+.app[data-screen="home"] [data-bind] { --v1-data-bind: 1; }
+.app[data-screen="home"] [data-brand] { --v1-data-brand: 1; }
+.app[data-screen="home"] [data-cache-cap] { --v1-data-cache-cap: 1; }
+.app[data-screen="home"] [data-cache-used] { --v1-data-cache-used: 1; }
+.app[data-screen="home"][data-ctx] { --v1-data-ctx: 1; }
+.app[data-screen="home"] [data-ctx-tab] { --v1-data-ctx-tab: 1; }
+:root[data-design] .app[data-screen="home"] { --v1-data-design: 1; }
+.app[data-screen="home"] [data-drop] { --v1-data-drop: 1; }
+.app[data-screen="home"] [data-fit] { --v1-data-fit: 1; }
+.app[data-screen="home"] [data-fit-gave] { --v1-data-fit-gave: 1; }
+.app[data-screen="home"] [data-fit-keep] { --v1-data-fit-keep: 1; }
+.app[data-screen="home"] [data-fit-room] { --v1-data-fit-room: 1; }
+.app[data-screen="home"] [data-fit-row] { --v1-data-fit-row: 1; }
+.app[data-screen="home"] [data-fit-seek] { --v1-data-fit-seek: 1; }
+.app[data-screen="home"] [data-fit-side] { --v1-data-fit-side: 1; }
+.app[data-screen="home"] [data-fit-sides] { --v1-data-fit-sides: 1; }
+.app[data-screen="home"] [data-head] { --v1-data-head: 1; }
+.app[data-screen="home"][data-height] { --v1-data-height: 1; }
+.app[data-screen="home"] [data-like] { --v1-data-like: 1; }
+.app[data-screen="home"] [data-liked] { --v1-data-liked: 1; }
+.app[data-screen="home"] [data-meta] { --v1-data-meta: 1; }
+.app[data-screen="home"] [data-module] { --v1-data-module: 1; }
+.app[data-screen="home"] [data-nav] { --v1-data-nav: 1; }
+.app[data-screen="home"] [data-place] { --v1-data-place: 1; }
+:root[data-player] .app[data-screen="home"] { --v1-data-player: 1; }
+.app[data-screen="home"] [data-playing] { --v1-data-playing: 1; }
+.app[data-screen="home"] [data-region] { --v1-data-region: 1; }
+.app[data-screen="home"] [data-resize] { --v1-data-resize: 1; }
+.app[data-screen="home"][data-route] { --v1-data-route: 1; }
+.app[data-screen="home"] [data-saved] { --v1-data-saved: 1; }
+.app[data-screen="home"] [data-seek] { --v1-data-seek: 1; }
+:root[data-shell] .app[data-screen="home"] { --v1-data-shell: 1; }
+.app[data-screen="home"] [data-sortable] { --v1-data-sortable: 1; }
+.app[data-screen="home"] [data-state] { --v1-data-state: 1; }
+.app[data-screen="home"] [data-status] { --v1-data-status: 1; }
+.app[data-screen="home"] [data-status-text] { --v1-data-status-text: 1; }
+.app[data-screen="home"] [data-svc] { --v1-data-svc: 1; }
+.app[data-screen="home"] [data-tab] { --v1-data-tab: 1; }
+:root[data-theme] .app[data-screen="home"] { --v1-data-theme: 1; }
+:root[data-theme-pref] .app[data-screen="home"] { --v1-data-theme-pref: 1; }
+.app[data-screen="home"] [data-tip] { --v1-data-tip: 1; }
+.app[data-screen="home"] [data-title] { --v1-data-title: 1; }
+.app[data-screen="home"] [data-tray] { --v1-data-tray: 1; }
+.app[data-screen="home"][data-view] { --v1-data-view: 1; }
+.app[data-screen="home"] [data-was] { --v1-data-was: 1; }
+.app[data-screen="home"] [data-worst] { --v1-data-worst: 1; }
+
+/* now */
+.app[data-screen="now"] .is-buf { --v1-is-buf: 1; }
+.app[data-screen="now"] .link { --v1-link: 1; }
+.app[data-screen="now"] .link-plain { --v1-link-plain: 1; }
+.app[data-screen="now"] .now { --v1-now: 1; }
+.app[data-screen="now"] .now-acts { --v1-now-acts: 1; }
+.app[data-screen="now"] .now-devc { --v1-now-devc: 1; }
+.app[data-screen="now"] .now-head { --v1-now-head: 1; }
+.app[data-screen="now"] .now-ly { --v1-now-ly: 1; }
+.app[data-screen="now"] .now-lycard { --v1-now-lycard: 1; }
+.app[data-screen="now"] .now-next { --v1-now-next: 1; }
+.app[data-screen="now"] .now-qcard { --v1-now-qcard: 1; }
+.app[data-screen="now"] .now-seg { --v1-now-seg: 1; }
+.app[data-screen="now"] .now-slide { --v1-now-slide: 1; }
+.app[data-screen="now"] .now-srccard { --v1-now-srccard: 1; }
+.app[data-screen="now"] .now__dev { --v1-now__dev: 1; }
+.app[data-screen="now"] .now__devc { --v1-now__devc: 1; }
+.app[data-screen="now"] .now__intro { --v1-now__intro: 1; }
+.app[data-screen="now"] .now__side { --v1-now__side: 1; }
+.app[data-screen="now"] .pipeline { --v1-pipeline: 1; }
+.app[data-screen="now"] .pipeline-wrap { --v1-pipeline-wrap: 1; }
+.app[data-screen="now"] .source-card { --v1-source-card: 1; }
+.app[data-screen="now"] .wave { --v1-wave: 1; }
+.app[data-screen="now"] [data-now] { --v1-data-now: 1; }
+.app[data-screen="now"] [data-page] { --v1-data-page: 1; }
+.app[data-screen="now"] [data-sec] { --v1-data-sec: 1; }
+
+/* album */
+.app[data-screen="album"] .btn-save { --v1-btn-save: 1; }
+.app[data-screen="album"] .dl-btn { --v1-dl-btn: 1; }
+.app[data-screen="album"] .dl-mark { --v1-dl-mark: 1; }
+.app[data-screen="album"] .lib { --v1-lib: 1; }
+.app[data-screen="album"] .lib-actions { --v1-lib-actions: 1; }
+.app[data-screen="album"] .lib-hero { --v1-lib-hero: 1; }
+.app[data-screen="album"] .lib-kicker { --v1-lib-kicker: 1; }
+.app[data-screen="album"] .lib-page { --v1-lib-page: 1; }
+.app[data-screen="album"] .px { --v1-px: 1; }
+.app[data-screen="album"] .t-display { --v1-t-display: 1; }
+.app[data-screen="album"] .trow__num { --v1-trow__num: 1; }
+.app[data-screen="album"] [data-bits] { --v1-data-bits: 1; }
+.app[data-screen="album"] [data-duration] { --v1-data-duration: 1; }
+.app[data-screen="album"] [data-kbps] { --v1-data-kbps: 1; }
+.app[data-screen="album"] [data-khz] { --v1-data-khz: 1; }
+.app[data-screen="album"] [data-tracks] { --v1-data-tracks: 1; }
+
+/* playlist */
+.app[data-screen="playlist"] .c1 { --v1-c1: 1; }
+.app[data-screen="playlist"] .c2 { --v1-c2: 1; }
+.app[data-screen="playlist"] .c3 { --v1-c3: 1; }
+.app[data-screen="playlist"] .c7 { --v1-c7: 1; }
+.app[data-screen="playlist"] .lib-pl { --v1-lib-pl: 1; }
+.app[data-screen="playlist"] .lib-pl-list { --v1-lib-pl-list: 1; }
+.app[data-screen="playlist"] .lib-sort { --v1-lib-sort: 1; }
+.app[data-screen="playlist"] .lib-table { --v1-lib-table: 1; }
+.app[data-screen="playlist"] .lib-th { --v1-lib-th: 1; }
+.app[data-screen="playlist"] .lib-thead { --v1-lib-thead: 1; }
+.app[data-screen="playlist"] .t-title-xl { --v1-t-title-xl: 1; }
+.app[data-screen="playlist"] [data-value] { --v1-data-value: 1; }
+
+/* artist */
+.app[data-screen="artist"] .badge-slsk { --v1-badge-slsk: 1; }
+.app[data-screen="artist"] .lib-about { --v1-lib-about: 1; }
+.app[data-screen="artist"] .lib-ahero { --v1-lib-ahero: 1; }
+.app[data-screen="artist"] .lib-artist { --v1-lib-artist: 1; }
+.app[data-screen="artist"] .lib-bio { --v1-lib-bio: 1; }
+.app[data-screen="artist"] .lib-card { --v1-lib-card: 1; }
+.app[data-screen="artist"] .lib-cols { --v1-lib-cols: 1; }
+.app[data-screen="artist"] .lib-count { --v1-lib-count: 1; }
+.app[data-screen="artist"] .lib-disco { --v1-lib-disco: 1; }
+.app[data-screen="artist"] .lib-popular { --v1-lib-popular: 1; }
+.app[data-screen="artist"] .lib-rule { --v1-lib-rule: 1; }
+.app[data-screen="artist"] .lib-tile { --v1-lib-tile: 1; }
+.app[data-screen="artist"] .pill-filter { --v1-pill-filter: 1; }
+.app[data-screen="artist"] .shelf { --v1-shelf: 1; }
+.app[data-screen="artist"] .t-micro { --v1-t-micro: 1; }
+.app[data-screen="artist"] .tile { --v1-tile: 1; }
+
+/* search */
+.app[data-screen="search"] .disc-card { --v1-disc-card: 1; }
+.app[data-screen="search"] .disc-filters { --v1-disc-filters: 1; }
+.app[data-screen="search"] .disc-hello { --v1-disc-hello: 1; }
+.app[data-screen="search"] .disc-jump { --v1-disc-jump: 1; }
+.app[data-screen="search"] .disc-q { --v1-disc-q: 1; }
+.app[data-screen="search"] .disc-scan { --v1-disc-scan: 1; }
+.app[data-screen="search"] .disc-search { --v1-disc-search: 1; }
+.app[data-screen="search"] .disc-shelf { --v1-disc-shelf: 1; }
+.app[data-screen="search"] .disc-songs { --v1-disc-songs: 1; }
+.app[data-screen="search"] .disc-split { --v1-disc-split: 1; }
+.app[data-screen="search"] .disc-top { --v1-disc-top: 1; }
+
+/* library */
+.app[data-screen="library"] .lib-grid { --v1-lib-grid: 1; }
+.app[data-screen="library"] .lib-head { --v1-lib-head: 1; }
+.app[data-screen="library"] .lib-segs { --v1-lib-segs: 1; }
+
+/* appearance */
+.app[data-screen="settings"] .cls-attrib { --v1-cls-attrib: 1; }
+.app[data-screen="settings"] .cls-browser { --v1-cls-browser: 1; }
+.app[data-screen="settings"] .cls-now { --v1-cls-now: 1; }
+.app[data-screen="settings"] .cls-shot { --v1-cls-shot: 1; }
+.app[data-screen="settings"] .empty { --v1-empty: 1; }
+.app[data-screen="settings"] .sys-card { --v1-sys-card: 1; }
+.app[data-screen="settings"] .sys-design { --v1-sys-design: 1; }
+.app[data-screen="settings"] .sys-designs { --v1-sys-designs: 1; }
+.app[data-screen="settings"] .sys-group { --v1-sys-group: 1; }
+.app[data-screen="settings"] .sys-nav { --v1-sys-nav: 1; }
+.app[data-screen="settings"] .sys-page { --v1-sys-page: 1; }
+.app[data-screen="settings"] .sys-row { --v1-sys-row: 1; }
+.app[data-screen="settings"] .sys-section { --v1-sys-section: 1; }
+.app[data-screen="settings"] .sys-settings { --v1-sys-settings: 1; }
+
+/* stats */
+.app[data-screen="stats"] .inset { --v1-inset: 1; }
+.app[data-screen="stats"] .sys-bar { --v1-sys-bar: 1; }
+.app[data-screen="stats"] .sys-bars { --v1-sys-bars: 1; }
+.app[data-screen="stats"] .sys-grid { --v1-sys-grid: 1; }
+.app[data-screen="stats"] .sys-head { --v1-sys-head: 1; }
+.app[data-screen="stats"] .sys-heat { --v1-sys-heat: 1; }
+.app[data-screen="stats"] .sys-lede { --v1-sys-lede: 1; }
+.app[data-screen="stats"] .sys-period { --v1-sys-period: 1; }
+.app[data-screen="stats"] .sys-span { --v1-sys-span: 1; }
+.app[data-screen="stats"] .sys-stats { --v1-sys-stats: 1; }
+.app[data-screen="stats"] .sys-tile { --v1-sys-tile: 1; }
+.app[data-screen="stats"] .sys-tiles { --v1-sys-tiles: 1; }
+.app[data-screen="stats"] [data-l] { --v1-data-l: 1; }

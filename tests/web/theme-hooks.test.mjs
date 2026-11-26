@@ -181,6 +181,14 @@ test('designs/hooks.js carries the hook reference and the names lull sets', () =
     'web/designs/hooks.js: HOOKS is stale: run LULL_WRITE_PACKAGES=1 node --test tests/web/theme-hooks.test.mjs');
 });
 
+// The theme the theme-API gate keeps working (tests/ui/fixtures/themes/theme-api-v1, gates/theme-api.spec.mjs) is the
+// promise to theme authors, so it names stable hooks only: none lull moved, has no more, or keeps internal
+test('the theme-API gate\'s theme styles stable hooks only', () => {
+  const { find } = createRequire(import.meta.url)('../../web/designs/hooks.js');
+  const css = readFileSync(join(ROOT, 'tests/ui/fixtures/themes/theme-api-v1/theme.css'), 'utf8');
+  assert.deepEqual(find(css).map((h) => `${h.kind} ${h.name}`), []);
+});
+
 test('every hook lull moved is in docs/themes.md, Hooks that changed', () => {
   const { MOVED } = createRequire(import.meta.url)('../../web/designs/hooks.js');
   const at = docs.indexOf('### Hooks that changed'), part = at < 0 ? '' : docs.slice(at, docs.indexOf('\n## ', at));
