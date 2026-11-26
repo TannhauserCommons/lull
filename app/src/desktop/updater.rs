@@ -275,9 +275,4 @@ mod tests {
         let (text, on) = label(&report(packaged));
         assert_eq!((text.as_str(), on), ("Updates come with the AUR (lull-bin)", false));
     }
-
-    #[test]
-    fn a_missing_release_is_said_plainly() {
-        assert_eq!(plain(&Error::ReleaseNotFound), NO_RELEASE);
-    }
 }

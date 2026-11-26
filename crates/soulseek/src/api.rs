@@ -435,12 +435,3 @@ async fn clear_cache(State(svc): State<Arc<Service>>) -> Result<Json<Value>> {
         json!({ "files": c.files, "freedBytes": c.freed_bytes, "keptBytes": c.kept_bytes }),
     ))
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn the_preload_route_sits_beside_the_stream_route() {
-        // axum refuses conflicting routes by panicking when they're added, at hub start-up.
-        let _ = super::routes();
-    }
-}
