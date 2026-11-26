@@ -10,14 +10,16 @@ const port = +(process.env.FIXTURE_PORT || 8790);
 // and a run elsewhere compares against pictures it made itself the first time (gitignored).
 const capture = process.env.UI_CAPTURE === '1';
 // GATES picks the projects a run takes: `perf` alone (its task lengths must not share the CPU with screenshots), `fit`
-// (the chrome at every width: about half the gates' time, so CI gives it machines of its own), `rest` (every other
+// (the chrome at every width), `mobile` (the phone gates as Android and as an iPhone: few tests, but long ones, which
+// `--shard` cuts by count, so a group of their own keeps one machine from getting all of them), `rest` (every other
 // project, so a new gate runs in CI and in run.sh without being listed there), or, unset, all of them.
 const group = process.env.GATES;
+const GROUPS = { perf: ['perf'], fit: ['fit'], mobile: ['mobile', 'mobile-webkit'] };
 // a phone (iPhone 14/15 in CSS px): touch and the viewport meta read. No service worker unless a gate asks for one:
 // WebKit reports its first install as an update, and the note that brings would stand over what the gates measure (M14)
 const phone = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' };
 const inGroup = (p) =>
-  group === 'perf' || group === 'fit' ? p.name === group : group === 'rest' ? p.name !== 'perf' && p.name !== 'fit' : true;
+  !group ? true : group === 'rest' ? !Object.values(GROUPS).flat().includes(p.name) : (GROUPS[group] ?? []).includes(p.name);
 
 export default defineConfig({
   testDir: here,
