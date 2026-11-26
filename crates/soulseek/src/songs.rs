@@ -12,11 +12,7 @@ use lull_core::model::Track;
 use rusqlite::{OptionalExtension, params};
 
 use crate::Service;
-
-/// As for albums: peers sharing a song rarely all leave within a week...
-const FOUND_FOR_S: i64 = 7 * 24 * 3600;
-/// ...and one nobody shares yet is asked about again after a day.
-const MISSING_FOR_S: i64 = 24 * 3600;
+use crate::albums::{FOUND_FOR_S, fresh};
 
 /// The remembered or searched answer; `None` when Soulseek is offline and nothing is
 /// remembered, or the search said nothing (`Searches::song_shared`).
@@ -50,11 +46,6 @@ pub async fn available(svc: &Service, track: &Track) -> Result<Option<bool>> {
     Ok(shared)
 }
 
-fn fresh(available: bool, checked_at: i64, now: i64) -> bool {
-    let keep = if available { FOUND_FOR_S } else { MISSING_FOR_S };
-    now.saturating_sub(checked_at) < keep
-}
-
 async fn remembered(db: &Db, id: &TrackId) -> Result<Option<bool>> {
     let id = id.clone();
     let row: Option<(bool, i64)> = db
@@ -85,23 +76,4 @@ async fn remember(db: &Db, id: TrackId, available: bool) -> Result<()> {
         Ok(())
     })
     .await
-}
-
-#[cfg(test)]
-mod tests {
-    use super::fresh;
-
-    const DAY: i64 = 24 * 3600;
-
-    #[test]
-    fn found_holds_for_a_week_and_not_found_for_a_day() {
-        let now = 100 * DAY;
-        assert!(fresh(true, now - 6 * DAY, now));
-        assert!(!fresh(true, now - 7 * DAY, now));
-        assert!(fresh(false, now - DAY + 60, now));
-        assert!(
-            !fresh(false, now - DAY, now),
-            "a song nobody shared yet is checked again"
-        );
-    }
 }

@@ -10,9 +10,9 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::Service;
 
-/// Peers sharing an album rarely all leave within a week.
-const FOUND_FOR_S: i64 = 7 * 24 * 3600;
-/// A fresh release nobody shares yet often appears within a day.
+/// Peers sharing an album or song rarely all leave within a week.
+pub(crate) const FOUND_FOR_S: i64 = 7 * 24 * 3600;
+/// A fresh release, or a song, nobody shares yet often appears within a day.
 const MISSING_FOR_S: i64 = 24 * 3600;
 
 /// The remembered answer, without searching (`Transfers::album_known`).
@@ -51,8 +51,8 @@ pub async fn available(svc: &Service, artist: &str, album: &str) -> Result<Optio
     Ok(shared)
 }
 
-/// Whether an answer checked at `checked_at` still holds at `now`.
-fn fresh(available: bool, checked_at: i64, now: i64) -> bool {
+/// Whether an answer, for an album or a song (songs.rs), checked at `checked_at` still holds at `now`.
+pub(crate) fn fresh(available: bool, checked_at: i64, now: i64) -> bool {
     let keep = if available { FOUND_FOR_S } else { MISSING_FOR_S };
     now.saturating_sub(checked_at) < keep
 }
@@ -103,7 +103,7 @@ mod tests {
         assert!(fresh(false, now - DAY + 60, now));
         assert!(
             !fresh(false, now - DAY, now),
-            "a release nobody shared yet is checked again"
+            "a release or song nobody shared yet is checked again"
         );
     }
 
