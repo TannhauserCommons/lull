@@ -51,6 +51,10 @@ want pages '^(site/|web/assets/app-icon\.svg$|web/fonts/nunito-latin\.woff2$)'
 want share '^(share/|site/|web/assets/app-icon\.svg$|web/assets/fallback-art-512\.png$|web/fonts/nunito-latin\.woff2$|packaging/android/assetlinks\.json$|app/gen/android/app/src/main/AndroidManifest\.xml$)'
 # YouTube Music's live answer, after a change to the reader (YouTube being down must not hold anything back)
 want youtube_contract '^crates/discovery/src/search/youtube_music\.rs$'
+# The Linux app on a computer with no graphics card (graphics.yml): what it builds (app/, the crates it links and the
+# files they compile in, the web pages it bundles and the fixture hub serves), the tests it runs and the stand-in
+# servers they start, and its own workflow. main.yml also runs it whenever `base` is empty, as check runs every job then; the nightly always does.
+want graphics '^(app/|crates/|web/|tests/desktop/|tests/ui/fixture-hub/|tests/slskd-contract/|share/hosts\.json$|deploy/\.env\.example$|scripts/release-areas\.tsv$|Cargo\.toml$|rust-toolchain\.toml$|\.github/workflows/graphics\.yml$)'
 # What every release build compiles: main builds the bundles then, to warm their caches (ADR-0097)
 want warm '^(Cargo\.lock|app/Cargo\.lock|app/Cargo\.toml|rust-toolchain\.toml)$'
 # A feat or fix reached main: the next release's draft is redrawn (ADR-0098)

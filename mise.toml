@@ -122,7 +122,7 @@ run = "node scripts/playwright-flakes.mjs tests/ui/report/results.json tests/ui/
 
 # What main.yml does after a push to main lands (docs/context/quality.md, The check). Each is a script a person can read.
 [tasks."main:plan"]
-description = "What a push to main brought (BEFORE and SHA in the environment): pages, share, youtube_contract, warm, notes as true or false"
+description = "What a push to main brought (BEFORE and SHA in the environment): base, and pages, share, youtube_contract, graphics, warm, notes as true or false"
 run = "sh scripts/ci/main-plan.sh"
 
 [tasks."nightly:escapes"]
