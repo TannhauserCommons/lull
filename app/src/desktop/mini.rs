@@ -2,6 +2,7 @@
 //! that mirrors `main`'s player over events; `main` hides while one is open.
 
 use crate::desktop::main_window;
+use crate::desktop::platform;
 use crate::desktop::recovery;
 use crate::desktop::settings::MiniStyle;
 use crate::desktop::state::Desktop;
@@ -56,7 +57,12 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
         .no_redirection_bitmap(desktop.platform.transparent)
         .always_on_top(settings.mini_on_top)
         .disable_drag_drop_handler()
+        // Hidden until the taskbar buttons listen: Windows says once, as it shows, that the button is made.
+        .visible(false)
         .build()?;
+    // It stands in for the hidden `main` on the taskbar, so it carries the player's buttons too.
+    platform::add_thumb_buttons(&mini);
+    mini.show()?;
     recovery::watch(&mini);
     if wayland_hint {
         desktop.update(|s| s.wayland_hint_shown = true);
