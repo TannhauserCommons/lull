@@ -2154,6 +2154,18 @@ mod tests {
         done()
     }
 
+    /// Waits until `done`, taking no sound (the song stands still); false after 20 s.
+    fn wait_until(mut done: impl FnMut() -> bool) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !done() {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        true
+    }
+
     fn hub(settings: Value) -> Option<TestHub> {
         TestHub::start(Book {
             settings,
@@ -2161,17 +2173,44 @@ mod tests {
         })
     }
 
+    /// Closes the player and waits for its calls about plays and likes to end: what the hub and the
+    /// outbox have then is all they get.
+    fn close(engine: Engine) -> Result<Back, String> {
+        let mut back = engine.finish().ok_or("no hand-back")?;
+        for thread in back.threads.drain(..) {
+            let _ = thread.join();
+        }
+        Ok(back)
+    }
+
+    /// What a player on the test's thread shows now.
+    fn snapshot(run: &mut Run) -> Snapshot {
+        run.publish();
+        lock(&run.shared.snapshot).clone()
+    }
+
     #[test]
     fn songs_follow_each_other_without_a_gap_and_each_is_a_play() -> Result<(), String> {
         let hub = hub(json!({})).ok_or("no hub")?;
         let (engine, output) =
             player(&hub, &[("a", true, Some(2.0)), ("b", true, Some(2.0))], Repeat::Off).ok_or("no player")?;
+        let window = 3 * RATE as usize * 2;
+        let first_sound = |sound: &[f32]| sound.iter().position(|s| s.abs() > 0.01);
+        // A slow machine opens the first song late: sound on, every bit of it kept, until three seconds
+        // from its first sound are in and the second song plays.
         let mut sound = listen(&output, 5.0);
-        listen_until(&output, || engine.snapshot().index == 1);
+        for _ in 0..40 {
+            if first_sound(&sound).is_some_and(|first| sound.len() >= first + window) && engine.snapshot().index == 1 {
+                break;
+            }
+            sound.extend(listen(&output, 0.5));
+        }
         sound.extend(listen(&output, 0.5));
-        let first = sound.iter().position(|s| s.abs() > 0.01).unwrap_or(sound.len());
+        let first = first_sound(&sound).ok_or("never a sound")?;
         // From the first sound to the second song's end, never a stretch of silence (a gap).
-        let silent = sound[first..first + 3 * RATE as usize * 2]
+        let silent = sound
+            .get(first..first + window)
+            .ok_or("not three seconds of sound")?
             .as_chunks::<2>()
             .0
             .chunk_by(|a, b| (a[0].abs() < 1e-4) == (b[0].abs() < 1e-4))
@@ -2181,8 +2220,7 @@ mod tests {
             .unwrap_or(0);
         assert!(silent < RATE as usize / 100, "{silent} silent frames between the songs");
         assert_eq!(engine.snapshot().index, 1);
-        drop(engine);
-        std::thread::sleep(Duration::from_millis(400));
+        close(engine)?;
         let started = hub.calls("POST", "/api/plays");
         assert_eq!(
             started
@@ -2221,8 +2259,7 @@ mod tests {
             "after a beat, not at once"
         );
         assert!(engine.snapshot().playing);
-        drop(engine);
-        std::thread::sleep(Duration::from_millis(300));
+        close(engine)?;
         assert!(hub.calls("POST", "/api/plays").iter().all(|p| p["trackId"] != "gone"));
         Ok(())
     }
@@ -2283,8 +2320,7 @@ mod tests {
         let (engine, output) = player(&hub, &[("a", true, Some(3.0))], Repeat::One).ok_or("no player")?;
         assert!(listen_until(&output, || hub.calls("POST", "/api/plays").len() >= 2));
         assert_eq!(engine.snapshot().index, 0);
-        drop(engine);
-        std::thread::sleep(Duration::from_millis(300));
+        close(engine)?;
         assert!(hub.calls("POST", "/api/plays").len() >= 2);
         assert_eq!(
             hub.calls("PATCH", "/api/plays/")
@@ -2378,8 +2414,13 @@ mod tests {
     #[test]
     fn a_fallbacks_new_attempt_reopens_the_song_where_it_was() -> Result<(), String> {
         let hub = hub(json!({})).ok_or("no hub")?;
-        let (engine, output) = player(&hub, &[("s", false, Some(6.0))], Repeat::Off).ok_or("no player")?;
-        listen(&output, 1.0);
+        // By hand: the engine hears each event when the test gives it, not on a tick of its own.
+        let (mut run, output) = by_hand(&hub, &[("s", false, Some(6.0))], Repeat::Off).ok_or("no player")?;
+        // Over a second of it played (the deck opens in its own time, so pulled sound isn't played sound).
+        assert!(
+            pull_until(&mut run, &output, |run, _| run.position() > 1.0),
+            "the song never played a second"
+        );
         let event = |attempt| {
             Heard::Stream(Box::new(StreamEvent {
                 track_id: "s".into(),
@@ -2397,19 +2438,27 @@ mod tests {
                 .map(|b| b.fetches.get("s").copied().unwrap_or(0))
                 .unwrap_or(0)
         };
+        let deck = |run: &Run| run.current.as_ref().map(|c| c.deck.clone());
+        let was = deck(&run).ok_or("no deck")?;
         let before = fetches();
-        let _ = engine.heard_to.send(event(0));
-        // The engine hears events on its tick (250 ms). The first event of a fetch only says which
-        // attempt it is: nothing reopens.
-        std::thread::sleep(Duration::from_millis(600));
-        assert_eq!(fetches(), before);
-        let _ = engine.heard_to.send(event(1));
-        // A busy machine may take a few ticks to reopen it.
+        run.hear(event(0));
+        // The first event of a fetch only says which attempt it is: nothing reopens.
         assert!(
-            listen_until(&output, || fetches() > before),
+            deck(&run).is_some_and(|d| Arc::ptr_eq(&d, &was)),
+            "the first event reopened the song"
+        );
+        let at = run.position();
+        run.hear(event(1));
+        assert!(
+            deck(&run).is_some_and(|d| !Arc::ptr_eq(&d, &was)),
             "a new attempt opens the song again"
         );
-        assert!(engine.snapshot().position > 1.0, "it carried on from where it was");
+        assert!(
+            pull_until(&mut run, &output, |_, _| fetches() > before),
+            "the hub was never asked for it again"
+        );
+        let now = run.position();
+        assert!(now >= at, "it carried on from where it was ({at} s), not from {now} s");
         Ok(())
     }
 
@@ -2483,11 +2532,22 @@ mod tests {
             ..Book::default()
         })
         .ok_or("no hub")?;
-        let (engine, output) =
-            player(&hub, &[("a", true, Some(1.0)), ("b", true, Some(1.0))], Repeat::Off).ok_or("no player")?;
-        assert!(listen_until(&output, || hub.calls("POST", "/api/plays").len() >= 2));
-        drop(engine);
-        std::thread::sleep(Duration::from_millis(300));
+        // By hand, a tick every 10 ms of sound: a 1 s song can't play out between two ticks and go
+        // unrecorded, however slow the machine.
+        let (mut run, output) =
+            by_hand(&hub, &[("a", true, Some(1.0)), ("b", true, Some(1.0))], Repeat::Off).ok_or("no player")?;
+        let both = |run: &mut Run, _: &[f32]| {
+            run.tick();
+            hub.calls("POST", "/api/plays").len() >= 2
+        };
+        assert!(
+            pull_until(&mut run, &output, both),
+            "plays: {:?}",
+            hub.calls("POST", "/api/plays")
+        );
+        for thread in run.finish().threads {
+            let _ = thread.join();
+        }
         assert!(!hub.calls("POST", "/api/plays").is_empty());
         assert!(hub.calls("PATCH", "/api/plays/").is_empty());
         Ok(())
@@ -2496,24 +2556,28 @@ mod tests {
     #[test]
     fn a_seek_past_what_has_arrived_waits_for_it_then_lands() -> Result<(), String> {
         let hub = hub(json!({})).ok_or("no hub")?;
-        let (engine, output) = player(&hub, &[("s", false, Some(20.0))], Repeat::Off).ok_or("no player")?;
-        listen(&output, 0.5);
-        let _ = engine.heard_to.send(stream_event("s", 100, None));
-        std::thread::sleep(Duration::from_millis(600));
-        engine.send(Command::Seek(15.0));
-        std::thread::sleep(Duration::from_millis(600));
-        listen(&output, 0.2);
-        let now = engine.snapshot();
+        // By hand: the seek comes after the event, as the test gives them, whatever the machine's pace.
+        let (mut run, output) = by_hand(&hub, &[("s", false, Some(20.0))], Repeat::Off).ok_or("no player")?;
+        assert!(
+            pull_until(&mut run, &output, |run, _| run.position() > 0.0),
+            "it never played"
+        );
+        run.hear(stream_event("s", 100, None));
+        run.command(Command::Seek(15.0));
+        for _ in 0..20 {
+            output.pull(RATE as usize / 100);
+        }
+        let now = snapshot(&mut run);
         assert!(now.position < 2.5, "plays on where it was: {}", now.position);
         assert_eq!(now.kept, Some(15.0), "the seek is kept");
         assert_eq!(now.notice.as_deref(), Some("Waiting for 0:15"));
         // All of it arrives: the kept seek lands.
-        let _ = engine.heard_to.send(stream_event("s", 1000, None));
+        run.hear(stream_event("s", 1000, None));
         assert!(
-            listen_until(&output, || engine.snapshot().position >= 15.0),
+            pull_until(&mut run, &output, |run, _| run.position() >= 15.0),
             "landed where it was asked"
         );
-        let now = engine.snapshot();
+        let now = snapshot(&mut run);
         assert_eq!((now.kept, now.notice.as_deref()), (None, Some("Playing from 0:15")));
         Ok(())
     }
@@ -2521,10 +2585,14 @@ mod tests {
     #[test]
     fn a_seek_far_past_what_has_arrived_lands_at_once_where_the_hub_can_fetch_from_there() -> Result<(), String> {
         let hub = hub(json!({})).ok_or("no hub")?;
-        let (engine, output) = player(&hub, &[("s", false, Some(20.0))], Repeat::Off).ok_or("no player")?;
-        listen(&output, 0.5);
+        // By hand: the seek comes after the event, as the test gives them, whatever the machine's pace.
+        let (mut run, output) = by_hand(&hub, &[("s", false, Some(20.0))], Repeat::Off).ok_or("no player")?;
+        assert!(
+            pull_until(&mut run, &output, |run, _| run.position() > 0.0),
+            "it never played"
+        );
         // A tenth has arrived, and the hub can start the transfer anywhere (`seekAheadS`).
-        let _ = engine.heard_to.send(Heard::Stream(Box::new(StreamEvent {
+        run.hear(Heard::Stream(Box::new(StreamEvent {
             track_id: "s".into(),
             job_id: Some("j".into()),
             status: "streaming".into(),
@@ -2534,13 +2602,12 @@ mod tests {
             seek_ahead_s: Some(30.0),
             ..StreamEvent::default()
         })));
-        std::thread::sleep(Duration::from_millis(600));
-        engine.send(Command::Seek(15.0));
+        run.command(Command::Seek(15.0));
         assert!(
-            listen_until(&output, || engine.snapshot().position >= 15.0),
+            pull_until(&mut run, &output, |run, _| run.position() >= 15.0),
             "it went there at once, the deck asking the hub for that byte"
         );
-        let now = engine.snapshot();
+        let now = snapshot(&mut run);
         assert_eq!((now.kept, now.notice), (None, None), "nothing kept, nothing said");
         Ok(())
     }
@@ -2555,10 +2622,14 @@ mod tests {
         .ok_or("no hub")?;
         let (engine, output) = player(&hub, &[("a", true, Some(5.0))], Repeat::Off).ok_or("no player")?;
         listen(&output, 2.0);
-        let back = engine.finish().ok_or("no hand-back")?;
-        for thread in back.threads {
-            let _ = thread.join();
-        }
+        // The play started and the hub couldn't take it, the song not over: it moves only as sound
+        // is taken.
+        assert!(
+            wait_until(|| !engine.snapshot().reachable),
+            "no play started: {:?}",
+            engine.snapshot()
+        );
+        let back = close(engine)?;
         let ops = lock(&back.ops).clone();
         let op = ops.first().ok_or("no op")?;
         assert_eq!((op["op"].clone(), op["trackId"].clone()), (json!("play"), json!("a")));
@@ -2606,10 +2677,7 @@ mod tests {
             .map_err(|e| e.to_string())?;
         engine.send(Command::Like);
         listen(&output, 0.5);
-        let back = engine.finish().ok_or("no hand-back")?;
-        for thread in back.threads {
-            let _ = thread.join();
-        }
+        let back = close(engine)?;
         // The unlike couldn't reach the hub: it waits in the outbox, as the page's would.
         assert_eq!(
             lock(&back.ops).first(),
