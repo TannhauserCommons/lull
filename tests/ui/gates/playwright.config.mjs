@@ -134,6 +134,8 @@ export default defineConfig({
     { name: 'theme-slots', testMatch: 'theme-slots.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // a theme styling hooks lull moved, removed or keeps internal is told so, at import and in Theme Studio
     { name: 'theme-hooks', testMatch: 'theme-hooks.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
+    // a theme written for api 1 still styles every stable hook it names, on the screens that draw them, over every design
+    { name: 'theme-api', testMatch: 'theme-api.spec.mjs' },
     // the live model a theme names values of (ADR-0101): published where named, at its pace, and nothing for the built-ins
     { name: 'live', testMatch: 'live.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // layout switches (ADR-0101): the built-ins decide layout as before, and a theme that sets a switch gets it

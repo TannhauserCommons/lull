@@ -1,0 +1,11 @@
+{
+  "id": "theme-api-v1",
+  "name": "Theme API v1",
+  "author": "lull's UI gates",
+  "api": 1,
+  "extends": "lull",
+  "shell": "topnav",
+  "swatches": ["#f3f1ea", "#ffffff", "#2f5d8a", "#15171a"],
+  "modes": ["day", "night"],
+  "description": "A listener's theme written for api 1, frozen: a rule for each stable hook the screens draw (gates/theme-api.spec.mjs)."
+}
