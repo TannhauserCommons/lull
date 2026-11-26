@@ -3,8 +3,8 @@
 set -u
 cd "$(dirname "$0")"
 
-# Lighthouse slows the CPU 4x on top of whatever runner it is on, and GitHub's runners differ by 2x: in one day of
-# queue runs Lighthouse's benchmark of the runner went from 1,900 to 4,000, and /now's blocking time with it, from 30
+# Lighthouse slows the CPU 4x on top of whatever runner it is on, and GitHub's runners differ by 2x: in one day of CI
+# runs Lighthouse's benchmark of the runner went from 1,900 to 4,000, and /now's blocking time with it, from 30
 # to 170 ms for the same code. So the slowdown is set for this runner: 4x times its speed over the speed the budgets
 # were met on (budgets.json, benchmarkIndex). Every runner then plays the same device, and what the page itself
 # does shows the same on all of them. The runner's speed is Lighthouse's own benchmark, the median of three loads.

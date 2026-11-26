@@ -24,22 +24,13 @@ git fetch -q --tags origin main
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 
 # The newest green commit: main.yml passed every check on it after it merged (docs/context/quality.md, The check).
-# Older commits came through the queue, whose `queue` and `full` statuses say the same (ADR-0095), or before it,
-# through check runs that all passed.
+# A push runs main.yml once, on its tip, so the commits under the tip have no run of their own and are passed over.
 green() {
   for sha in $(git rev-list --first-parent -n 200 origin/main); do
     main=$(gh api "repos/$repo/actions/workflows/main.yml/runs?head_sha=$sha&event=push&status=completed" \
-      --jq '[.workflow_runs[].conclusion] | if any(. == "success") then "green" else "" end' 2>/dev/null || true)
+      --jq '[.workflow_runs[].conclusion] | if any(. == "success") then "green" else "" end') \
+      || die "GitHub didn't say whether main.yml passed on $sha"
     [ "$main" = green ] && { echo "$sha"; return; }
-    # Only GitHub Actions can set them: main's ruleset required the queue's from there (ADR-0095).
-    states=$(gh api "repos/$repo/commits/$sha/statuses" \
-      --jq '[.[] | select(.creator.login == "github-actions[bot]")] as $s | [($s | map(select(.context == "queue")) | .[0].state // ""), ($s | map(select(.context == "full")) | .[0].state // "")] | join(" ")')
-    queue=${states%% *} full=${states#* }
-    [ "$queue" = success ] && [ "$full" = success ] && { echo "$sha"; return; }
-    [ -z "$queue" ] || continue
-    runs=$(gh api "repos/$repo/commits/$sha/check-runs?per_page=100" \
-      --jq '[.check_runs[].conclusion] | if length > 0 and all(. == "success" or . == "skipped" or . == "neutral") then "green" else "" end')
-    [ "$runs" = green ] && { echo "$sha"; return; }
   done
   die "no green commit in main's last 200"
 }
