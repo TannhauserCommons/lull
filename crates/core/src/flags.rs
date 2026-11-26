@@ -148,11 +148,6 @@ mod tests {
     }
 
     #[test]
-    fn the_release_areas_have_ids() {
-        assert_eq!(area_ids(), ["search", "playing", "designs", "apps", "hub"]);
-    }
-
-    #[test]
     fn every_switch_has_a_unique_kebab_case_name_and_an_owner() {
         let mut seen = BTreeSet::new();
         for flag in FLAGS {

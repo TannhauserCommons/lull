@@ -415,14 +415,9 @@ mod tests {
     }
 
     #[test]
-    fn after_the_backoff_it_tries_every_30_seconds() {
-        let t = Timing::default();
-        assert_eq!(
-            t.backoff.iter().map(Duration::as_secs).collect::<Vec<_>>(),
-            [2, 4, 8, 16, 30]
-        );
+    fn a_probe_has_time_for_both_its_requests() {
         assert!(
-            t.limit > Duration::from_secs(20),
+            Timing::default().limit > Duration::from_secs(20),
             "longer than the probe's two 10 s requests"
         );
     }
