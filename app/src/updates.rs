@@ -137,37 +137,34 @@ mod tests {
     }
 
     #[test]
-    fn a_newer_release_offers_its_apk() {
-        let found = newer_apk("0.1.0", &manifest("0.2.0", true));
-        assert_eq!(
-            found,
+    fn only_a_newer_release_with_an_apk_is_offered() {
+        let offered = |version: &str| {
             Ok(Some(Android {
-                version: "0.2.0".into(),
-                url: APK.into()
+                version: version.into(),
+                url: APK.into(),
             }))
-        );
-    }
-
-    #[test]
-    fn versions_compare_as_numbers_not_text() {
-        assert!(matches!(newer_apk("0.9.0", &manifest("0.10.0", true)), Ok(Some(_))));
-        assert_eq!(newer_apk("0.10.0", &manifest("0.9.0", true)), Ok(None));
-    }
-
-    #[test]
-    fn the_same_or_an_older_release_is_no_update() {
-        assert_eq!(newer_apk("0.2.0", &manifest("0.2.0", true)), Ok(None));
-        assert_eq!(newer_apk("0.3.0", &manifest("v0.2.0", false)), Ok(None));
-    }
-
-    #[test]
-    fn a_newer_release_without_an_apk_is_an_error() {
-        assert!(newer_apk("0.1.0", &manifest("0.2.0", false)).is_err());
-    }
-
-    #[test]
-    fn an_unreadable_version_is_an_error() {
-        assert!(newer_apk("0.1.0", &manifest("next", true)).is_err());
+        };
+        for (current, version, apk, expected) in [
+            ("0.1.0", "0.2.0", true, offered("0.2.0")),
+            // Versions compare as numbers, not text.
+            ("0.9.0", "0.10.0", true, offered("0.10.0")),
+            ("0.10.0", "0.9.0", true, Ok(None)),
+            ("0.2.0", "0.2.0", true, Ok(None)),
+            // An older release needs no APK, and a leading v is read.
+            ("0.3.0", "v0.2.0", false, Ok(None)),
+        ] {
+            assert_eq!(
+                newer_apk(current, &manifest(version, apk)),
+                expected,
+                "{current} -> {version}"
+            );
+        }
+        for (version, apk, why) in [
+            ("0.2.0", false, "a newer release without an APK"),
+            ("next", true, "an unreadable version"),
+        ] {
+            assert!(newer_apk("0.1.0", &manifest(version, apk)).is_err(), "{why}");
+        }
     }
 
     #[test]
