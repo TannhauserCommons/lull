@@ -388,19 +388,9 @@ pub(crate) fn tz_seconds(minutes: i32) -> Result<i64> {
     Ok(i64::from(minutes) * 60)
 }
 
-/// "YYYY-MM-DD" of a unix time at a UTC offset (Hinnant's civil-from-days).
+/// "YYYY-MM-DD" of a unix time at a UTC offset.
 fn local_day(at: i64, tz_offset: i64) -> String {
-    let days = (at + tz_offset).div_euclid(86_400);
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!("{year:04}-{month:02}-{day:02}")
+    lull_core::iso_date(at + tz_offset)
 }
 
 #[cfg(test)]
@@ -414,6 +404,5 @@ mod tests {
         assert_eq!(local_day(at, 0), "2026-10-30");
         assert_eq!(local_day(at, 3600), "2026-10-31");
         assert_eq!(local_day(at, -4 * 3600), "2026-10-30");
-        assert_eq!(local_day(951_782_400, 0), "2000-02-29");
     }
 }

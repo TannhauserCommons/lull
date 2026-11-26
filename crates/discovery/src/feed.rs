@@ -952,7 +952,7 @@ async fn own_releases(
     taste: &Taste,
     followed: &[(ArtistId, String)],
 ) -> (Vec<Release>, HashMap<AlbumId, AlbumSource>) {
-    let since = pages::iso_date(lull_core::now() - NEW_DAYS * 86_400);
+    let since = lull_core::iso_date(lull_core::now() - NEW_DAYS * 86_400);
     let mut artists: Vec<(ArtistId, String)> = followed.to_vec();
     for a in taste.listened_artists(OWN_RELEASES_ARTISTS) {
         if !artists.iter().any(|(id, _)| *id == a.id) {

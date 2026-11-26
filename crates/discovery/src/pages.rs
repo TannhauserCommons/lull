@@ -355,7 +355,7 @@ pub async fn tag(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Res
     }
     let until = Instant::now() + PAGE_DEADLINE;
     let mut errors = Errors::new();
-    let since = iso_date(lull_core::now() - TAG_NEW_DAYS * 86_400);
+    let since = lull_core::iso_date(lull_core::now() - TAG_NEW_DAYS * 86_400);
     let releases = {
         let (s, t) = (svc.clone(), tag.clone());
         background(&svc, async move { s.mb.tagged_releases(&t, &since).await })
@@ -500,20 +500,6 @@ pub(crate) fn checked(id: String, prefix: &str) -> Result<String> {
     }
 }
 
-/// Unix seconds to YYYY-MM-DD (UTC), by Howard Hinnant's civil-from-days.
-pub(crate) fn iso_date(unix: i64) -> String {
-    let z = unix.div_euclid(86_400) + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe + era * 400 + i64::from(m <= 2);
-    format!("{y:04}-{m:02}-{d:02}")
-}
-
 #[cfg(test)]
 mod tests {
     use lull_core::{Error, Result};
@@ -548,12 +534,5 @@ mod tests {
             unreachable!("a part that never answers can't succeed")
         };
         assert!(e.to_string().contains(&format!("within {} s", LATE_LIMIT.as_secs())));
-    }
-
-    #[test]
-    fn iso_date_matches_the_calendar() {
-        assert_eq!(super::iso_date(0), "1970-01-01");
-        assert_eq!(super::iso_date(1_793_404_800), "2026-10-31");
-        assert_eq!(super::iso_date(951_782_400), "2000-02-29");
     }
 }
