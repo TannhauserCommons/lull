@@ -1,9 +1,10 @@
 //! Windows: Previous, Play/Pause and Next under a window's taskbar thumbnail (ITaskbarList3), like
-//! other music players. `main` and the Classic window each get them; they show the one now-playing
-//! report (player.rs) and send their clicks to whichever window plays.
+//! other music players. `main`, the mini player and the Classic window each get them; they show the
+//! one now-playing report (player.rs) and send their clicks to whichever window plays.
 //! The buttons can be added only once Windows has made the window's taskbar button, which it says
 //! with the registered "TaskbarButtonCreated" message (again after Explorer restarts), and a click
-//! arrives as WM_COMMAND: so each window gets a subclass that hears both.
+//! arrives as WM_COMMAND: so each window gets a subclass that hears both, attached while the window
+//! is still hidden, before that message can come.
 #![allow(unsafe_code)]
 
 use super::ThumbButtons;
