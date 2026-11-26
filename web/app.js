@@ -280,11 +280,12 @@
     var on = force === undefined ? !state.liked[id] : !!force;
     setLiked([id], on);
     /* a held heart opens the playlist picker (contextMenuFor), which a touch has no tooltip to say: the first like by
-       touch on this device says it, once, even with Confirmations: Quiet, since it teaches rather than confirms */
+       touch on this device says it, once, even with Confirmations: Quiet, since it teaches rather than confirms, and in a
+       toast of its own, which a quick second like doesn't reword */
     var hint = on && touching && !storage('heartHint');
     if (hint) storage('heartHint', true);
     App.toast(on ? 'Added to Liked songs' + (hint ? '. Hold ♥ to add a song to a playlist' : '') : 'Removed from Liked songs', {
-      confirms: !hint, group: on ? 'like' : 'unlike', together: on ? liked : unliked, icon: on ? 'heart-fill' : 'heart', action: 'Undo', onAction: function () { App.toggleLike(id, !on); }, quiet: true
+      confirms: !hint, group: hint ? null : on ? 'like' : 'unlike', together: on ? liked : unliked, icon: on ? 'heart-fill' : 'heart', action: 'Undo', onAction: function () { App.toggleLike(id, !on); }, quiet: true
     });
   };
   /* setLiked(ids, on): many at once (album and selection actions). With "Save songs you like" on

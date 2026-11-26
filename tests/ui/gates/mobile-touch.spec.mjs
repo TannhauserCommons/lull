@@ -282,14 +282,18 @@ test('the first like by touch says a heart can be held, once', async ({ page }) 
   await page.context().setExtraHTTPHeaders({ 'x-fixture-client': `${test.info().testId}:${test.info().repeatEachIndex}` });
   await open(page, `/playlist/${ids.playlist}`);
   const unliked = page.locator('#view .trow[data-track-id] [data-act="like"][aria-pressed="false"]');
-  for (const [n, hint] of [[1, true], [0, false]]) {
+  const like = async (n) => {
     const heart = page.locator(`#view [data-act="like"][data-id="${await unliked.nth(n).getAttribute('data-id')}"]`);
     await heart.evaluate((el) => el.scrollIntoView({ block: 'center' }));
     await heart.tap();
     await expect(heart).toHaveAttribute('aria-pressed', 'true');
-    const toast = page.locator('.toast', { hasText: 'Added to Liked songs' });
-    await expect(toast).toHaveText(hint ? /Added to Liked songs\. Hold ♥ to add a song to a playlist/ : /^Added to Liked songs\s*Undo/);
-    await toast.locator('[data-toast-close]').tap();
-    await expect(toast).toHaveCount(0);
-  }
+  };
+  const hinted = page.locator('.toast', { hasText: 'Added to Liked songs. Hold ♥ to add a song to a playlist' });
+  await like(1);
+  await expect(hinted).toBeVisible();
+  // a second like straight after: a plain toast of its own, and the hint still says what it says
+  await like(0);
+  await expect(page.locator('.toast', { hasText: /^Added to Liked songs\s*Undo/ })).toBeVisible();
+  await expect(hinted).toBeVisible();
+  await expect(page.locator('.toast', { hasText: 'Hold ♥' })).toHaveCount(1);
 });
