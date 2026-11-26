@@ -4,7 +4,8 @@
 #
 # Each key is the paths its check reads, as globs, plus what counts as "everything changed" (`.github/`) and what runs
 # the check here (mise.toml and mise.lock: the tasks and the tool versions every job uses; its own scripts). `ui`
-# is also what `image` builds for: check.yml's `image` job runs for either key.
+# is also what `image` builds for: check.yml's `image` job runs for either key. `ui` tests that image (the visual
+# matrix, and the hub contract on every route the hub serves), so it holds every path of `image` too.
 image:
   - 'crates/**'
   - 'web/**'
@@ -21,12 +22,18 @@ image:
   - 'mise.toml'
   - 'mise.lock'
 ui:
+  - 'crates/**'
   - 'web/**'
-  - 'crates/server/src/web.rs'
-  - 'crates/soulseek/src/slskd.rs'
-  - 'tests/ui/**'
-  - 'scripts/web-dist/**'
+  - 'share/hosts.json'
+  - 'Cargo.toml'
+  - 'Cargo.lock'
+  - 'rust-toolchain.toml'
   - 'Dockerfile'
+  - '.dockerignore'
+  - 'scripts/vendor-web.sh'
+  - 'scripts/web-dist/**'
+  - 'scripts/image-save.sh'
+  - 'tests/ui/**'
   - 'scripts/playwright-flakes.mjs'
   - '.github/**'
   - 'mise.toml'
@@ -82,10 +89,17 @@ android: &android
   - "mise.toml"
   - "mise.lock"
   - "app/gen/android/**"
+  # The app's shared modules (lib.rs and its siblings; desktop/ is cfg(desktop)), Android's own code, and the
+  # Android-only player plugin.
+  - "app/src/*.rs"
   - "app/src/mobile/**"
+  - "app/plugins/**"
+  - "app/capabilities/**"
   - "app/build.rs"
   - "app/Cargo.toml"
   - "app/Cargo.lock"
+  - "app/package.json"
+  - "app/tauri.conf.json"
   - "app/tauri.android.conf.json"
   - "scripts/android-*"
   - "scripts/android-*/**"
