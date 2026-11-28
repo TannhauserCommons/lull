@@ -138,7 +138,7 @@ export default defineConfig({
     { name: 'theme-api', testMatch: 'theme-api.spec.mjs' },
     // the live model a theme names values of (ADR-0101): published where named, at its pace, and nothing for the built-ins
     { name: 'live', testMatch: 'live.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
-    // layout switches (ADR-0101): the built-ins decide layout as before, and a theme that sets a switch gets it
+    // layout switches (ADR-0101): the built-ins lay out as a person sees them now, and a theme that sets a switch gets it
     { name: 'layout-switches', testMatch: 'layout-switches.spec.mjs', fullyParallel: true },
     // a theme's markup at every region's and screen's edge, and lull's parts in it, kept and current (ADR-0101)
     { name: 'slots', testMatch: 'slots.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
