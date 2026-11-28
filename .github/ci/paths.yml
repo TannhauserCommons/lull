@@ -175,3 +175,4 @@ aur:
   - "packaging/aur/**"
   - "scripts/aur-pkgbuild.sh"
   - "scripts/ci/aur.sh"
+  - "scripts/ci/aur-release.sh"
