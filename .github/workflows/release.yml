@@ -42,9 +42,6 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24.11"
-      - run: rustup toolchain install
-      # release.sh sets the version with `cargo update --offline`: the registry has to be here first.
-      - run: cargo fetch --locked && cargo fetch --locked --manifest-path app/Cargo.toml
       - run: |
           git config user.name TannhauserCommons
           git config user.email 350945459+TannhauserCommons@users.noreply.github.com
