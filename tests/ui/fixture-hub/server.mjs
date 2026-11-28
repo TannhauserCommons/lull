@@ -2,7 +2,9 @@
 // gates (perf, screens, a11y) run anywhere with Node alone: no image, no Soulseek, no outside service,
 // the same answers on every run. It is a stand-in for the hub's contract (docs/context/api.md), not a
 // second hub: anything the UI asks that is not modelled here answers 404 `not_found`, which the specs
-// count as a failure, so a new endpoint shows up as a gap to fill rather than as a silent blank.
+// count as a failure, so a new endpoint shows up as a gap to fill rather than as a silent blank. What it answers is held
+// to the hub contract's shapes (tests/hub-contract/shapes.mjs; tests/web/fixture-hub-contract.test.mjs), which the real
+// hub is held to as well: a field served here goes in those shapes too.
 //
 //   node tests/ui/fixture-hub/server.mjs [port]      (default 8790; LULL_WEB=<dir> serves another web/)
 //
@@ -135,11 +137,12 @@ const state = {
 const clients = new Map();   // open /api/events streams -> their fixture client
 
 // ---------- helpers ----------
+/* each kind left out when it names none, as the hub's Entities */
 function entities({ tracks = [], albums = [], artists = [] } = {}) {
-  const e = { tracks: {}, albums: {}, artists: {} };
-  for (const id of tracks) if (L.tracks[id]) e.tracks[id] = L.tracks[id];
-  for (const id of albums) if (L.albums[id]) e.albums[id] = L.albums[id];
-  for (const id of artists) if (L.artists[id]) e.artists[id] = L.artists[id];
+  const e = {};
+  for (const [kind, list] of Object.entries({ tracks, albums, artists })) {
+    for (const id of list) if (L[kind][id]) (e[kind] ||= {})[id] = L[kind][id];
+  }
   return e;
 }
 const albumsOf = (trackIds) => [...new Set(trackIds.map((t) => L.tracks[t]?.albumId).filter(Boolean))];
@@ -320,7 +323,7 @@ const routes = [
       picks: picks.map((trackId, i) => ({ trackId, reasons: [i % 2 ? { kind: 'tag', name: L.tracks[trackId].tags[0] } : { kind: 'like', name: L.tracks[trackId].artist, ref: L.tracks[trackId].artistId }], via: 'listenbrainz' })),
       radioStarters: L.artistIds.slice(0, 6).map((id) => ({ id: 'rs-' + id, title: `${L.artists[id].name} radio`, sub: L.artists[id].tags.join(', '), seed: { kind: 'artist', id } })),
       jumpBackIn: [...L.albumIds.slice(0, 4).map((id) => ({ kind: 'album', id })), ...L.artistIds.slice(6, 10).map((id) => ({ kind: 'artist', id }))],
-      followedTags: state.follows.tags, coldStartTags: L.tags.slice(0, 8),
+      followedTags: state.follows.tags, coldStartTags: L.tags.slice(0, 8), cold: false,
       entities: entities({ tracks: picks, albums: [...fresh, ...L.albumIds.slice(0, 4), ...albumsOf(picks)], artists: L.artistIds.slice(0, 10) }),
     };
     // FIXTURE_FEED_SHAPE: every client's feed in that shape (themes:check of a state the plain feed doesn't show)
@@ -871,7 +874,11 @@ function mineSkins() {
 
 const BUILT_IN = ['lull', 'skydeck', 'starlight', 'petal', 'glasshouse'];
 function builtInThemes() {
-  return BUILT_IN.map((id) => ({ ...JSON.parse(readFileSync(join(WEB, 'designs', id, 'theme.json'), 'utf8')), builtIn: true }));
+  return BUILT_IN.map((id) => ({ ...manifest(JSON.parse(readFileSync(join(WEB, 'designs', id, 'theme.json'), 'utf8'))), builtIn: true, pack: false }));
+}
+/* a theme.json as the hub lists it: what it leaves out at its default (crates/themes package.rs, Manifest) */
+function manifest(m) {
+  return { author: '', extends: null, description: '', preview: false, slots: [], coverVariety: false, ...m };
 }
 
 /* FIXTURE_THEMES' packages as GET /api/themes lists the hub's: each manifest with the slots its files have, its rev and
@@ -888,7 +895,7 @@ function themeItem(id) {
     const m = JSON.parse(readFileSync(join(dir, 'theme.json'), 'utf8'));
     const slots = existsSync(join(dir, 'slots')) ? readdirSync(join(dir, 'slots')).filter((f) => f.endsWith('.html')).map((f) => f.slice(0, -5)) : [];
     const rev = themeRev(id), live = liveNames(dir, slots);
-    return { ...m, slots, ...(live.length ? { live } : {}), builtIn: false, rev, pictures: ['day', 'night'].filter((mode) => themePictures.has(`${id}/${rev}-${mode}`)) };
+    return { ...manifest(m), slots, ...(live.length ? { live } : {}), builtIn: false, pack: existsSync(join(dir, 'pack.json')), rev, pictures: ['day', 'night'].filter((mode) => themePictures.has(`${id}/${rev}-${mode}`)) };
   } catch { return null; }
 }
 /* the live model's values a theme names, as the hub lists them (crates/themes live.rs, ADR-0101 and its amendment of
@@ -1169,4 +1176,5 @@ const server = createServer(async (req, res) => {
   }
   return files(req, res, path);
 });
-server.listen(PORT, '127.0.0.1', () => console.log(`fixture hub on http://127.0.0.1:${PORT}`));
+// port 0: any free port, the one it took printed
+server.listen(PORT, '127.0.0.1', () => console.log(`fixture hub on http://127.0.0.1:${server.address().port}`));
