@@ -9,7 +9,7 @@
 // docs/context/quality.md#ui-gates.
 
 import { expect, test } from '@playwright/test';
-import { designs, ids, loopRate, openScreen, themes } from './lib.mjs';
+import { arrived, designs, ids, loopRate, openScreen, settle, themes } from './lib.mjs';
 
 // lull's own parts that show something happening, whose loops keep going while the page holds still (components.css:
 // they leave animation-play-state out). Any other loop shows progress when it says so, as lull reads it (app.js named()):
@@ -43,7 +43,8 @@ for (const design of designs) {
       await page.waitForFunction(() => App.player.state.playing, null, { timeout: 10_000 });
       for (const route of ['/home', '/now']) {
         await page.evaluate((r) => { location.hash = r; }, route);
-        await page.waitForTimeout(1200);
+        await settle(page);
+        await arrived(page);
         const now = await loops(page);
         expect(named(now.filter((l) => l.perSecond > 30.5)), `loops on ${route} that change more than 30 times a second`).toEqual([]);
         await page.evaluate(() => App.still('gate', true));
@@ -66,7 +67,7 @@ test('a theme\'s loops that name a rate (--loop-fps) are stepped to it and held 
     .gate-bloom { position: fixed; left: 20px; top: 20px; width: 12px; height: 12px; background: pink; animation: gate-bloom 2.5s ease-in-out infinite alternate; --loop-fps: 12; }
     .gate-bloom--progress { left: 40px; --loop-holds: no; }` });
   await page.evaluate(() => { for (const c of ['gate-bloom', 'gate-bloom gate-bloom--progress']) { const d = document.createElement('i'); d.className = c; document.body.appendChild(d); } });
-  await page.waitForTimeout(800);
+  await page.waitForFunction(() => document.getAnimations().filter((a) => a.animationName === 'gate-bloom' && !a.pending).length === 2);
   const theirs = async () => (await loops(page)).filter((l) => /^gate-bloom/.test(l.name));
   let now = await theirs();
   expect(now.map((l) => Math.round(l.perSecond)), 'the theme\'s loops change 12 times a second, as they name').toEqual([12, 12]);

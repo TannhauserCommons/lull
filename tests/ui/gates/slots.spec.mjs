@@ -10,7 +10,7 @@ import { expect, test } from '@playwright/test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { designs, ids, openScreen, ownHub, settle } from './lib.mjs';
+import { designs, ids, openScreen, ownHub, pageTimers, settle } from './lib.mjs';
 
 const MANIFEST = { id: 'slotted', name: 'Slotted', api: 1, extends: 'lull', shell: 'rail', swatches: ['#141516', '#d6d3c9', '#ffa53d', '#ffb24a'], modes: ['day', 'night'] };
 const CSS = `#pbar > [data-slot="after.playerbar"] { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
@@ -579,7 +579,7 @@ test('whatever draws a part with the player\'s hooks paints it by the end of the
   async function step(name, act) {
     const n = await page.evaluate((name) => { window.__step = name; return window.__drawn; }, name);
     await act();
-    await page.waitForTimeout(800);                      // the slide's swap comes 120 ms later; the screens settle
+    await pageTimers(page, 800);                         // the slide's swap comes 120 ms later by the page's clock; the screens settle
     drawn[name] = await page.evaluate((n) => window.__drawn - n, n);
   }
   await step('Now Playing drawn', async () => {

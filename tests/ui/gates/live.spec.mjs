@@ -94,7 +94,7 @@ test('the minute\'s edge restyles only the hosts and the words, and forces no la
   await quiet(browser, page);
   const s = await traced(browser, page, async () => {
     await page.evaluate(() => { console.timeStamp('gate-start'); Live.feed({ 'clock.minute': 7, 'clock.hour': 3 }); });
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(300);   // the window the trace counts: the publish and the frames after it
     await page.evaluate(() => console.timeStamp('gate-end'));
   });
   expect(await page.locator('.ck b').nth(1).textContent()).toBe('07');
@@ -135,7 +135,7 @@ for (const [design, what] of [['songful', 'the song\'s place and its seconds'], 
   await page.waitForFunction(() => App.player.state.playing);
   await page.evaluate(() => { location.hash = '#/home'; });
   await settle(page);
-  const s = await traced(browser, page, () => page.waitForTimeout(3000));
+  const s = await traced(browser, page, () => page.waitForTimeout(3000));   // the window the trace counts
   expect(s.restyled[0] ?? 0, 'most elements restyled in one pass while playing').toBeLessThanOrEqual(B.tickRestyleElements);
   expect(s.forcedLayouts, 'layouts forced while playing').toBe(0);
   await ctx.close();

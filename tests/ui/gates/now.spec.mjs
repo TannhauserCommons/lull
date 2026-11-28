@@ -6,7 +6,7 @@
 
 import { expect, test } from '@playwright/test';
 import { chromeNow } from '../checks.mjs';
-import { designs, ids, openScreen } from './lib.mjs';
+import { designs, ids, openScreen, pageTimers } from './lib.mjs';
 
 const sizes = {
   wide: { viewport: { width: 1920, height: 1080 } },
@@ -225,7 +225,7 @@ test.describe('the reason a song stopped, cut off in the mini player', () => {
     await page.evaluate(() => { const el = document.getElementById('mini-sub');
       for (const e of [new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }), new MouseEvent('mouseover', { bubbles: true }), new MouseEvent('click', { bubbles: true, cancelable: true })]) el.dispatchEvent(e);
       document.getElementById('app').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); });
-    await page.waitForTimeout(700); expect(await tipText(page), 'the tap\'s tip, still shown after the hover delay').toBe(text);
+    await pageTimers(page, 700); expect(await tipText(page), 'the tap\'s tip, still shown after the hover delay').toBe(text);
     expect(await page.evaluate(() => location.hash)).not.toContain('/now');
     await page.tap('#mini-title'); await expect.poll(() => page.evaluate(() => location.hash)).toContain('/now');
   });

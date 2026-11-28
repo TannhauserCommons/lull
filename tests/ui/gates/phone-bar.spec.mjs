@@ -7,7 +7,7 @@
 // a song, and a drag along the line seeks without skipping. docs/context/quality.md#ui-gates.
 
 import { expect, test } from '@playwright/test';
-import { designs, ids, openScreen } from './lib.mjs';
+import { arrived, designs, ids, openScreen } from './lib.mjs';
 
 const widths = [360, 390];
 
@@ -25,7 +25,7 @@ async function playOnBar(page, design, width) {
   await page.waitForFunction(() => App.player.current() && App.player.state.playing && App.player.duration() > 0);
   await page.evaluate(() => App.player.pause());
   await page.waitForSelector('#mini [data-act="next"]', { state: 'visible' });
-  await page.waitForTimeout(300);
+  await arrived(page);
   return queue;
 }
 

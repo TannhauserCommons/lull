@@ -7,7 +7,7 @@
 
 import { expect, test } from '@playwright/test';
 import { designs, ids } from './lib.mjs';
-import { go, insets, isWebkit, open, withSong } from './mobile.mjs';
+import { arrived, go, insets, isWebkit, open, withSong } from './mobile.mjs';
 
 /* what reaches past the window's right edge (W, the screen's width: a phone widens innerWidth to a page wider than the
    screen), outside anything that scrolls or clips sideways */
@@ -94,7 +94,7 @@ test.describe('the notch and the home indicator', () => {
       }
       await go(page, '/home');
       await page.locator('.tabbar [data-act="more-sheet"]').tap();
-      await page.waitForTimeout(600);
+      await arrived(page);   // the sheet done sliding up
       expect(await page.evaluate(underInsets), 'the More sheet').toEqual([]);
     });
   }
@@ -123,7 +123,8 @@ test.describe('a phone held sideways', () => {
         await go(page, `/album/${ids.album}`);
       }
       await page.evaluate(() => { App.toast('Added to the queue'); App.toast('Saved to your library'); });
-      await page.waitForTimeout(600);
+      await expect(page.locator('#toasts > *').first()).toBeVisible();
+      await arrived(page);   // the notes done moving in
       const out = await page.evaluate(() => [...document.querySelectorAll('#toasts > *')].map((t) => t.getBoundingClientRect())
         .filter((r) => r.top < -1 || r.bottom > innerHeight + 1).map((r) => `${Math.round(r.top)}..${Math.round(r.bottom)}`));
       expect(out, 'notes cut off by the window').toEqual([]);

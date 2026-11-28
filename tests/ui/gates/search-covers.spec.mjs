@@ -4,7 +4,7 @@
 // (2026-11-12, "odetari blackhole"), every Soulseek row showed lull's placeholder beside the top result's real cover.
 
 import { expect, test } from '@playwright/test';
-import { openScreen } from './lib.mjs';
+import { hearServerEvents, openScreen } from './lib.mjs';
 
 test('song rows already drawn take their album cover when the hub learns it', async ({ page, request }) => {
   const headers = { 'x-fixture-client': `${test.info().testId}:${test.info().repeatEachIndex}` };
@@ -19,6 +19,7 @@ test('song rows already drawn take their album cover when the hub learns it', as
 
   const q = `${song.title} ${song.artist}`.toLowerCase();   // the fixture matches songs by "title artist"
   const asked = page.waitForResponse((r) => r.url().includes('/api/soulseek/search'));
+  await page.addInitScript(hearServerEvents);
   await openScreen(page, `/search?q=${encodeURIComponent(q)}`);
   const songs = page.locator('#view .disc-songs li[data-track-id]');
   await expect(songs.first()).toBeAttached();
@@ -27,7 +28,8 @@ test('song rows already drawn take their album cover when the hub learns it', as
   const bare = { ...song, id: 't-' + 'b'.repeat(16), title: `${song.title} (peer copy)`, album: '', albumId: 'al-' + 'b'.repeat(16) };
   const searchId = 'srch-' + q.replace(/\s+/g, ' ').replace(/\W+/g, '-');
   await asked;
-  await page.waitForTimeout(300);   // the fixture's own (empty) answer has gone out
+  // the fixture's own (empty) answer, handled: ours comes after it
+  await page.waitForFunction((id) => window.__served.some((e) => e.topic === 'search.results' && JSON.parse(e.data).searchId === id), searchId);
   await emit('search.results', {
     searchId, query: q, files: 3, peers: 3, done: true, onlySoulseek: [bare.id],
     results: [{ kind: 'track', trackId: bare.id, sources: 3, best: { format: 'MP3 320' } }],

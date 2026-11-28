@@ -1,7 +1,7 @@
 // Shared by the mobile gates (mobile-*.spec.mjs, projects `mobile` and `mobile-webkit`): a screen opened as on a phone,
 // a song in the player, moving between screens as a tap does, and the safe-area insets of a phone with a notch.
 
-import { ids, openScreen, settle } from './lib.mjs';
+import { arrived, ids, openScreen, settle } from './lib.mjs';
 
 export const isWebkit = (browser) => browser.browserType().name() === 'webkit';
 
@@ -32,9 +32,9 @@ export async function withSong(page, design, route = `/album/${ids.album}`) {
 export async function go(page, route) {
   await page.evaluate((r) => { location.hash = '#' + r; }, route);
   await settle(page);
-  await page.waitForFunction(() => !document.querySelector('.is-power-on')
-    && document.getAnimations().every((a) => !Number.isFinite(a.effect?.getComputedTiming().endTime) || (a.playState !== 'running' && !a.pending)), null, { polling: 'raf' });
+  await arrived(page);
 }
+export { arrived };
 
 /* Chromium takes a notch's insets from the DevTools protocol; WebKit can't be given any from a test */
 export async function insets(page, sides) {

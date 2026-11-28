@@ -80,7 +80,7 @@ test('the lock screen offers the previous and next song, and no 10-second skips'
 test('a song keeps sounding with the page out of sight', async ({ page }) => {
   await playSong(page);
   await page.evaluate(() => window.__show(false));
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(1500);   // what is checked is that it keeps sounding: a while out of sight for it to stop in
   const away = await state(page);
   expect(away.context, 'the decks\' context, out of sight').toBe('running');
   expect(away.playing).toBe(true);
@@ -97,7 +97,7 @@ test('a context the system stops while a song plays starts again; a paused song 
   await page.evaluate(() => App.player.pause());
   await page.waitForFunction(() => !App.player.state.playing);
   await page.evaluate(() => window.__system.interrupt(window.__player));
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(800);   // what is checked is that nothing wakes it: a while for it to
   expect((await state(page)).context, 'nothing plays: nothing to wake for').toBe('suspended');
 });
 
@@ -116,6 +116,6 @@ test('a song whose sound stopped for good goes on without Web Audio, without a r
   expect(now.context, 'the stopped context was let go').toBe('closed');
   await page.evaluate(() => window.__show(false));
   await page.evaluate(() => window.__show(true));
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(500);   // what is checked is that no error comes: a while for one to
   expect(errors).toEqual([]);
 });

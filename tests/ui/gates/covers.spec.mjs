@@ -3,7 +3,7 @@
 // `art.ready` names it, never on a timer. On the fixture hub, so every count is exact.
 
 import { expect, test } from '@playwright/test';
-import { ids, openScreen, ownHub, throttle } from './lib.mjs';
+import { ids, openScreen, ownHub, pageTimers, throttle } from './lib.mjs';
 
 /** This test's own scope on the fixture hub (server.mjs, X-Fixture-Client): its page's cover requests, pending covers
  *  and art.ready events, apart from the gates running beside it on the same hub. */
@@ -52,7 +52,7 @@ test('a cover the hub is still fetching is asked once, then again when art.ready
       // must not ask again (a picture parsed into the live document, not the template's, fetched each render)
       await throttle(page, 6);
       await openScreen(page, `/album/${ids.album}`);
-      await page.waitForTimeout(6000);   // longer than the 5 s the page used to retry after
+      await pageTimers(page, 6000);   // what is checked is that no retry comes: longer than the 5 s the page used to retry after, on its own clock
     });
     // the header and every row show the same picture: one request per size drawn, answered "not yet", no retry
     expect(mine(first).length, 'sizes asked').toBeGreaterThan(0);

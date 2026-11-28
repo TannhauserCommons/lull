@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import { ownHub } from './lib.mjs';
+import { ownHub, pageTimers } from './lib.mjs';
 import { fireView } from './player-windows.mjs';
 
 const bridge = fileURLToPath(new URL('./desktop-bridge.js', import.meta.url));
@@ -172,7 +172,7 @@ test('the unreachable page shows how the wrapper reconnects, and keeps no timer 
 
   // the window hidden (minimised, or in the tray), past the countdown: the page asks nothing; the wrapper tries
   await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: true, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
-  await page.waitForTimeout(3500);
+  await pageTimers(page, 3500);   // what is checked is that nothing is asked: past the 2 s countdown on the page's own clock
   expect(await page.evaluate(() => window.__bridge.calls.window_action || 0), 'no retry from the page itself').toBe(0);
 
   // the wrapper tries, the probe runs out of time, it says so and waits longer

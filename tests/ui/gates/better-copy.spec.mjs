@@ -10,7 +10,7 @@
 // docs/context/quality.md#ui-gates.
 
 import { expect, test } from '@playwright/test';
-import { designs, fakeOutput, openScreen } from './lib.mjs';
+import { designs, emitted, fakeOutput, hearServerEvents, openScreen, pageTimers } from './lib.mjs';
 
 const fixtureClient = () => `${test.info().testId}:${test.info().repeatEachIndex}`;
 
@@ -23,11 +23,13 @@ const youtube = (id, job, size) => ({
 async function setUp(page, request, n) {
   await page.context().setExtraHTTPHeaders({ 'x-fixture-client': fixtureClient() });
   await page.addInitScript(fakeOutput);
+  await page.addInitScript(hearServerEvents);
   await openScreen(page, '/home', { clock: false });
   const ids = await page.evaluate((n) => App.data.api('/__fixture/unsaved-songs?n=' + n).then((r) => { App.data.absorb(r.entities); return r.items; }), n);
   await page.evaluate((list) => App.player.playList(list, 0), ids);
   await page.waitForFunction(() => App.player.state.playing && App.player.state.pos > 0.2);
-  const emit = (data) => request.post('/__fixture/emit', { headers: { 'x-fixture-client': fixtureClient() }, data: { topic: 'stream', data } });
+  /* a `stream` event, once the page has handled it */
+  const emit = (data) => emitted(page, request, 'stream', data, { 'x-fixture-client': fixtureClient() });
   return { ids, emit };
 }
 
@@ -54,12 +56,12 @@ for (const design of designs) {
     await expect.poll(() => surfaces(page)).toEqual({ chip: 'MP3 320', better: true, tip: expect.stringMatching(/^Switched to this better copy from YouTube · Opus 160 at \d+:\d\d$/),
       marked: 'true', peer: 'quietcanal', copy: 'MP3 320' });
     // nothing more comes from the hub (the copy had all arrived): the chips stay right, and no toast was raised
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1500);   // what is checked is that they stay so: a while for something to change them
     expect((await surfaces(page)).chip).toBe('MP3 320');
     expect(await page.locator('.toast').count(), 'a quiet mark, no toast').toBe(0);
     // another fetch of the song (another device's, say) is not this play's
     await emit({ ...youtube(ids[0], 'someone-elses', 4000000), peer: 'stranger', format: 'MP3 128', upgrade: null });
-    await page.waitForTimeout(500);
+    await pageTimers(page, 500);   // what is checked is that it is not taken for this play's: a while for it to be
     expect((await surfaces(page)).peer).toBe('quietcanal');
     // Source details and Now Playing name it too
     await page.evaluate(() => App.hooks.sourceDetails());
@@ -81,7 +83,6 @@ test('the next song\'s better copy survives a gapless hand-over', async ({ page,
   // the next song's stream opens before it plays (gapless): the hub says what it is then, and nothing more after
   await page.waitForFunction((id) => App.player.state.queue.findIndex((e) => e.trackId === id) === 1, ids[1]);
   await emit(youtube(ids[1], 'yt-next', 3000000));
-  await page.waitForTimeout(300);
   await page.evaluate(() => window.__out.end());
   await page.waitForFunction((id) => App.player.current().id === id, ids[1]);
   await expect.poll(() => page.evaluate(() => window.__out.switches.length), { timeout: 15_000 }).toBe(1);

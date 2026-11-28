@@ -22,11 +22,11 @@ for (const design of designs) {
     await page.evaluate(() => App.openSheet({ title: 'Source details', body: '<p>Tidal River</p>', foot: '<button class="btn btn--primary">Save</button>' }));
     await page.waitForFunction(() => document.activeElement && document.activeElement.matches('[data-close]'));
     for (const wait of [0, 100, 400, 800]) {                // while it slides up, and once it has arrived
-      await page.waitForTimeout(wait);
+      await page.waitForTimeout(wait);                      // the moments of the slide are what is looked at
       for (const tip of await page.evaluate(shownTips)) expect(tip.gap, `"${tip.text}" is ${tip.gap}px from Close at ${wait} ms`).toBeLessThanOrEqual(12);
     }
-    const sheet = await page.locator('.sheet').boundingBox();
-    expect(sheet.y + sheet.height, 'the sheet has arrived at the bottom').toBeGreaterThan(843);
+    await expect.poll(async () => { const sheet = await page.locator('.sheet').boundingBox(); return sheet.y + sheet.height; },
+      { message: 'the sheet has arrived at the bottom' }).toBeGreaterThan(843);
   });
 
   // a key can reach Close while the sheet is still on the way: that tip is asked for, and follows the button
@@ -37,7 +37,7 @@ for (const design of designs) {
     await page.keyboard.press('Tab');
     await page.waitForFunction(() => document.activeElement && document.activeElement.matches('.sheet [data-close]'));
     for (const wait of [0, 100, 400, 800]) {
-      await page.waitForTimeout(wait);
+      await page.waitForTimeout(wait);                      // the moments of the slide are what is looked at
       for (const tip of await page.evaluate(shownTips)) expect(tip.gap, `"${tip.text}" is ${tip.gap}px from Close at ${wait} ms`).toBeLessThanOrEqual(12);
     }
     expect((await page.evaluate(shownTips)).length, 'the tip is up once the sheet has arrived, in a design that shows tips on a phone').toBe(design === 'lull' ? 0 : 1);

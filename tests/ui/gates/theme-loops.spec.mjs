@@ -124,7 +124,7 @@ test('Theme Studio names a loop that redraws at every step, one inside glass, an
   // the speck moved up, clear of the bar: measured by its own box, not by the page it belongs to
   await page.locator('[data-studio="css"]').fill(GLASSY.replace('bottom: 24px', 'bottom: 200px'));
   await expect(list).not.toContainText('drift', { timeout: 10000 });
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(2500);   // what is checked is that it stays clear: a while for the look to find it again
   await expect(list).not.toContainText('drift');
 });
 
@@ -149,7 +149,7 @@ for (const design of DESIGNS) {
     const list = page.locator('[data-studio-loops]');
     for (const route of ['home', 'now']) {
       await page.locator('[data-studio="route"]').selectOption(route);
-      await page.waitForTimeout(2500);                        // the previews' loops started and looked at
+      await page.waitForTimeout(2500);                        // the previews' loops started and looked at: a fault found reads as text, and a clean look reads as OK from the start
       await expect(list).toHaveText(OK);
     }
     await expect(page.locator('[data-studio-words]')).toHaveText(WORDS_OK);

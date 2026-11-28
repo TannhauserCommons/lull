@@ -5,7 +5,7 @@
 // docs/context/quality.md#ui-gates.
 
 import { expect, test } from '@playwright/test';
-import { ids } from './lib.mjs';
+import { ids, pageTimers } from './lib.mjs';
 import { open } from './mobile.mjs';
 
 test('the manifest installs lull as an app of its own', async ({ page }) => {
@@ -63,7 +63,7 @@ test('the browser\'s bar takes the theme\'s colour, day and night', async ({ pag
   const day = await color();
   // a flip the listener watches (the page loaded a while ago and is in view) fades night in (Designs.applyTheme), so the
   // page's colour the moment night is asked for is still day's: CI's WebKit got there on its own (run 43213407325)
-  await page.waitForTimeout(1200);
+  await pageTimers(page, 1200);   // the page loaded a while ago by its own clock
   await page.evaluate(() => App.setPref('theme', 'night'));
   expect(await page.evaluate(() => document.documentElement.hasAttribute('data-theme-fade')), 'night fades in').toBe(true);
   await page.waitForFunction(() => !document.documentElement.hasAttribute('data-theme-fade'));
@@ -96,7 +96,7 @@ test.describe('with its service worker', () => {
     await open(page, '/home');
     await page.evaluate(() => navigator.serviceWorker.ready);
     await page.waitForFunction(() => navigator.serviceWorker.controller);
-    await page.waitForTimeout(500);
+    await page.waitForFunction(() => App.server.version);   // the health answer read: the one place an update is offered (app.js loadHealth)
     expect(await page.evaluate(() => window.__pwa)).not.toContain('update');
   });
 });
