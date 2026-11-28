@@ -148,6 +148,39 @@ test('a song that stopped stays stopped when its job\'s opening event comes late
   expect(await page.evaluate(() => window.seenStatus)).not.toContain('finding');
 });
 
+// A design's hero (the nowHero slot) reads the song and the player as it is drawn: Starlight's facts row is hidden while
+// its data-track is empty, and its failure line says the reason. Drawn again as they change, with Now Playing open: a
+// song started there shows its facts, the next song's are its own, and a failure's reason is that song's, not gone stale
+test.describe('Starlight\'s hero, with Now Playing open', () => {
+  test.use(sizes.laptop);
+  test('follows the song and its failure', async ({ page }) => {
+    const { albums, failingAlbum } = await import('../fixture-hub/library.mjs');
+    await page.context().setExtraHTTPHeaders({ 'x-fixture-client': fixtureClient() });
+    await openScreen(page, `/album/${ids.album}`, { design: 'starlight', clock: false });   // its songs known to the page
+    await openScreen(page, `/album/${failingAlbum}`, { design: 'starlight', clock: false });
+    await page.evaluate(() => App.go('/now'));
+    const hero = () => page.evaluate(() => ({ track: document.querySelector('#view .sl-hero__facts').dataset.track,
+      error: document.querySelector('#view .sl-hero__err').textContent, playing: App.player.current()?.id ?? '' }));
+    await expect.poll(hero).toEqual({ track: '', error: 'Couldn\'t play this song', playing: '' });
+    const play = (list) => page.evaluate((list) => App.player.playList(list, 0), list);
+    await play(albums[ids.album].trackIds);
+    await page.waitForFunction(() => App.player.state.playing);
+    const first = await hero();
+    expect(first.track, 'a song started on Now Playing: its facts').toBe(first.playing);
+    await page.evaluate(() => App.player.next());
+    await page.waitForFunction((was) => App.player.current().id !== was, first.playing);
+    const next = await hero();
+    expect(next.track, 'the next song\'s facts').toBe(next.playing);
+    await play(albums[failingAlbum].trackIds.slice(0, 1));
+    await page.waitForFunction(() => document.querySelector('#pbar').dataset.status === 'failed', null, { timeout: 15_000 });
+    const reason = await page.evaluate(() => document.querySelector('#pbar').dataset.statusText);
+    expect((await hero()).error, 'the failure line says why').toBe(reason);
+    await play(albums[ids.album].trackIds);
+    await page.waitForFunction(() => App.player.state.playing);
+    expect((await hero()).error, 'a song that plays leaves no reason behind').toBe('Couldn\'t play this song');
+  });
+});
+
 test('a copy this browser can\'t decode shows what the hub recorded for its job', async ({ page }) => {
   const { brokenAlbum } = await import('../fixture-hub/library.mjs');
   const text = await playAlbum(page, brokenAlbum);

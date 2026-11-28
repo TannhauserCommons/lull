@@ -181,13 +181,55 @@
      parts.screen(), parts.playButton(size), parts.likeButton(size), parts.wave(bars), parts.device() / parts.compact().
      parts.facts() = source badge + quality chip + peer fact, parts.state() = the status word ("buffering", "peer stalled").
      Elements carrying data-now="screen|c-screen|c-art|a|b|ca|cb|led|head|state|facts|repeat|osd|page" stay live (see section 7). */
+  var themedHero = {};                     // variant -> true while a theme's template draws it (not lull's own device)
   function hero(variant) {
     var t = cur();
     var ctx = { variant: variant, track: t, player: ps, parts: {
       screen: function () { return slide(cur()); }, playButton: playBtn, likeButton: likeBtn,
       wave: function (bars) { return ui.wave(t ? t.id : 'idle', bars); }, device: deviceFull, compact: deviceCompact,
       facts: factsLine, state: stateText } };
-    return raw(String(App.slot('nowHero', ctx, function (c) { return c.variant === 'compact' ? deviceCompact() : deviceFull(); })));
+    themedHero[variant] = true;
+    return raw(String(App.slot('nowHero', ctx, function (c) {
+      themedHero[variant] = false;
+      return c.variant === 'compact' ? deviceCompact() : deviceFull();
+    })));
+  }
+  function keysLine() {
+    return html`<p class="now__keys"><span class="now__kg">${ui.keycap('P')}${ui.keycap('N')} skip</span><span class="now__kg">${ui.keycap('Up')}${ui.keycap('Down')} volume</span><span class="now__kg">${ui.keycap('Space')} play</span></p>`;
+  }
+  /* A theme's hero reads fields of the song and the player as it is drawn ({{trackId}}, {{error}}, {{album}}): it is
+     drawn again when what it reads changes, in place, so what didn't change (its loops, its pictures) goes on. What lull
+     keeps live by its own rules stays theirs: the data-now hooks (the screen slides to the next song), the covers, the
+     catalogue's parts and the playing-from line carry what they show into the new markup, and the entrance powerOn began
+     keeps running. lull's own device reads no field: its hooks are all it needs */
+  var LIVE = '[data-now], [data-now-cover], lull-part, .now-head__from';
+  var heroRead = {};                       // variant -> the hero's markup as last drawn, its live pieces left out
+  function outermost(list) { return list.filter(function (el) { return !list.some(function (o) { return o !== el && o.contains(el); }); }); }
+  function heroMarkup(variant) {
+    var tpl = document.createElement('template');
+    tpl.innerHTML = String(hero(variant)) + (variant === 'full' ? String(keysLine()) : '');
+    var live = outermost([].slice.call(tpl.content.querySelectorAll(LIVE))), kept = live.map(function (el) { return el.innerHTML; });
+    live.forEach(function (el) { el.innerHTML = ''; });
+    var read = tpl.innerHTML;
+    live.forEach(function (el, i) { el.innerHTML = kept[i]; });
+    return { tpl: tpl, live: live, read: read };
+  }
+  function noteHeroes() { ['full', 'compact'].forEach(function (v) { heroRead[v] = themedHero[v] ? heroMarkup(v).read : null; }); }
+  function redrawHeroes() {
+    [['full', '.now__dev'], ['compact', '.now__devc']].forEach(function (h) {
+      var host = $('#view ' + h[1]);
+      if (!host || !heroRead[h[0]]) return;
+      var next = heroMarkup(h[0]);
+      if (next.read === heroRead[h[0]]) return;
+      heroRead[h[0]] = next.read;
+      var shown = outermost($$(LIVE, host));
+      if (shown.length === next.live.length) next.live.forEach(function (el, i) { el.innerHTML = shown[i].innerHTML; });
+      var lifts = $$('.now-dev, .now-devc', host), fresh = next.tpl.content.querySelectorAll('.now-dev, .now-devc');
+      lifts.forEach(function (d, i) {
+        ['is-power-on', 'now-fade'].forEach(function (c) { if (fresh[i] && d.classList.contains(c)) fresh[i].classList.add(c); });
+      });
+      swap(host, next.tpl.innerHTML);
+    });
   }
   /* compact device: one bezel row (phone Lyrics / Queue / Details tabs, short landscape) */
   function compactSlide(t) {
@@ -892,9 +934,7 @@
       <div class="now__grid" id="now-panel" role="region" aria-label="Now Playing">
         <div class="now__intro"><header class="now-head" data-sec="art" data-now="head-info">${infoHead()}</header>
           <div class="now__acts" data-sec="art" data-now="acts">${actionRow()}</div></div>
-        <div class="now__dev">${hero('full')}
-          <p class="now__keys"><span class="now__kg">${ui.keycap('P')}${ui.keycap('N')} skip</span><span class="now__kg">${ui.keycap('Up')}${ui.keycap('Down')} volume</span><span class="now__kg">${ui.keycap('Space')} play</span></p>
-        </div>
+        <div class="now__dev">${hero('full')}${keysLine()}</div>
         <div class="now__devc">${hero('compact')}</div>
         <div class="now__seg">${phoneTabs()}</div>
         <div class="now__side"><section class="card now-srccard" data-sec="details" data-now="src" aria-label="Source">${sourceCard()}</section>
@@ -919,6 +959,7 @@
   }
   function mount(ctx) {
     var root = $('.now', ctx.el); if (!root) return;
+    noteHeroes();
     updateTextHooks();
     if (!ctx.refresh) powerOn(root);             // once per visit, not on every refresh of the page
     lastRender = Date.now();
@@ -933,7 +974,7 @@
       App.on('player', onPlayer),
       App.on('view', function () { if (onRoute()) updateControls(); }),
       App.on('save', function (d) { if (d.id === P.currentId()) { updateSaveBits(); } }),
-      App.on('like', function () { var t = cur(); $$('[data-now="b-label"]').forEach(function (el) { App.setText(el, t && App.isLiked(t.id) ? 'liked' : 'like'); }); }),
+      App.on('like', function () { redrawHeroes(); var t = cur(); $$('[data-now="b-label"]').forEach(function (el) { App.setText(el, t && App.isLiked(t.id) ? 'liked' : 'like'); }); }),
       App.on('follow', function () { var a = $('[data-now="acts"]'); if (a) swap(a, actionRow()); })
     ];
     ctx.onCleanup(function () { offs.forEach(function (off) { off(); }); });
@@ -969,6 +1010,7 @@
   function onPlayer(kind) {
     if (!onRoute()) return;
     var t = cur();
+    if (kind !== 'seek' && kind !== 'volume') redrawHeroes();   // first: the hooks below move on from what they show
     if (kind === 'track' || kind === 'queue') updateMeta();
     if (kind === 'track') updateTextHooks();
     if (kind === 'track') {
