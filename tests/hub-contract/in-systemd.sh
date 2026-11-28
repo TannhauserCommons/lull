@@ -24,6 +24,7 @@ inside() { docker exec "$box" sh -c "$1"; }
 until inside 'systemctl is-system-running 2>/dev/null | grep -Eq "running|degraded"'; do sleep 1; done
 docker cp "$package" "$box:/root/$(basename "$package")"
 docker cp "$here/run.mjs" "$box:/root/run.mjs"
+docker cp "$here/shapes.mjs" "$box:/root/shapes.mjs"
 
 echo "== install $(basename "$package") on $from"
 inside "DEBIAN_FRONTEND=noninteractive $install /root/$(basename "$package")"

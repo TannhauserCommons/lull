@@ -5,7 +5,8 @@
 # Each key is the paths its check reads, as globs, plus what counts as "everything changed" (`.github/`) and what runs
 # the check here (mise.toml and mise.lock: the tasks and the tool versions every job uses; its own scripts). `ui`
 # is also what `image` builds for: check.yml's `image` job runs for either key. `ui` tests that image (the visual
-# matrix, and the hub contract on every route the hub serves), so it holds every path of `image` too.
+# matrix, and the hub contract on every route the hub serves: a change to the contract's shapes checks the image
+# again), so it holds every path of `image` too.
 image:
   - 'crates/**'
   - 'web/**'
@@ -34,6 +35,7 @@ ui:
   - 'scripts/web-dist/**'
   - 'scripts/image-save.sh'
   - 'tests/ui/**'
+  - 'tests/hub-contract/**'
   - 'scripts/playwright-flakes.mjs'
   - '.github/**'
   - 'mise.toml'

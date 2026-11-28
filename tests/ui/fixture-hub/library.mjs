@@ -119,6 +119,7 @@ export const playlists = [
   { name: 'Late night', desc: '', ids: trackIds.filter((_, i) => i % 23 === 5).slice(0, 25) },
 ].map((p, i) => ({
   id: 'pl-' + (i + 1), name: p.name, desc: p.desc, created: NOW - (40 - i) * 86400, updated: NOW - i * 3600, cover: null,
+  sort: { key: 'custom', dir: 'asc' }, // in its own order, as a new playlist is on the hub
   items: p.ids.map((trackId, k) => ({ trackId, added: NOW - (40 - i) * 86400 + k * 60 })),
 }));
 

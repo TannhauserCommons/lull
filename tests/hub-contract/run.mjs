@@ -1,6 +1,8 @@
 // The hub contract (ADR-0090): what any installed hub must do, checked from outside against a running one, so
 // the Linux package's hub is held to the same test as the others. It touches nothing outside the hub: no
-// Soulseek account, no YouTube search, no network the hub would reach out to.
+// Soulseek account, no YouTube search, no network the hub would reach out to. The answers the UI reads are checked
+// against shapes.mjs, the definition the fixture hub the UI gates run against is held to as well
+// (tests/web/fixture-hub-contract.test.mjs); a like and a playlist it makes for that are taken back.
 //
 //   node tests/hub-contract/run.mjs <hub url> --pair <code> [--managed] [--youtube] [--mdns]
 // --pair    a pair code (`lull pair`): the contract pairs itself as an app, then unpairs at the end
@@ -8,6 +10,7 @@
 // --youtube the hub ships yt-dlp (the package and the image): it must run
 // --mdns    the hub answers _lull._tcp on this network
 import dgram from 'node:dgram';
+import { READS, check as shaped, libraryIds } from './shapes.mjs';
 
 const args = process.argv.slice(2);
 const base = args[0]?.replace(/\/$/, '');
@@ -93,27 +96,34 @@ await check('a pair code pairs an app', async () => {
   deviceId = json.device?.id ?? '';
 });
 
-const reads = [
-  '/api/settings',
-  '/api/config',
-  '/api/devices',
-  '/api/library/source',
-  '/api/playlists',
-  '/api/likes',
-  '/api/history',
-  '/api/stats',
-  '/api/transfers',
-  '/api/themes',
-  '/api/packs',
-  '/api/youtube',
-  '/api/lastfm',
-];
-for (const path of reads) {
-  await check(`${path} answers a paired app`, async () => {
-    const { status, json } = await call(path);
+// The answers the UI reads, in the shapes it reads them (shapes.mjs, which the fixture hub is held to as well). On a hub
+// with no likes or no playlists yet (a fresh one, as in CI), a like and a playlist of the library's first song give
+// those lists something to check, and are taken back after; a listener's own are never touched.
+const have = await libraryIds((path) => call(path));
+const none = async (path) => (await call(path)).json?.total === 0;
+const liked = have.track && (await none('/api/likes')) ? have.track : null;
+if (liked) await call(`/api/likes/${liked}`, { method: 'PUT' });
+const made = have.track && (await none('/api/playlists'))
+  ? (await call('/api/playlists', { method: 'POST', body: { name: 'hub contract', trackIds: [have.track] } })).json?.id
+  : null;
+const unseen = [];
+for (const read of READS) {
+  if (read.needs && !have[read.needs]) {
+    console.log(`skip  the ${read.needs} page: the library has no ${read.needs}`);
+    continue;
+  }
+  const path = read.path(have);
+  await check(`${path} answers${read.open ? '' : ' a paired app'} as the UI reads it`, async () => {
+    const { status, json } = await call(path, { auth: !read.open });
     expect(status === 200 && json !== null, `status ${status}`);
+    const { problems, empty } = shaped(json, read.shape, { closed: false });
+    expect(!problems.length, problems.join('; '));
+    if (empty.length) unseen.push(`${path} ${empty.join(' ')}`);
   });
 }
+if (liked) await call(`/api/likes/${liked}`, { method: 'DELETE' });
+if (made) await call(`/api/playlists/${made}`, { method: 'DELETE' });
+if (unseen.length) console.log(`\nempty on this hub, so not checked inside:\n  ${unseen.join('\n  ')}\n`);
 
 await check('a setting changes through /api/config and the parts restart with it', async () => {
   const changed = await call('/api/config', { method: 'PATCH', body: { LULL_PREFERRED_FORMATS: 'flac,opus' } });
