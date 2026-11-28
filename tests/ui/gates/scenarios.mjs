@@ -277,7 +277,16 @@ function whatRan(events, thread) {
     return `${d.nodeName || '?'} by ${f.functionName || 'function'} (${(f.url || '').split('/').pop()}:${f.lineNumber})`;
   });
   const elsewhere = events.filter((e) => e.name === 'Commit' && e.ph === 'X' && !on(e)).length;
-  const parts = [];
+  /* when the frames came, by quarter second, beside the frames the compositor drew, and what they cost: a loop the main
+     thread runs asks for a frame at every refresh, which a cheap frame keeps up with (about 120 in 2 s here, under the
+     gate's slowdown), so fewer frames each costing a lot (busy near 2000 ms) say the frames are dear, and a few cheap
+     ones say something asks for them at its own pace; a burst at one end says it began or ended inside the window */
+  const from = Math.min(...events.filter((e) => String(e.pid) === pid && e.ts > 0).map((e) => e.ts));
+  const quarters = (list) => list.reduce((q, e) => { q[Math.min(7, Math.floor((e.ts - from) / 250000))]++; return q; }, new Array(8).fill(0)).join(' ');
+  const commits = events.filter((e) => on(e) && e.name === 'Commit' && e.ph === 'X');
+  const draws = events.filter((e) => e.name === 'DrawFrame' && String(e.pid) === pid);
+  const busy = events.filter((e) => on(e) && e.name === 'RunTask' && e.ph === 'X').reduce((s, e) => s + e.dur, 0) / 1000;
+  const parts = [`frames by quarter second ${quarters(commits)}, drawn ${quarters(draws)}, main thread busy ${Math.round(busy)} ms`];
   if (Object.keys(began).length) parts.push('animations begun: ' + top(began, 6).join(', '));
   if (ended) parts.push(ended + ' ended');
   const off = offTheCompositor(events.filter((e) => String(e.pid) === pid));
@@ -286,7 +295,8 @@ function whatRan(events, thread) {
   if (Object.keys(invalid).length) parts.push('invalidated: ' + top(invalid, 6).join(', '));
   if (Object.keys(script).length) parts.push('ran: ' + top(script, 5).join(', '));
   if (elsewhere) parts.push(elsewhere + ' frames committed by another renderer');
-  return parts.join('; ') || 'no animation, invalidation or script in the trace';
+  if (parts.length === 1) parts.push('no animation, invalidation or script in the trace');
+  return parts.join('; ');
 }
 
 /* For the page, from its start: every change script makes to a loop's timing or play state (lull's align() moves the
@@ -324,7 +334,7 @@ function changedLoops(from) {
     + `; this window resized in it: ${resized.map((e) => e.size).join(', ') || 'never'}`;
 }
 
-export async function idle(browser, page, opts, route = '/home') {
+export async function idle(browser, page, opts, route = '/home', budget = Infinity) {
   // as a listener leaves it: the desktop app's bridge in (its windows are fed while they're open), a song loaded and
   // paused, the pointer off the page
   await page.addInitScript({ path: fileURLToPath(new URL('./desktop-bridge.js', import.meta.url)) });
@@ -367,6 +377,12 @@ export async function idle(browser, page, opts, route = '/home') {
   const s = await traced(browser, page, () => page.waitForTimeout(2000), { drawn: true, why: true });
   s.why = whatRan(s.events, s.thread) + '; ' + await page.evaluate(changedLoops, from);
   delete s.events;
+  /* too many: whether they go on, counted at once with nothing touched (the probes below, and S.whoDraws after them,
+     change the layers and the loops, and on every red so far the frames had stopped by then) */
+  if (s.frames > budget) {
+    const next = await traced(browser, page, () => page.waitForTimeout(1000), { drawn: true });
+    s.why += `; the next second, nothing touched: ${next.frames} frames, ${next.drawn} drawn, main thread busy ${Math.round(next.busyMs)} ms`;
+  }
   s.perSecondMs = s.busyMs / 2;
   s.offCompositor = offCompositor;
   // what was moving, to name the cause when frames show up at rest
