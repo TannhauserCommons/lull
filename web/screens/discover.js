@@ -155,14 +155,27 @@
      shelves. Default: nothing. ctx = { track, player, queue: next tracks (up to 8), parts: { cover(t, size),
      playButton(size), likeButton(t), trackList(tracks, opts), formatLine(t) } }. Rendered as .disc-lead[data-region="lead"]. */
   function homeLead() {
+    var out = leadMarkup();
+    return out ? html`<div class="disc-lead" data-region="lead">${raw(out)}</div>` : '';
+  }
+  function leadMarkup() {
     var t = P.current();
-    var out = String(App.slot('homeLead', { track: t, player: P.state, queue: P.upNext(8), parts: {
+    return String(App.slot('homeLead', { track: t, player: P.state, queue: P.upNext(8), parts: {
       cover: function (x, size) { return ui.cover(x, size || 64); },
       playButton: ui.playButton,
       likeButton: function (x) { return ui.likeButton((x || t || {}).id || ''); },
       trackList: function (tracks, opts) { return ui.trackList(tracks, Object.assign({ dense: true }, opts || {})); },
       formatLine: App.fmt.formatLine } }, function () { return ''; }));
-    return out ? html`<div class="disc-lead" data-region="lead">${raw(out)}</div>` : '';
+  }
+  /* the lead is drawn from the player (the song, its state, up next), so it is drawn again as they change: a song
+     started on Home shows in it at once. In place; when the lead comes or goes (Glasshouse draws none with nothing
+     playing), Home is drawn again around it. The clock's moves (seek, volume) change nothing the slot reads */
+  function playerChanged(kind) {
+    var feed = H.building ? null : M.peek(FEED);
+    if (kind === 'seek' || kind === 'volume' || !feed || isCold(feed)) return;
+    var out = leadMarkup(), el = $('#view [data-region="lead"]');
+    if (!out !== !el) App.refresh();
+    else if (el) paint('lead', raw(out));
   }
 
   /* shelves: key in the feed (and in its `errors`) -> region and body, so one shelf can be repainted alone */
@@ -448,6 +461,7 @@
   });
 
   function mountHome(ctx) {
+    ctx.onCleanup(App.on('player', playerChanged));
     /* the hub rebuilt the feed, or a shelf filled in later (new releases once Soulseek has answered): fetch it again */
     ctx.onCleanup(App.on('server:feed.updated', function () { if (!H.building) M.reload(FEED); }));   // old shelves stay until it answers
     /* one pick's sources came in: that pick, in place (a pick with none gets "Search again") */
