@@ -2,9 +2,11 @@
 # One of the two Android builds, the way F-Droid builds it (packaging/fdroid/), in F-Droid's buildserver image with
 # scripts/android-toolchains.sh run; the APK lands in <temp>/apk for the compare job.
 #
-#   sh scripts/ci/android-apk.sh signed   in this checkout, signed with a throwaway key made here (a release tag's key
-#                                         stays in the release workflow): the APK to try. Also checks that no non-free
-#                                         library got in: the Gradle dependency tree and F-Droid's scanner.
+#   sh scripts/ci/android-apk.sh signed   in this checkout, signed with a throwaway key made here: the APK to try. A
+#                                         release (app.yml on a v* tag) passes its keystore instead, as ANDROID_KEYSTORE
+#                                         (the file) with ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and
+#                                         ANDROID_KEY_PASSWORD. Also checks that no non-free library got in: the Gradle
+#                                         dependency tree and F-Droid's scanner.
 #   sh scripts/ci/android-apk.sh clean    unsigned, from a clean clone in another folder, as F-Droid builds the tag.
 #
 # android-compare then requires the two to match except for the signature, which is what lets F-Droid ship the release APK.
@@ -24,13 +26,19 @@ apk=universal/release/app-universal-release
 
 case "$build" in
   signed)
-    keytool -genkeypair -keystore "$work/release.jks" -storepass throwaway -keypass throwaway \
-      -alias test -dname CN=lull-test -keyalg RSA -keysize 2048 -validity 30
+    if [ -n "${ANDROID_KEYSTORE:-}" ]; then
+      store=$ANDROID_KEYSTORE
+      : "${ANDROID_KEYSTORE_PASSWORD:?}" "${ANDROID_KEY_ALIAS:?}" "${ANDROID_KEY_PASSWORD:?}"
+    else
+      store=$work/release.jks ANDROID_KEYSTORE_PASSWORD=throwaway ANDROID_KEY_ALIAS=test ANDROID_KEY_PASSWORD=throwaway
+      keytool -genkeypair -keystore "$store" -storepass throwaway -keypass throwaway \
+        -alias test -dname CN=lull-test -keyalg RSA -keysize 2048 -validity 30
+    fi
     cat > app/gen/android/keystore.properties <<PROPERTIES
-storeFile=$work/release.jks
-storePassword=throwaway
-keyAlias=test
-keyPassword=throwaway
+storeFile=$store
+storePassword=$ANDROID_KEYSTORE_PASSWORD
+keyAlias=$ANDROID_KEY_ALIAS
+keyPassword=$ANDROID_KEY_PASSWORD
 PROPERTIES
     # As F-Droid's scanner does before its build: no prebuilt Gradle wrapper. The clean clone keeps it, so the two
     # builds also cover both ways Gradle starts.

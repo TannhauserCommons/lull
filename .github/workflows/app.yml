@@ -152,12 +152,13 @@ jobs:
             app/target/release/bundle/appimage/*.AppImage.sig
             app/target/release/bundle/updater-*.json
 
-  # Android: the APK for arm64 phones, built the way F-Droid builds it (packaging/fdroid/): in
-  # F-Droid's build image, by scripts/android-build.sh, with the toolchains pinned. Two builds side by
-  # side: `signed` (a v* tag signs it with the release keystore, other runs with a throwaway key: an APK
-  # to try), which also checks that no non-free library got in (the Gradle dependency tree and F-Droid's
-  # scanner), and `clean`, unsigned from a clean clone in another folder. android-compare then requires
-  # the two to match except for the signature, which is what lets F-Droid ship the release APK.
+  # Android: the APK for arm64 phones, built the way F-Droid builds it (packaging/fdroid/), by the tasks check.yml's
+  # `android` jobs run (scripts/ci/android-*.sh): in F-Droid's build image, the toolchains pinned, two builds side by
+  # side. `signed` (a v* tag signs it with the release keystore, other runs with a throwaway key: an APK to try), which
+  # also checks that no non-free library got in, and `clean`, unsigned from a clean clone in another folder.
+  # android-compare then requires the two to match except for the signature, which is what lets F-Droid ship the
+  # release APK. The cache action inside this container resolves `~` to another home than the steps' HOME, so mise's
+  # own cache is off and Gradle's home is a fixed path (GRADLE_USER_HOME).
   android:
     needs: release-gate
     strategy:
@@ -165,30 +166,27 @@ jobs:
       matrix:
         build: [signed, clean]
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     container:
       image: registry.gitlab.com/fdroid/fdroidserver:buildserver@sha256:1ea8bef1820bff06c2974e31b4fc4c79c364cd24231b86e71fa4b926797e0dac
     env:
       ANDROID_HOME: /opt/android-sdk
-      NDK_HOME: /opt/android-sdk/ndk/28.2.13676358
       CARGO_HOME: /opt/cargo
-      # Gradle's downloads in a folder of their own, by an absolute path: the cache action inside this container
-      # resolves `~` to another home than the steps' HOME (/github/home), so `~/.gradle` saved nothing and every
-      # build fetched everything from Maven Central, which limits shared runners (HTTP 429).
       GRADLE_USER_HOME: /opt/gradle
       RUSTUP_HOME: /opt/rustup
     steps:
-      - uses: actions/checkout@v5
-      # What F-Droid's recipe installs: Debian's rustup and the NDK, then (after the cache) the pinned
-      # Rust toolchain and the Tauri CLI from source.
-      - name: Toolchains
-        run: |
-          apt-get update -qq
-          apt-get install -y -qq --no-install-recommends build-essential rustup sdkmanager fdroidserver
-          sdkmanager --install "ndk;28.2.13676358"
-      # Saved as soon as the Tauri CLI is built, not at the end, and only by main's signed build: a
-      # tag or a branch reads main's.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache: false
+          cache_save: false
+      - name: mise run android:sdk
+        run: mise run android:sdk
+      # Saved as soon as the Tauri CLI is built, not at the end, and only by main's signed build: a tag or a branch
+      # reads main's.
       - id: cargo
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             /opt/cargo/registry
@@ -197,9 +195,10 @@ jobs:
             /opt/cargo/.crates2.json
           key: android-cargo-${{ hashFiles('app/Cargo.lock', 'app/package.json', 'rust-toolchain.toml') }}
           restore-keys: android-cargo-
-      - run: sh scripts/android-toolchains.sh
-      - if: steps.cargo.outputs.cache-hit != 'true' && matrix.build == 'signed' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v4
+      - name: mise run android:toolchains
+        run: mise run android:toolchains
+      - if: ${{ steps.cargo.outputs.cache-hit != 'true' && matrix.build == 'signed' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             /opt/cargo/registry
@@ -210,7 +209,7 @@ jobs:
       # Gradle's downloads (its distribution and the libraries the APK builds with), never what it built: both
       # builds still compile everything. Saved only by main, per build (the clean one uses the wrapper).
       - id: gradle
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             /opt/gradle/caches/modules-2
@@ -218,40 +217,23 @@ jobs:
             /github/home/.cache/gradlew-fdroid
           key: android-gradle-${{ matrix.build }}-${{ hashFiles('app/gen/android/**/*.gradle.kts', 'app/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: android-gradle-${{ matrix.build }}-
-      - name: Signing key
-        if: matrix.build == 'signed'
+      # A tag signs with the release keystore; android-apk.sh makes a throwaway key otherwise.
+      - name: Release keystore
+        if: matrix.build == 'signed' && github.ref_type == 'tag'
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
-          else
-            ANDROID_KEYSTORE_PASSWORD=throwaway ANDROID_KEY_ALIAS=test ANDROID_KEY_PASSWORD=throwaway
-            keytool -genkeypair -keystore "$RUNNER_TEMP/release.jks" -storepass throwaway -keypass throwaway \
-              -alias test -dname CN=lull-test -keyalg RSA -keysize 2048 -validity 30
-          fi
-          cat > app/gen/android/keystore.properties <<EOF
-          storeFile=$RUNNER_TEMP/release.jks
-          storePassword=$ANDROID_KEYSTORE_PASSWORD
-          keyAlias=$ANDROID_KEY_ALIAS
-          keyPassword=$ANDROID_KEY_PASSWORD
-          EOF
-      # As F-Droid's scanner does before its build: no prebuilt Gradle wrapper. The clean clone keeps
-      # it, so the two builds also cover both ways Gradle starts.
-      - name: Signed build
-        if: matrix.build == 'signed'
+        run: echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+      # Writing Gradle's checksums anew: the old ones would stop the build at what they lack.
+      - name: Without the old checksums
+        if: matrix.build == 'signed' && inputs.gradle-verification
+        run: rm -f app/gen/android/gradle/verification-metadata.xml
+      - name: mise run android:apk
+        run: mise run android:apk ${{ matrix.build }}
         env:
-          # Writing the checksums anew: the old ones would stop the build at what they lack.
-          WRITE_CHECKSUMS: ${{ inputs.gradle-verification }}
-        run: |
-          rm app/gen/android/gradlew app/gen/android/gradlew.bat app/gen/android/gradle/wrapper/gradle-wrapper.jar
-          if [ "$WRITE_CHECKSUMS" = true ]; then rm -f app/gen/android/gradle/verification-metadata.xml; fi
-          sh scripts/android-build.sh
-          mkdir -p "$RUNNER_TEMP/apk"
-          cp app/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "$RUNNER_TEMP/apk/"
+          ANDROID_KEYSTORE: ${{ matrix.build == 'signed' && github.ref_type == 'tag' && format('{0}/release.jks', runner.temp) || '' }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ matrix.build == 'signed' && github.ref_type == 'tag' && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          ANDROID_KEY_ALIAS: ${{ matrix.build == 'signed' && github.ref_type == 'tag' && secrets.ANDROID_KEY_ALIAS || '' }}
+          ANDROID_KEY_PASSWORD: ${{ matrix.build == 'signed' && github.ref_type == 'tag' && secrets.ANDROID_KEY_PASSWORD || '' }}
       # Gradle checks every dependency against these checksums, downloaded or from the cache; after a dependency
       # changes, a run by hand with gradle-verification writes them again (docs/context/android.md).
       - name: Write Gradle's dependency checksums
@@ -267,64 +249,51 @@ jobs:
             -PtargetList=aarch64 -PabiList=arm64-v8a -ParchList=arm64 \
             -x rustBuildUniversalRelease -x rustBuildArm64Release
       - if: matrix.build == 'signed' && inputs.gradle-verification
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: gradle-verification-metadata
           path: app/gen/android/gradle/verification-metadata.xml
           if-no-files-found: error
-      - name: No non-free libraries
-        if: matrix.build == 'signed'
-        run: |
-          apk=app/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
-          (cd app/gen/android && ./gradlew -q :app:dependencies --configuration universalReleaseRuntimeClasspath) > "$RUNNER_TEMP/deps.txt"
-          cat "$RUNNER_TEMP/deps.txt"
-          if grep -Ei 'com\.google\.(android\.gms|firebase|mlkit)|play-services|crashlytics' "$RUNNER_TEMP/deps.txt"; then
-            echo "::error::A non-free Google library is in the APK's dependencies (F-Droid can't ship it)"; exit 1
-          fi
-          fdroid scanner --exit-code "$apk"
-      # F-Droid builds the tag unsigned from its own clone, in its own folder.
-      - name: Clean build from a clone elsewhere
-        if: matrix.build == 'clean'
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git clone -q "$GITHUB_WORKSPACE" "$RUNNER_TEMP/again"
-          git -C "$RUNNER_TEMP/again" checkout -q "$(git rev-parse HEAD)"
-          sh "$RUNNER_TEMP/again/scripts/android-build.sh"
-          mkdir -p "$RUNNER_TEMP/apk"
-          cp "$RUNNER_TEMP/again/app/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk" "$RUNNER_TEMP/apk/"
-      - if: steps.gradle.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v4
+      - if: ${{ steps.gradle.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             /opt/gradle/caches/modules-2
             /opt/gradle/wrapper/dists
             /github/home/.cache/gradlew-fdroid
           key: ${{ steps.gradle.outputs.cache-primary-key }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: android-build-${{ matrix.build }}
           if-no-files-found: error
           path: ${{ runner.temp }}/apk/*.apk
 
   # F-Droid publishes the release APK only when its own unsigned build matches it except for the
-  # signature (packaging/fdroid/, Binaries). So does this.
+  # signature (packaging/fdroid/, Binaries). So does this, as check.yml's `android-compare` does.
   android-compare:
     needs: android
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     container:
       image: registry.gitlab.com/fdroid/fdroidserver:buildserver@sha256:1ea8bef1820bff06c2974e31b4fc4c79c364cd24231b86e71fa4b926797e0dac
     steps:
-      - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends apksigcopier
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache: false
+          cache_save: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: android-build-*
           path: apk
           merge-multiple: true
-      - run: apksigcopier compare apk/app-universal-release.apk --unsigned apk/app-universal-release-unsigned.apk
+      - name: mise run android:compare
+        run: mise run android:compare
       - run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then name="lull-${GITHUB_REF_NAME#v}-android-arm64.apk"; else name=lull-android-arm64-test.apk; fi
           mkdir out && cp apk/app-universal-release.apk "out/$name"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: lull-android
           if-no-files-found: error
