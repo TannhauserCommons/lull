@@ -7,7 +7,7 @@
 import { expect, test } from '@playwright/test';
 import * as L from '../fixture-hub/library.mjs';
 import { contrast } from '../checks.mjs';
-import { designs, openScreen } from './lib.mjs';
+import { designs, openScreen, pageTimers } from './lib.mjs';
 import { fireView, got, openMain, openMini } from './player-windows.mjs';
 
 const fixtureClient = () => `${test.info().testId}:${test.info().repeatEachIndex}`;
@@ -212,6 +212,9 @@ function hearAnnouncer() {
 const saidSince = (mini, n) => mini.evaluate((n) => window.__said.slice(n), n);
 const saidCount = (mini) => mini.evaluate(() => window.__said.length);
 const AFTER_SAYING = 400;   // ms: lull's announcer says its words a moment after it is told (desktop.js announce)
+/* what the mini player was told so far has been said: its announcer's timers have run, on the window's own clock (a
+   starved machine runs them late, and the test's clock doesn't wait for them) */
+const allSaid = (mini) => pageTimers(mini, AFTER_SAYING);
 
 // The mini player announces the song once (ADR-0041): through lull's announcer while its slot has no live region of its
 // own on the song, as every built-in now; a slot whose [data-dk-now] keeps aria-live says the song itself, and lull
@@ -224,14 +227,13 @@ for (const design of designs) {
     const own = await mini.evaluate(() => !!document.querySelector('[data-dk-now][aria-live]:not([aria-live="off"])'));
     let n = await saidCount(mini);
     await mini.evaluate(fireView, { track: { id: 't2', title: 'Second Song', artist: 'Artist' } });
-    if (!own) await expect.poll(() => saidSince(mini, n).then((s) => s.filter((t) => t.includes('Second Song')).length), { message: 'lull announces the new song', timeout: 2000 }).toBeGreaterThan(0);
-    await mini.waitForTimeout(AFTER_SAYING);
+    await allSaid(mini);
     expect.soft((await saidSince(mini, n)).filter((t) => t.includes('Second Song')).length, `the new song, as lull announced it (${own ? 'the slot says it itself' : 'the slot has no live region on it'})`).toBe(own ? 0 : 1);
 
     await mini.evaluate(() => document.querySelectorAll('[data-dk-now]').forEach((el) => el.setAttribute('aria-live', 'polite')));
     n = await saidCount(mini);
     await mini.evaluate(fireView, { track: { id: 't3', title: 'Third Song', artist: 'Artist' } });
-    await mini.waitForTimeout(AFTER_SAYING);
+    await allSaid(mini);
     expect.soft((await saidSince(mini, n)).filter((t) => t.includes('Third Song')), 'with [data-dk-now][aria-live]: what lull announced of the song').toEqual([]);
   });
 }
@@ -245,7 +247,7 @@ test('the mini player says nothing of loading, playing and paused, and once each
   const streaming = { status: 'streaming', words: 'Streaming from mira', copy: peerCopy, transfer: halfway };
   const waiting = { ...streaming, activity: 'loading', status: 'buffering', words: 'Buffering from mira', clock: { rate: 0 } };
   const next = { id: 't2', title: 'Second Song', artist: 'Artist', album: 'Album' };
-  const step = async (over) => { await mini.evaluate(fireView, over); await mini.waitForTimeout(120); };
+  const step = async (over) => { await mini.evaluate(fireView, over); await allSaid(mini); };
   await step(streaming);   // the first view: the player as it already was
   let n = await saidCount(mini);
   for (const [what, over] of [
@@ -254,7 +256,6 @@ test('the mini player says nothing of loading, playing and paused, and once each
     ['resumed: the output starts', waiting], ['resumed: playing', streaming],
     ['the next song starts', { track: next, activity: 'loading', clock: { rate: 0, pos: 0 } }], ['the next song plays', { track: next, clock: { pos: 0 } }],
   ]) await step(over);
-  await mini.waitForTimeout(AFTER_SAYING);
   const routine = await saidSince(mini, n);
   expect.soft(routine.filter((t) => !t.includes('Second Song')), 'said of routine moves (two waits, a pause, a resume, a song start)').toEqual([]);
   expect.soft(routine.filter((t) => /\b(playing|paused|loading|buffering|streaming)\b/i.test(t)), 'said with an activity\'s words').toEqual([]);
@@ -264,13 +265,11 @@ test('the mini player says nothing of loading, playing and paused, and once each
     ['a failure', () => step({ track: next, ...STATE.failed }), STATE.failed.words],
     ['a copy to pick', () => step({ track: next, ...STATE.choose }), STATE.choose.words],
     ['the queue\'s end', () => step({ track: next, activity: 'ended', status: 'ended', words: 'End of queue', intent: false, clock: { rate: 0, pos: 200 } }), null],
-    ['main away', async () => { await mini.evaluate(() => window.__bridge.fire('main-bye', {})); await mini.waitForTimeout(120); }, null],
+    ['main away', async () => { await mini.evaluate(() => window.__bridge.fire('main-bye', {})); await allSaid(mini); }, null],
   ]) {
     await step(playingNext);
-    await mini.waitForTimeout(AFTER_SAYING);
     n = await saidCount(mini);
     await act(); await act();   // the same news twice (a view sent again, a second bye): said once
-    await mini.waitForTimeout(AFTER_SAYING);
     const said = await saidSince(mini, n);
     expect.soft(said.length, `${what}: announcements (${JSON.stringify(said)})`).toBe(1);
     if (words && said.length) expect.soft(said[0], `${what}: what was said`).toContain(words);
@@ -429,7 +428,7 @@ test('a song waiting for a source publishes no view for each second it waits / p
     trackId: song.id, jobId: 'wait-' + song.id, status: 'finding', attempt: 0, received: 0, size: 0, peersFound: 4, failedPeers: [] } } });
   await page.waitForFunction(() => App.player.state.status === 'finding' && App.player.state.peersFound === 4, null, { timeout: 10_000 });
   const began = Date.now();
-  await page.waitForTimeout(7500);   // past the 5 s from which the words used to count
+  await page.waitForTimeout(7500);   // past the 5 s from which the words used to count: that no view comes then is what is checked
   const seen = await page.evaluate((from) => ({ view: App.player.view(), late: window.__views.filter((e) => e.at >= from).map((e) => e.v.words) }), began + 5500);
   expect.soft(seen.view.activity, 'still waiting').toBe('loading');
   expect.soft(seen.view.words, 'the view\'s words: the state, without a running count').not.toMatch(/\d+ s$/);
@@ -454,7 +453,7 @@ for (const loaded of [true, false]) for (const how of ['held', 'job']) {
     await page.waitForFunction(() => App.player.view().activity === 'playing', null, { timeout: 20_000 });
     await page.evaluate(() => App.player.pause());
     if (!loaded) {
-      await page.waitForTimeout(1200);                   // the queue kept (app.js persistSoon)
+      await page.waitForFunction((id) => (JSON.parse(localStorage.getItem('lull:player')) || { queue: [] }).queue.some((q) => q.trackId === id), song.id);   // the queue kept (app.js persistSoon)
       await page.reload();
       await page.waitForFunction(() => window.App && App.server && App.server.checked);
       await page.waitForFunction((id) => App.player.current() && App.player.current().id === id && App.player.view().activity === 'paused', song.id);
@@ -475,11 +474,10 @@ for (const loaded of [true, false]) for (const how of ['held', 'job']) {
       await request.post('/__fixture/emit', { headers, data: { topic: 'save', data: { jobId: 'job-' + song.id, trackId: song.id, step: 5, status: 'done', pct: 1 } } });
     }
     await page.waitForFunction((id) => App.isSaved(id), song.id, { timeout: 10_000 });
-    await page.waitForTimeout(1500);                     // ticks, where a song is loaded, would have sent it again by now
     const atSave = await page.evaluate(() => window.__atSave);
     expect(atSave.length, 'save events').toBeGreaterThan(0);
     expect.soft(atSave.filter((r) => r.sent !== r.saved), 'tasks with a save whose last view sent says otherwise than the page').toEqual([]);
-    expect.soft(await lastSent(), 'the mini player\'s view, a moment later').toBe(true);
+    await expect.soft.poll(lastSent, { message: 'the mini player\'s view, a moment later' }).toBe(true);
   });
 }
 

@@ -28,7 +28,7 @@ test('a kept seek is over once the song has played up to it', async ({ page, req
   // short of it, it still waits
   await page.evaluate((s) => window.__out.at(s), middle - 5);
   await page.waitForFunction((s) => App.player.state.pos >= s, middle - 5);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(500);   // what is checked is that the seek stays kept: a few of the output's ticks for it to end in
   expect(await page.evaluate(() => App.player.state.seekWait), 'kept until the song gets there').not.toBeNull();
 
   // the song plays on past it: nothing left to wait for, and no jump

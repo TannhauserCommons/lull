@@ -77,7 +77,7 @@ for (const design of designs) {
       await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');       // a song in the bar: its widest state
       await page.waitForFunction(() => App.player.current());
       await page.evaluate(() => { location.hash = '#/home'; });
-      await page.waitForTimeout(500);
+      await settle(page);
       await checkDrawn(page);
       const found = new Map(), seen = new Map();
       for (const w of [...widths, ...widths.slice().reverse()]) {    // both ways: a row fits again as it widens
@@ -152,7 +152,7 @@ for (const design of designs) {
       await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');
       await page.waitForFunction(() => App.player.current());
       await page.evaluate(() => { location.hash = '#/home'; });
-      await page.waitForTimeout(500);
+      await settle(page);
       await frames(page);
       const said = await page.evaluate((src) => (0, eval)('(' + src + ')')(document.querySelector('#pbar'), 'song-side-room'), gateFree.toString());
       test.skip(said === 'free', 'the design says why its song side has less room (--gate-free: song-side-room)');
@@ -169,7 +169,7 @@ for (const design of designs) {
       await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');
       await page.waitForFunction(() => App.player.current());
       await page.evaluate(() => { location.hash = '#/home'; });
-      await page.waitForTimeout(500);
+      await settle(page);
       const out = () => page.evaluate(() => [...document.querySelectorAll('[data-fit-out]')].map((p) => p.getAttribute('class')).join(' / '));
       const fresh = async () => { await page.evaluate(() => App.layout.refit()); return out(); };
       // the rows set in a font of this name, as it arrives: one file under three names, the wide one with wider letters
@@ -244,7 +244,7 @@ for (const design of designs) {
       await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');
       await page.waitForFunction(() => App.player.current());
       await page.evaluate(() => { App.player.current().title = 'A Rusty Dream (from Cyberpunk: Edgerunners 2) - Extended Night Drive Version, Live at the Harbour'; location.hash = '#/home'; });
-      await page.waitForTimeout(500);
+      await settle(page);
       const found = [];
       for (const w of [2560, 1440, 1280]) {
         await page.setViewportSize({ width: w, height: 900 });

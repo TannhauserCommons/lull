@@ -57,6 +57,6 @@ test('off, nothing asks and nothing is said about saving', async ({ page, reques
   await openScreen(page, '/home');
   const list = await fresh(page, 2);
   await page.evaluate((l) => App.setLiked(l, true), list);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(500);   // what is checked is that nothing asks: a while for the likes' answers and a question
   await expect(page.locator('.toast', { hasText: /too\?/ })).toHaveCount(0);
 });

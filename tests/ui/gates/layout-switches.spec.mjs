@@ -14,7 +14,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chrome } from '../checks.mjs';
-import { designs, ids, openScreen, ownHub } from './lib.mjs';
+import { designs, ids, openScreen, ownHub, settle } from './lib.mjs';
 
 const frames = (page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
 const ATTRS = ['data-ctx', 'data-size', 'data-height', 'data-nowcol', 'data-nowcol-ok', 'data-panel', 'data-panel-split'];
@@ -218,7 +218,7 @@ test.describe('a theme that sets switches', () => {
     await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');
     await page.waitForFunction(() => App.player.current());
     await page.evaluate(() => { App.player.pause(); location.hash = '#/home'; });
-    await page.waitForTimeout(500);
+    await settle(page);
   }
 
   test('the side panel docks along the bottom at 1100 px and drags by its height', async ({ browser }) => {

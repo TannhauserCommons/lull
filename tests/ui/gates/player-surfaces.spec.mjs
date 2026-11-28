@@ -17,7 +17,7 @@
 
 import { expect, test } from '@playwright/test';
 import * as L from '../fixture-hub/library.mjs';
-import { designs, fakeOutput, openScreen } from './lib.mjs';
+import { designs, fakeOutput, openScreen, pageTimers, settle } from './lib.mjs';
 import { fireView, got, openMain, openMini, shown, views } from './player-windows.mjs';
 
 const fixtureClient = () => `${test.info().testId}:${test.info().repeatEachIndex}`;
@@ -113,23 +113,25 @@ test.describe('with main hidden', () => {
       await page.evaluate((ids) => App.player.playList(ids, 0), songs.slice(0, 3).map((t) => t.id));
       await playing(page);
       const hidden = await hide(page);
-      await page.waitForTimeout(1500);
+      const sentHidden = () => relay.main.filter((e) => e.name === 'player' && e.at >= hidden).map((e) => e.payload);
 
       // main published views while hidden (the share arriving changes them), not a snapshot of its own: the wire version
       // and a clock
-      const v = await mainVersion(page), sent = relay.main.filter((e) => e.name === 'player' && e.at >= hidden).map((e) => e.payload);
+      await expect.soft.poll(() => sentHidden().length, { message: 'views sent to the mini player while main was hidden', timeout: 10_000 }).toBeGreaterThan(0);
+      const v = await mainVersion(page), sent = sentHidden();
       expect.soft(v, 'main has PlayerView.VERSION').not.toBeNull();
-      expect.soft(sent.length, 'views sent to the mini player while main was hidden').toBeGreaterThan(0);
       expect.soft(sent.filter((x) => x.v !== v || !x.clock || typeof x.clock.at !== 'number').length,
         'views without the wire version or a clock').toBe(0);
 
       // the time moves on main's clock with no new view
       relay.toMini = false; await relay.sent;
-      const t0 = (await mini.evaluate(shown)).time;
-      await page.waitForTimeout(3200);
-      const t1 = (await mini.evaluate(shown)).time;
-      expect.soft(t1 - t0, 'seconds the mini player moved on in 3.2 s with no view').toBeGreaterThanOrEqual(2);
-      expect.soft(t1 - t0).toBeLessThanOrEqual(4);
+      // the seconds it moved, against those that passed on its own clock, read with each time it shows
+      const at = () => mini.evaluate((f) => ({ time: eval(f)().time, now: Date.now() }), `(${shown})`);
+      const r0 = await at();
+      await page.waitForTimeout(3200);   // time passing is what is checked
+      const r1 = await at(), passed = (r1.now - r0.now) / 1000;
+      expect.soft(r1.time - r0.time, `seconds the mini player moved on in ${passed.toFixed(1)} s of its clock with no view`).toBeGreaterThanOrEqual(passed - 1.2);
+      expect.soft(r1.time - r0.time).toBeLessThanOrEqual(passed + 0.8);
       relay.toMini = true;
 
       // the share arrived follows the views, not the first one: views main sent while hidden bring it on
@@ -155,7 +157,7 @@ test.describe('with main hidden', () => {
       await expect.poll(async () => { const g = await got(mini); return g.length ? rateOf(g.at(-1).payload) : null; },
         { message: 'a paused view reached the mini player' }).toBe(0);
       const p0 = (await mini.evaluate(shown)).time;
-      await page.waitForTimeout(2200);
+      await page.waitForTimeout(2200);   // what is checked is that the time stands: two seconds and more for it to move in
       expect.soft((await mini.evaluate(shown)).time, 'the time after a pause').toBe(p0);
     });
 
@@ -191,8 +193,7 @@ test.describe('with main hidden', () => {
     const mini = await openMini(relay, { design: 'lull', style: 'strip' });
     await page.evaluate((id) => App.player.playList([id], 0), song.id);
     await playing(page);
-    await hide(page);
-    await page.waitForTimeout(1000);
+    await hide(page);   // a saved song playing on sends no view of its own: the views checked are those main sent so far
 
     const v = await mainVersion(page);
     expect.soft(v, 'main has PlayerView.VERSION').not.toBeNull();
@@ -200,14 +201,14 @@ test.describe('with main hidden', () => {
     // no song is longer than 420 s, so a hundredth of it is at most 4.2 s: 5 s moves it on at least one
     relay.toMini = false; await relay.sent;
     const s0 = (await mini.evaluate(shown)).songPos;
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(5000);   // time passing is what is checked
     expect.soft((await mini.evaluate(shown)).songPos, '--song-pos 5 s on, with no view').toBeGreaterThan(s0);
     relay.toMini = true;
     await page.evaluate(() => App.player.pause());
     await expect.poll(async () => { const g = await got(mini); return g.length ? rateOf(g.at(-1).payload) : null; },
       { message: 'a paused view reached the strip' }).toBe(0);
     const p0 = (await mini.evaluate(shown)).songPos;
-    await page.waitForTimeout(4500);
+    await page.waitForTimeout(4500);   // what is checked is that it stands: longer than a hundredth of any song (4.2 s)
     expect.soft((await mini.evaluate(shown)).songPos, '--song-pos after a pause').toBe(p0);
 
     await page.evaluate((id) => App.player.playList([id], 0), slow.id);
@@ -309,11 +310,11 @@ test.describe('the listener\'s intent', () => {
       await page.evaluate((id) => App.player.playList([id], 0), saved[3]);
       await playing(page);
       await page.evaluate(() => App.player.pause());
-      await page.waitForTimeout(400);
+      await expect.poll(() => playKey(page), { message: 'the play key once paused' }).toEqual({ label: 'Play', loading: false });
       await page.evaluate(() => App.player.play());
       await page.waitForFunction(() => App.player.state.pos > 0 && App.player.heard(), null, { timeout: 10_000 });
       await expect.poll(() => playKey(page), { message: 'the play key once the song sounds' }).toEqual({ label: 'Pause', loading: false });
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(1000);   // what is checked is that it stays so: a second for loading to come back in
       expect(await playKey(page), 'and a second on').toEqual({ label: 'Pause', loading: false });
     });
   }
@@ -343,9 +344,9 @@ test.describe('the listener\'s intent', () => {
     await trickle(page, song.id, 200);
     await page.evaluate((id) => App.player.playList([id], 0), song.id);
     await page.waitForFunction(() => App.player.state.playing && /^(finding|queued|buffering|stalled)$/.test(App.player.state.status), null, { timeout: 15_000 });
-    await page.waitForTimeout(1500);
+    await expect.poll(() => reports.filter((b) => b.trackId === song.id).length, { message: 'reports of the song', timeout: 10_000 }).toBeGreaterThan(0);
+    await pageTimers(page, 1100);   // a report the page held back (a second at most) has gone: the last one read is the last it sends
     const mine = reports.filter((b) => b.trackId === song.id);
-    expect(mine.length, 'reports of the song').toBeGreaterThan(0);
     expect(mine.at(-1).playing, 'the last report\'s playing').toBe(true);
   });
 });
@@ -456,7 +457,7 @@ test.describe('a system pause during a crossfade', () => {
       if (el) { el.pause(); window.__systemAt = window.__pauseCalls.length; }
       return !!el;
     }, a), 'the fading song\'s deck').toBe(true);
-    await page.waitForTimeout(7000);      // past where the fade would have ended
+    await page.waitForTimeout(7000);      // past where the fade would have ended: that it never does is what is checked
     const r = await page.evaluate((b) => ({ id: App.player.current().id, index: App.player.state.index, playing: App.player.state.playing,
       crossfade: App.player.state.crossfade, incoming: [...window.__played].filter((e) => e.src.includes(b)).map((e) => e.paused) }), b);
     expect.soft(r.id, 'the song is still the fading one').toBe(a);
@@ -529,7 +530,7 @@ test.describe('a system play after the song stopped for good', () => {
   const keyPress = (page) => page.locator('#pbar [data-act="play"]').first().click();
   async function ignored(page) {
     await page.evaluate(() => window.__out.system(true));
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(600);   // what is checked is that the system's play is not followed: a while for it to be
     expect.soft(await page.evaluate(() => App.player.state.playing), 'the intent after the system play').toBe(false);
     expect.soft((await playKey(page)).label, 'the play key').toBe('Play');
   }
@@ -641,7 +642,7 @@ test('Connect reports a song that fails while it plays / native', async ({ page 
   await page.evaluate((id) => App.player.playList([id], 0), a);
   await playing(page);
   await expect.poll(() => reports.some((b) => b.trackId === a && b.playing), { message: 'a report of the song playing' }).toBe(true);
-  await page.waitForTimeout(1500);      // past the second a report may wait, so what comes next answers the failure
+  await pageTimers(page, 1100);         // a report the page held back (a second at most) has gone: what comes next answers the failure
   const failedAt = Date.now();
   await page.evaluate(() => window.__out.fail('This file can\'t be played here'));
   await expect.poll(() => page.evaluate(() => App.player.view().activity), { message: 'the song failed' }).toBe('error');
@@ -705,7 +706,7 @@ test('when main says bye the mini player stops and says main is away until a vie
   await mini.evaluate(() => window.__bridge.fire('main-bye', {}));
   await expect.poll(async () => (await mini.evaluate(shown)).link, { message: 'the link after main-bye' }).toBe('away');
   const t0 = (await mini.evaluate(shown)).time;
-  await page.waitForTimeout(2200);
+  await page.waitForTimeout(2200);   // what is checked is that the time stands: two seconds and more for it to move in
   expect.soft((await mini.evaluate(shown)).time, 'the time after main-bye').toBe(t0);
   relay.toMini = true;
   await page.evaluate(() => App.player.setShuffle());   // a change: main sends a view
@@ -723,7 +724,7 @@ test('a view of another version, or none, is refused and says which side to upda
   const send = (view) => mini.evaluate((x) => { x.clock = { ...x.clock, at: Date.now() }; window.__bridge.fire('player', x); }, view);
   const stopped = async (why) => {
     const t0 = (await mini.evaluate(shown)).time;
-    await page.waitForTimeout(2200);
+    await page.waitForTimeout(2200);   // what is checked is that the time stands: two seconds and more for it to move in
     expect.soft((await mini.evaluate(shown)).time, `the time stands after ${why}`).toBe(t0);
   };
   await send({ ...last, v: own + 1 });
@@ -768,13 +769,13 @@ for (const design of designs) {
     await page.waitForFunction(() => App.player.view().activity === 'playing', null, { timeout: 20_000 });
     await page.evaluate(() => { location.hash = '#/now'; });
     await page.waitForSelector('.wave[data-seek="player"] .wave__bar, [data-dk-player] .wave .wave__bar', { state: 'attached' });
-    await page.waitForTimeout(800);
+    await settle(page);
     await page.evaluate(() => { App.player.seekFraction(0.5); App.player.pause(); });
     await page.waitForFunction(() => App.player.view().activity === 'paused', null, { timeout: 10_000 });
-    await page.waitForTimeout(500);
-    const before = await wavesPlayed(page);
-    expect(before.length, 'waves with bars to play').toBeGreaterThan(0);
-    expect(before, 'played bars halfway, before the page is drawn again').toEqual(before.map((w) => ({ ...w, played: w.due })));
+    let before = [];
+    await expect.poll(async () => { before = await wavesPlayed(page); return before.length; }, { message: 'waves with bars to play' }).toBeGreaterThan(0);
+    await expect.poll(async () => { before = await wavesPlayed(page); return before.filter((w) => w.played !== w.due); },
+      { message: 'played bars halfway, before the page is drawn again' }).toEqual([]);
     await page.evaluate(() => App.refresh());
     await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))));
     const after = await wavesPlayed(page);

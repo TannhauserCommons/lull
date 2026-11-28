@@ -68,7 +68,7 @@ for (const [id, service, report] of CAUSES) {
     for (let i = 0; i < 2; i++) {
       await page.reload();
       await page.waitForFunction((s) => window.App && App.server && App.server.checked && App.store.get('services')[s].state === 'down', service);
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(300);   // what is checked is that it stays away: a while for it to come back
       await expect(banner, `after reload ${i + 1}`).toHaveCount(0);
     }
     await page.evaluate((s) => App.setService(s, { state: 'ok', detail: 'back' }), service);

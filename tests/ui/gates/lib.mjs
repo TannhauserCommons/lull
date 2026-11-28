@@ -63,11 +63,49 @@ export async function settle(page) {
   await page.evaluate(() => document.fonts.ready);
   let last = '';
   for (let i = 0, stable = 0; i < 80 && stable < 4; i++) {
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(100);   // the condition is the quiet itself: four reads 100 ms apart that agree
     const now = await page.evaluate(() => `${document.querySelector('#view')?.innerHTML.length}:${document.images.length}`);
     stable = now === last ? stable + 1 : 0;
     last = now;
   }
+}
+
+// Everything the page runs that ends has ended (a screen or sheet sliding in, notes moving in, a device powering on,
+// `.is-power-on`); loops and scroll-driven animations never end and don't count, and an animation WebKit holds unstarted
+// (pending) is still to come. mobile.mjs go() waits for it after every screen.
+export async function arrived(page) {
+  await page.waitForFunction(() => !document.querySelector('.is-power-on')
+    && document.getAnimations().every((a) => !Number.isFinite(a.effect?.getComputedTiming().endTime) || (a.playState !== 'running' && !a.pending)), null, { polling: 'raf' });
+}
+
+// Every timer the page set before this call and due within `ms` has run, with all it did. A page runs its timers in the
+// order they fall due, so one set now for `ms` fires after them however starved of CPU the machine is: for a rule on the
+// page's own clock (a debounce, words said a moment later), where a wait on the test's clock can end before the page,
+// running late, got there.
+export const pageTimers = (page, ms) => page.evaluate((ms) => new Promise((ok) => setTimeout(ok, ms)), ms);
+
+// The hub's events the page has handled, as { topic, data } with data as the hub sent it, in window.__served: an init
+// script (page.addInitScript(hearServerEvents)), for emitted() below. Each is logged once the page's own listener for it
+// has run.
+export function hearServerEvents() {
+  window.__served = [];
+  const add = EventSource.prototype.addEventListener;
+  EventSource.prototype.addEventListener = function (type, fn, opts) {
+    const logged = typeof fn !== 'function' ? fn
+      : function (e) { try { return fn.call(this, e); } finally { window.__served.push({ topic: type, data: e.data }); } };
+    return add.call(this, type, logged, opts);
+  };
+}
+
+// Send `data` as a hub event on `topic` through the fixture hub (POST /__fixture/emit, `headers` naming the fixture client
+// it is for), and return once the page has handled it: a copy more of exactly that event in window.__served
+// (hearServerEvents), so a check that follows reads what the page made of it.
+export async function emitted(page, request, topic, data, headers = {}) {
+  const sent = JSON.stringify(data);
+  const count = () => page.evaluate(([t, s]) => window.__served.filter((e) => e.topic === t && e.data === s).length, [topic, sent]);
+  const before = await count();
+  await request.post('/__fixture/emit', { headers, data: { topic, data } });
+  await page.waitForFunction(([t, s, n]) => window.__served.filter((e) => e.topic === t && e.data === s).length > n, [topic, sent, before]);
 }
 
 export async function throttle(page, rate) {

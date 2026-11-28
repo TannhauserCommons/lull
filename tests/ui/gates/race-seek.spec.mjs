@@ -12,7 +12,7 @@
 
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import { fakeOutput, openScreen } from './lib.mjs';
+import { emitted, fakeOutput, hearServerEvents, openScreen, pageTimers } from './lib.mjs';
 
 const bridge = fileURLToPath(new URL('./desktop-bridge.js', import.meta.url));
 const fixtureClient = () => `${test.info().testId}:${test.info().repeatEachIndex}`;
@@ -41,6 +41,7 @@ const offer = (o = {}) => ({ peer: 'winner', path: PATH, format: 'MP3 320', stat
 
 async function setUp(page, request, { slowSwitch = false, desktop = false } = {}) {
   await page.context().setExtraHTTPHeaders({ 'x-fixture-client': fixtureClient() });
+  await page.addInitScript(hearServerEvents);
   if (desktop) {
     await page.addInitScript({ path: bridge });
     await page.addInitScript(() => {
@@ -60,7 +61,8 @@ async function setUp(page, request, { slowSwitch = false, desktop = false } = {}
   const [id] = await page.evaluate(() => App.data.api('/__fixture/unsaved-songs?n=1').then((r) => { App.data.absorb(r.entities); return r.items; }));
   await page.evaluate((id) => App.player.playList([id], 0), id);
   await page.waitForFunction(() => App.player.state.playing && App.player.state.pos > 0.2);
-  const emit = (data) => request.post('/__fixture/emit', { headers: { 'x-fixture-client': fixtureClient() }, data: { topic: 'stream', data } });
+  /* a `stream` event, once the page has handled it */
+  const emit = (data) => emitted(page, request, 'stream', data, { 'x-fixture-client': fixtureClient() });
   await emit(playing(id));
   await page.waitForFunction(() => App.player.state.peer && App.player.state.peer.name === 'lowpeer');
   const dur = await page.evaluate(() => App.player.duration());
@@ -71,6 +73,9 @@ const out = (page) => page.evaluate(() => ({ loads: window.__out.loads.length, s
 const pos = (page) => page.evaluate(() => App.player.state.pos);
 const seek = (page, f) => page.evaluate((f) => App.player.seekFraction(f), f);
 const upgradeState = (page) => page.evaluate(() => App.player.state.upgrade && App.player.state.upgrade.state);
+/* after a seek to `s`: the song has played on 2 s from there by its own clock, which a starved machine runs no faster than
+   the page, or has gone back before it (for the check that follows to name) */
+const playedOn = (page, s) => page.waitForFunction((s) => App.player.state.pos >= s + 2 || App.player.state.pos < s - 0.5, s, { timeout: 20_000 });
 /* the seeks the output was asked for that went back before `s` (a jump back, a restart from 0) */
 const back = (o, s) => o.seeks.filter((x) => x < s - 1);
 
@@ -79,10 +84,8 @@ test('a seek while the better copy races keeps the listener\'s place', async ({ 
   await seek(page, 0.5);
   const target = 0.5 * dur;
   // the race runs: the playing copy's events go on, with no offer, while lanes start and give way
-  for (const n of [5, 4, 3, 6, 5]) {
-    await emit(playing(id, { peersFound: n }));
-    await page.waitForTimeout(150);
-  }
+  for (const n of [5, 4, 3, 6, 5]) await emit(playing(id, { peersFound: n }));
+  await pageTimers(page, 300);   // what is checked is that no seek follows: a while of the page's own clock for one to
   const o = await out(page);
   expect(o.seeks, 'S3 the listener\'s one seek').toEqual([target]);
   expect(o.loads, 'S3 the song was never loaded again').toBe(1);
@@ -93,12 +96,10 @@ test('an offer the hub withdraws is never switched to', async ({ page, request }
   const { id, emit, dur } = await setUp(page, request);
   // a lane that sent a little, then was cancelled: its offer comes and goes
   await emit(playing(id, { upgrade: offer({ peer: 'loser', status: 'buffering', received: SIZE / 10, ready: false }) }));
-  await page.waitForTimeout(300);
   await emit(playing(id, { upgrade: null }));
-  await page.waitForTimeout(300);
   await seek(page, 0.3);
   const target = 0.3 * dur;
-  await page.waitForTimeout(300);
+  await pageTimers(page, 300);   // what is checked is that nothing switches: a while of the player's ticks to try it in
   expect((await out(page)).switches, 'S4 nothing switched to while no copy is ready').toEqual([]);
   // the winner, ready
   await emit(playing(id, { upgrade: offer() }));
@@ -120,7 +121,7 @@ test('a seek during the switch keeps the listener\'s place', async ({ page, requ
   const target = 0.6 * dur;
   await page.evaluate(() => window.__letSwitch());
   await expect.poll(() => upgradeState(page), { timeout: 15_000 }).toBe('switched');
-  await page.waitForTimeout(500);
+  await pageTimers(page, 500);   // what is checked is that nothing jumps back after the switch: a while for one to come
   const o = await out(page);
   expect(o.switches.length, 'S5 one switch').toBe(1);
   expect(back(o, target), 'S5 no jump back').toEqual([]);
@@ -142,7 +143,7 @@ test('after the switch a seek anywhere in the new copy lands', async ({ page, re
   expect(await page.evaluate(() => App.player.state.seekWait), 'S6 a seek past what arrived waits').not.toBeNull();
   const switched = { ...playing(id), jobId: 'low-job-switched', replaces: 'low-job', peer: 'winner', format: 'MP3 320', belowMinimum: false };
   await emit({ ...switched, received: 0.6 * SIZE, ranges: [[0, 0.6]] });
-  await page.waitForTimeout(300);
+  await pageTimers(page, 300);   // what is checked is that it still waits: a while of the page's own clock for it to land
   expect(await page.evaluate(() => App.player.state.seekWait), 'S6 still waiting at 60%').not.toBeNull();
   await emit({ ...switched, received: 0.85 * SIZE, ranges: [[0, 0.85]] });
   await expect.poll(() => page.evaluate(() => App.player.state.seekWait), { timeout: 5_000 }).toBeNull();
@@ -155,13 +156,12 @@ test('after the switch a seek anywhere in the new copy lands', async ({ page, re
 test('a seek past what arrived, while the race runs, is kept and lands', async ({ page, request }) => {
   const { id, emit, dur } = await setUp(page, request);
   await emit(playing(id, { received: 0.2 * SIZE, ranges: [[0, 0.2]] }));
-  await page.waitForTimeout(300);
   await seek(page, 0.5);
   const target = 0.5 * dur;
   expect(await page.evaluate(() => App.player.state.seekWait), 'S7 kept while its bytes come').not.toBeNull();
   // the race runs beside it: no offer, the playing copy arriving
   await emit(playing(id, { received: 0.35 * SIZE, ranges: [[0, 0.35]], peersFound: 5 }));
-  await page.waitForTimeout(300);
+  await pageTimers(page, 300);   // what is checked is that it is still kept: a while of the page's own clock for it to land
   expect(await page.evaluate(() => App.player.state.seekWait), 'S7 still kept at 35%').not.toBeNull();
   await emit(playing(id, { received: 0.6 * SIZE, ranges: [[0, 0.6]], peersFound: 4 }));
   await expect.poll(() => page.evaluate(() => App.player.state.seekWait), { timeout: 5_000 }).toBeNull();
@@ -181,7 +181,7 @@ test('after the switch the lock screen shows the song\'s place', async ({ page, 
   await emit(playing(id, { upgrade: offer() }));
   await expect.poll(() => upgradeState(page), { timeout: 15_000 }).toBe('switched');
   await seek(page, 0.7);
-  await page.waitForTimeout(2500);
+  await playedOn(page, 0.7 * dur);
   const r = await page.evaluate(() => {
     const lock = window.__ms[window.__ms.length - 1];
     return { real: App.player.state.pos, lock: lock ? lock.position + (Date.now() - lock.at) / 1000 : null };
@@ -197,12 +197,11 @@ test('through the race and a seek the mini player shows the song\'s place', asyn
   // lanes race (no offer), one is offered and withdrawn, the winner is offered: the page's own output switches, or
   // says why not; either way the place holds
   await emit(playing(id, { upgrade: offer({ peer: 'loser', status: 'buffering', received: SIZE / 10, ready: false }) }));
-  await page.waitForTimeout(300);
   await emit(playing(id, { upgrade: null }));
   await emit(playing(id, { upgrade: offer() }));
-  await page.waitForTimeout(1000);
+  await expect.poll(() => upgradeState(page), { message: 'the page switched to the winner, or said why not', timeout: 15_000 }).toMatch(/^(switched|next-play)$/);
   await seek(page, 0.7);
-  await page.waitForTimeout(2500);
+  await playedOn(page, 0.7 * dur);
   // where the mini player's clock puts the song: the last view main sent, run on to now as the window runs it
   const r = await page.evaluate(() => {
     const view = window.__views[window.__views.length - 1];

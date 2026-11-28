@@ -32,7 +32,7 @@ test('main keeps the mini player\'s position moving while its own window is hidd
   await page.waitForFunction(() => App.player.state.playing && App.player.state.pos > 0.3);
   // the mini player opens, at the version main has
   await page.evaluate(() => window.__bridge.fire('mini', { action: 'hello', v: window.PlayerView && PlayerView.VERSION }));
-  await page.waitForTimeout(4500);
+  await page.waitForTimeout(4500);   // what is checked is how few views 4.5 s of playing take: the time is the test's
   const r = await page.evaluate(() => {
     const running = window.__views.filter((v) => v && v.clock && v.clock.rate === 1), last = running[running.length - 1];
     return { n: window.__views.length, real: App.player.state.pos, shown: last && window.PlayerView ? PlayerView.posAt(last, Date.now()) : null };
@@ -49,15 +49,17 @@ test('the mini player moves the position on between views', async ({ page }) => 
   await page.route('**/api/**', (r) => r.fulfill({ status: 404, body: 'not here' }));
   await page.goto('/desktop/wrapper.html#view=mini&design=lull&theme=day&opaque=1');
   await page.waitForFunction(() => document.querySelector('[data-dk-player]'));
-  await page.evaluate(fireView, {});   // playing at 0:20, its clock set as it is sent
-  const read = () => page.evaluate(() => ({ time: document.querySelector('[data-dk-pos]').textContent,
-    now: +document.querySelector('.wave').getAttribute('aria-valuenow') }));
+  const sent = await page.evaluate((f) => { const at = Date.now(); eval(f)({ clock: { at } }); return at; }, `(${fireView})`);   // playing at 0:20
+  // the time it shows, and the whole seconds the window's own clock has run since the view was sent
+  const read = () => page.evaluate((sent) => ({ time: document.querySelector('[data-dk-pos]').textContent,
+    now: +document.querySelector('.wave').getAttribute('aria-valuenow'), ran: Math.floor((Date.now() - sent) / 1000) }), sent);
   expect(await read()).toMatchObject({ time: '0:20' });
-  await page.waitForTimeout(3300);
-  const moved = await read();
-  expect(moved.time, 'the time, three seconds on, with no new view').toBe('0:23');
+  await page.waitForTimeout(3300);   // time passing is what is checked
+  const moved = await read(), due = (s) => `0:${String(20 + s).padStart(2, '0')}`;
+  expect(moved.ran, 'seconds on').toBeGreaterThanOrEqual(3);
+  expect([due(moved.ran), due(moved.ran - 1)], 'the time, three seconds on and more, with no new view').toContain(moved.time);
   // a pause stops it
   await page.evaluate(fireView, { activity: 'paused', clock: { pos: 23, rate: 0 } });
-  await page.waitForTimeout(2200);
+  await page.waitForTimeout(2200);   // what is checked is that the time stands: two seconds and more for it to move in
   expect((await read()).time).toBe('0:23');
 });

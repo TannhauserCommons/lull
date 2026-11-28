@@ -10,8 +10,8 @@ const scrolled = (page) => page.evaluate(() => document.querySelector('#view').s
 
 test('Esc clears the words, then returns to the page before search, where it was', async ({ page }) => {
   await openScreen(page, `/playlist/${ids.longPlaylist}`);
-  await page.evaluate(() => { document.querySelector('#view').scrollTop = 1200; });
-  await page.waitForTimeout(150);
+  // scrolled, and the scroll handled: scroll events run before the next frame's callbacks
+  await page.evaluate(() => new Promise((ok) => { document.querySelector('#view').scrollTop = 1200; requestAnimationFrame(() => requestAnimationFrame(ok)); }));
   const row = page.locator('#view .trow[data-track-id]').nth(20);
   const rowId = await row.getAttribute('data-track-id');
   await row.focus();

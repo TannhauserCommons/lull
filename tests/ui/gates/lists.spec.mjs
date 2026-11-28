@@ -3,7 +3,7 @@
 // as it is now. On a fixture hub of its own: these change likes, downloads and a playlist's order.
 
 import { expect, test as base } from '@playwright/test';
-import { designs, ids, openScreen, ownHub, settle } from './lib.mjs';
+import { designs, ids, openScreen, ownHub, pageTimers, settle } from './lib.mjs';
 
 const test = base.extend({
   hub: [async ({}, use) => { const hub = await ownHub(); await use(hub); hub.close(); }, { scope: 'worker' }],
@@ -61,7 +61,8 @@ test('every song has its row, named for screen readers and reachable from the ke
   expect(at, 'forty rows down by the arrow keys').toEqual({ i: 40, drawn: true, onScreen: true });
 
   await scrollTo(page, 'end');
-  await page.waitForTimeout(300);
+  await frames(page);   // the scroll handled and the rows near the screen drawn
+  await pageTimers(page, 300);   // what is checked is that it stays drawn: a while of the page's own timers to undraw it in
   expect(await drawn(rows(page).nth(40)), 'the focused row keeps its contents when scrolled far away').toBe(true);
 });
 
