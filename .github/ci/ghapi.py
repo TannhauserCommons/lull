@@ -56,15 +56,20 @@ def project_token():
     return _token
 
 
-def gh(*args, stdin=None, check=True):
-    """Run `gh` and return its stdout. A failure raises with gh's own message."""
+def gh(*args, stdin=None, check=True, out=None):
+    """Run `gh` and return its stdout. A failure raises with gh's own message.
+
+    With `out`, a file opened for binary writing, stdout goes there byte for
+    byte (an artifact's zip) and nothing is returned.
+    """
     token = project_token()
     env = {**os.environ, "GH_TOKEN": token} if token else None
     done = subprocess.run(
-        ["gh", *args], input=stdin, capture_output=True, text=True, encoding="utf-8", env=env
+        ["gh", *args], input=stdin, stdout=out or subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", env=env,
     )
     if check and done.returncode != 0:
-        raise RuntimeError(f"gh {' '.join(args)}: {done.stderr.strip() or done.stdout.strip()}")
+        raise RuntimeError(f"gh {' '.join(args)}: {done.stderr.strip() or (done.stdout or '').strip()}")
     return done.stdout
 
 
