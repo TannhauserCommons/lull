@@ -81,16 +81,16 @@ test('closing the note keeps it away through reloads, until the hub changes agai
   await expect(note(page), 'a newer build is news again').toHaveCount(1);
 });
 
+// App.checkHealth resolves once the answer is read and the note offered or not, in that task (app.js loadHealth, and the
+// note's own listener on `pwa`): a count of 0 read after it is the page's answer, with nothing still to come
 test('an answer from the hub with no version offers nothing', async ({ page }) => {
   await opened(page, V1);
   await hubIs(page, null);
   await page.evaluate(() => App.checkHealth());
-  await page.waitForTimeout(300);
   await expect(note(page)).toHaveCount(0);
   expect(await page.evaluate(() => App.server.version), 'the version it knew is kept').toBe(V1);
   await hubIs(page, V1);
   await page.evaluate(() => App.checkHealth());
-  await page.waitForTimeout(300);
   await expect(note(page), 'and the same version again is no change').toHaveCount(0);
 });
 
@@ -108,12 +108,21 @@ test('a page started on a newer hub than its worker takes the worker over withou
 // switches it.
 test('a page started without its hub is offered the newer hub when it answers, and one Reload switches it', async ({ page }) => {
   await opened(page, V1);
-  // the page starts while the hub can't be reached (its /health fails), so it runs what the V1 worker kept
+  // the page starts while the hub can't be reached (its /health fails), so it runs what the V1 worker kept: once the
+  // start's own /health has failed and been handled, a later answer is compared with that (a check first would be the start's)
+  await page.addInitScript(() => {
+    const f = window.fetch;
+    window.__healthFailed = 0;
+    window.fetch = function (...args) {
+      const p = f.apply(this, args);
+      if (/(^|\/)health$/.test(String(args[0]))) p.then(null, () => { window.__healthFailed++; });
+      return p;
+    };
+  });
   await page.unroute('**/health');
   await page.route('**/health', (route) => route.abort('internetdisconnected'));
   await page.reload();
-  await page.waitForFunction(() => window.App && App.server && App.server.checked);
-  await page.waitForTimeout(500);
+  await page.waitForFunction(() => window.App && App.server && App.server.checked && window.__healthFailed > 0);
   await hubIs(page, V2);
   await page.evaluate(() => App.checkHealth());
   await expect(note(page), 'still running the kept old version: the newer hub is news').toHaveCount(1);
@@ -126,6 +135,5 @@ test('a page started without its hub is offered the newer hub when it answers, a
   await expect(note(page)).toHaveCount(0);
   await expect.poll(() => running(page)).toBe(V2);
   await page.evaluate(() => App.checkHealth());
-  await page.waitForTimeout(300);
   await expect(note(page)).toHaveCount(0);
 });
