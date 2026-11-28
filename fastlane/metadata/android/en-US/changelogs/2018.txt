@@ -1,0 +1,2 @@
+* A design's Now Playing hero follows the player, so its facts and failure line are the song's own
+* Home's lead follows the player, so a song started on Home shows in it at once
