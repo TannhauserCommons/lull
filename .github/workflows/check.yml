@@ -133,8 +133,8 @@ jobs:
   # Playwright configs); one that passes on it is written to `flakes/` and uploaded as a `flakes-*` artifact, which
   # `after` files an issue from. These jobs file no issue themselves and have no token to. Lighthouse runs in
   # nightly.yml, the app's graphics after the merge (main.yml).
-  # The browsers' install is a task; what it downloads comes from the cache (the `ui-browsers-...` keys, the ones
-  # .github/actions/ui-browsers saves), which a run on main saves after the install and any other run only reads.
+  # The browsers' install is a task; what it downloads comes from the cache (the `ui-browsers-...` keys), which a run
+  # on main saves after the install and any other run only reads.
 
   # Main.yml passes Last.fm's app key and secret, so the image main tests, and then publishes, has them built in. A
   # pull request's check has none: its image has no built-in key (the Dockerfile builds without; a listener then brings

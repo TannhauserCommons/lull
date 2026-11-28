@@ -5,7 +5,7 @@
 // (Slskd::server_answers, crates/soulseek/src/recover.rs), so a stub that didn't answer it would put
 // a "couldn't ask slskd" banner over every page and shift the content under it. The routes the hub
 // calls in these tests are answered; anything else is a loud 404, logged as "unhandled", which fails
-// the ui job (.github/workflows/ui.yml), so a new call to slskd can't go unanswered unseen.
+// check.yml's ui job, so a new call to slskd can't go unanswered unseen.
 
 import { createServer } from 'node:http';
 
