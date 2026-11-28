@@ -26,7 +26,7 @@ Each area has one owner at a time. Edit only what your brief says you own.
 | `app/src/desktop/`, the desktop entries of `app/` config, desktop jobs in `.github/workflows/app.yml` | Windows and Linux app: hub in-process, bundled slskd, tray, mini player, updater, Tailscale serve | Desktop session |
 | `app/src/mobile/`, `app/plugins/player/`, `app/gen/android/`, `app/tauri.android.conf.json`, Android jobs in `app.yml` | Android app: native player plugin, downloads, pairing | Mobile session |
 | `app/src/` shared files (`lib.rs`, `main.rs`, pairing, discovery), `app/Cargo.toml`, `app/tauri.conf.json` | Shared app code and manifests | Desktop session; Mobile adds only under `[target.'cfg(target_os = "android")'.dependencies]` and its own modules' `mod` lines |
-| `tests/ui/`, `.github/workflows/ui.yml`, the Dockerfile web stage | Minify + compression, fixture library, visual matrix, Lighthouse budgets | Quality session |
+| `tests/ui/`, the Dockerfile web stage | Minify + compression, fixture library, visual matrix, Lighthouse budgets | Quality session |
 | `deploy/` | Compose kit (plain, VPN, existing slskd). `deploy/.env.example` keys mirror `core::config` | Soulseek session (env keys: whoever adds the key in core) |
 | `Cargo.toml` (root), `Dockerfile` (except its web stage), `.github/workflows/check.yml`, `mise.toml`, `AGENTS.md`, `PROJECT.md`, `README.md`, `docs/context/{INDEX,workspace,api}.md` (except your own api.md section) | Shared files | integrator |
 | `design/` | Frozen design reference | nobody (read only) |
