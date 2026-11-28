@@ -7,8 +7,8 @@
 import { readFileSync } from 'node:fs';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { designs, ids } from './lib.mjs';
-import { go, isWebkit, open, withSong } from './mobile.mjs';
+import { designs, ids, pageTimers } from './lib.mjs';
+import { arrived, go, isWebkit, open, withSong } from './mobile.mjs';
 
 /* the controls a thumb reaches for: the header's, the tab bar's, Now Playing's transport and close (the mini player's
    are below) */
@@ -103,7 +103,10 @@ for (const design of designs) {
     await open(page, `/playlist/${ids.playlist}`, { design });
     const more = page.locator('#view .trow[data-track-id] [aria-haspopup="menu"]').first();
     await expect(more).toBeVisible();
-    expect(await more.evaluate((el) => { let o = 1; for (let e = el; e; e = e.parentElement) o *= +getComputedStyle(e).opacity; return o; }), 'drawn, not waiting for a hover').toBeGreaterThan(0.5);
+    // drawn with no hover, once the screen has faded in (its rows can still be at opacity 0 when they are first visible:
+    // #91, glasshouse in WebKit); a "…" that waits for a hover never gets there
+    await expect.poll(() => more.evaluate((el) => { let o = 1; for (let e = el; e; e = e.parentElement) o *= +getComputedStyle(e).opacity; return o; }),
+      { message: 'drawn, not waiting for a hover' }).toBeGreaterThan(0.5);
     await more.tap();
     await expect(page.locator('.menu, [role="menu"]').first()).toBeVisible();
   });
@@ -141,8 +144,8 @@ test('a touch held on a song opens its menu', async ({ page }) => {
     t.dispatchEvent(new PointerEvent('pointerdown', o));
     window.__lift = () => t.dispatchEvent(new PointerEvent('pointerup', o));
   }, at);
-  await page.waitForTimeout(700);
-  const shown = await page.locator('.menu, [role="menu"]').first().isVisible().catch(() => false);
+  await pageTimers(page, 700);   // the finger held 700 ms by the page's own clock
+  const shown = await page.locator('.menu, [role="menu"]').first().isVisible();
   await page.evaluate(() => window.__lift());
   expect(shown, 'the row\'s menu, open while the finger is still down').toBe(true);
 });
@@ -162,7 +165,7 @@ for (const how of ['moves', 'lifts early']) {
       if (how === 'moves') setTimeout(() => t.dispatchEvent(new PointerEvent('pointermove', o(0, 24))), 150);
       else setTimeout(() => t.dispatchEvent(new PointerEvent('pointerup', o(0, 0))), 150);
     }, { x: b.x + b.width * 0.45, y: b.y + b.height / 2, how });
-    await page.waitForTimeout(800);
+    await pageTimers(page, 800);   // what is checked is that nothing opens: the page's hold timer, had it stayed armed, has run
     await expect(page.locator('.menu, [role="menu"]')).toHaveCount(0);
   });
 }
@@ -238,7 +241,7 @@ test('with reduced motion asked, nothing on Now Playing loops', async ({ page })
   for (const design of designs) {
     await withSong(page, design, '/now?tab=art');
     await page.evaluate(() => App.player.play());
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(800);   // what is checked is that no loop runs: a while for one to start
     const loops = await page.evaluate(() => document.getAnimations()
       .filter((a) => a.playState === 'running' && a.effect && a.effect.getTiming().iterations === Infinity)
       .map((a) => `${a.animationName || 'animation'} on ${a.effect.target && a.effect.target.className}`)
@@ -270,7 +273,8 @@ for (const design of designs) {
   test(`a note leaves Now Playing's controls free / ${design}`, async ({ page }) => {
     await withSong(page, design, '/now?tab=art');
     await page.evaluate(() => { App.toast('Install lull for a full-screen player with lock-screen controls'); App.toast('Added 12 songs to the queue'); });
-    await page.waitForTimeout(600);
+    await expect(page.locator('#toasts .toast').first()).toBeVisible();
+    await arrived(page);   // the notes done moving in
     const covered = await page.evaluate(() => [...document.querySelectorAll('#view [data-act="prev"], #view [data-act="play"], #view [data-act="next"], #view [data-seek="player"]')]
       .filter((b) => b.getClientRects().length).filter((b) => {
         const r = b.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
@@ -295,8 +299,8 @@ test('a touch held on a heart opens the playlist picker and likes nothing', asyn
     t.dispatchEvent(new PointerEvent('pointerdown', o));
     window.__lift = () => { t.dispatchEvent(new PointerEvent('pointerup', o)); t.dispatchEvent(new MouseEvent('click', o)); };
   }, { x: b.x + b.width / 2, y: b.y + b.height / 2 });
-  await page.waitForTimeout(700);
-  const shown = await page.locator('.lib-picker').isVisible().catch(() => false);
+  await pageTimers(page, 700);   // the finger held 700 ms by the page's own clock
+  const shown = await page.locator('.lib-picker').isVisible();
   await page.evaluate(() => window.__lift());
   expect(shown, 'the picker, open while the finger is still down').toBe(true);
   await expect(page.locator('.lib-picker.is-open')).toBeVisible();
