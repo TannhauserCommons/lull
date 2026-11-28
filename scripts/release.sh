@@ -75,15 +75,11 @@ git worktree add -q --detach "$work" "$base"
   old_code=$(sed -n 's/.*"versionCode": \([0-9]*\).*/\1/p' app/tauri.android.conf.json)
   [ "$code" -gt "$old_code" ] || die "versionCode $code isn't above $old_code"
 
-  # The first `version = ` line of each manifest is the package's own ([workspace.package] at the root).
-  for manifest in Cargo.toml app/Cargo.toml; do
-    sed -i "0,/^version = \".*\"$/s//version = \"$version\"/" "$manifest"
-  done
-  sed -i "s/\"versionCode\": [0-9]*/\"versionCode\": $code/" app/tauri.android.conf.json
-  cargo update --workspace --offline --quiet
-  cargo update --workspace --offline --quiet --manifest-path app/Cargo.toml
+  # Every file that holds the version, as `mise run bump` writes it (scripts/ci/version.mjs: no cargo, no network).
+  node scripts/ci/version.mjs bump "$version" >/dev/null
 
-  git add Cargo.toml Cargo.lock app/Cargo.toml app/Cargo.lock app/tauri.android.conf.json "$changelog"
+  git add -u
+  git add "$changelog"
   git commit -q -m "build(release): lull $version" -m "Sets the hub's and the app's version for the v$version release, on $(git rev-parse --short "$base"), main's newest green commit (scripts/release.sh)."
   git tag -a "v$version" -m "lull $version"
 )

@@ -99,7 +99,7 @@ One version, held by these files (`scripts/ci/version.mjs`, tested by `tests/web
 - **`mise run bump X.Y.Z`** writes it into every holder, with no cargo and no network, and adds `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` (the stub `scripts/release.sh` falls back to) when there is none, staged with `git add` so that `git commit -am` carries it (in whatever git work tree lull's folder sits in, an enclosing repository included, since that is where a `git commit -am` from there commits; nothing is staged outside one). It refuses a version that is not `X.Y.Z`, one older than the current, a minor or patch of 1000 or more, a versionCode below the file's, a `Cargo.toml` version that is not `X.Y.Z`, and a read-only holder. Everything that can fail runs before a holder changes (temp files, the stub, the staging); the holders are then renamed into place and put back if one cannot be. A refusal or a failure writes nothing. Bumping to the version the tree already carries completes whatever an earlier run left undone, and does nothing on a finished tree.
 - **`mise run check`** runs `node scripts/ci/version.mjs check`: it fails, naming the file, when a holder disagrees with `Cargo.toml` or a lock lacks a package it must have. `cargo ... --locked` stays the judge of the locks' structure.
 
-`scripts/release.sh` and `release.yml` still cut releases and read the same files; they don't use these tasks yet.
+`scripts/release.sh` (which `release.yml` runs) writes the release's version with the same `bump` (`node scripts/ci/version.mjs bump`, so neither needs cargo or the registry).
 
 ## Checks on a branch
 
