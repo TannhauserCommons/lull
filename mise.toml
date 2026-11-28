@@ -78,8 +78,16 @@ description = "A quick look at screens (or `mini`, the desktop mini player) in e
 run = "node tests/ui/themes-check.mjs"
 
 [tasks."ui:approve"]
-description = "Approve how the key screens look now: capture the UI gates' goldens on CI into tests/ui/gates/goldens/linux"
+description = "Approve how the key screens look now: capture the UI gates' goldens on CI (check.yml with capture) into tests/ui/gates/goldens/linux"
 run = "sh tests/ui/gates/approve.sh"
+
+# What check.yml's gates run by hand with `capture` (ui:approve): check:ui writing the key screens' pictures instead of
+# comparing. The committed ones go first, so each machine's upload holds only the pictures it took. CI's Linux only:
+# pictures from another system differ by fonts and anti-aliasing.
+[tasks."ui:capture"]
+description = "The UI gates taking the key screens' goldens instead of comparing (CI, by ui:approve; GATES and SHARD as check:ui)"
+env = { UI_CAPTURE = "1" }
+run = ["rm -rf tests/ui/gates/goldens/linux", "sh tests/ui/gates/run.sh"]
 
 # The web UI checks the `check` workflow runs (docs/context/quality.md, The check). Each is a script a person can
 # run too; the image and the hub need Linux and Docker. `check:ui` above takes GATES=perf|fit|mobile|rest and SHARD=2/3.

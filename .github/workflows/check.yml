@@ -3,9 +3,17 @@ name: check
 # The one gate (docs/context/quality.md, The check): every pull request, and
 # main.yml on every push to main, with `base` (the paths changed since main's
 # newest green run) or, when it has none, `all: true`. The one required status of
-# this workflow is `gate` ("check / gate").
+# this workflow is `gate` ("check / gate"). By hand with `capture` (`mise run
+# ui:approve`), it runs only the UI gates, taking the key screens' goldens on the
+# machines that compare them.
 on:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      capture:
+        description: Take the key screens' goldens (the gates job alone, writing its pictures instead of comparing)
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       all:
@@ -58,8 +66,9 @@ jobs:
         with:
           version: 2026.10.23
           cache_save: ${{ github.ref == 'refs/heads/main' }}
+      # A capture run selects nothing: only `gates` runs, by its own `if:`.
       - id: filter
-        if: ${{ !inputs.all }}
+        if: ${{ !inputs.all && !inputs.capture }}
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: .github/ci/paths.yml
@@ -78,6 +87,7 @@ jobs:
   # this workflow: the same list as `mise run check`. rust-cache keys on the job
   # id, the OS and the installed toolchains.
   check:
+    if: ${{ !inputs.capture }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -102,6 +112,7 @@ jobs:
 
   # Every commit in UTC, and nothing private in the files or the history.
   privacy:
+    if: ${{ !inputs.capture }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -249,12 +260,14 @@ jobs:
   # how many tests: performance on one, running one test at a time (its task lengths must not share the CPU); `fit` on
   # one; `mobile` two ways (as Android, then as an iPhone); and every other gate three ways, by Playwright's --shard,
   # which cuts by count. `mise run check:ui` takes the group and the shard from GATES and SHARD, so a person runs
-  # one machine's share the same way. The key screens compare with their goldens; taking new ones stays with
-  # ui-gates.yml (`mise run ui:approve`). `browsers` is the cache key's: it must name what run.sh installs for the group.
+  # one machine's share the same way. The key screens compare with their goldens; a run by hand with
+  # `capture` (`mise run ui:approve`) takes new ones on these same machines: `mise run ui:capture` is check:ui writing
+  # the pictures, and each machine uploads the ones it took. `browsers` is the cache key's: it must name what run.sh
+  # installs for the group.
   gates:
     name: gates (${{ matrix.part }})
     needs: changes
-    if: ${{ contains(fromJSON(needs.changes.outputs.run), 'gates') }}
+    if: ${{ inputs.capture || contains(fromJSON(needs.changes.outputs.run), 'gates') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -283,7 +296,14 @@ jobs:
           key: ui-browsers-${{ runner.os }}-${{ runner.arch }}-${{ matrix.browsers }}--${{ hashFiles('tests/ui/package-lock.json') }}
           restore-keys: ui-browsers-${{ runner.os }}-${{ runner.arch }}-${{ matrix.browsers }}--
       - name: mise run check:ui
+        if: ${{ !inputs.capture }}
         run: mise run check:ui
+        env:
+          GATES: ${{ matrix.gates }}
+          SHARD: ${{ matrix.shard }}
+      - name: mise run ui:capture
+        if: ${{ inputs.capture }}
+        run: mise run ui:capture
         env:
           GATES: ${{ matrix.gates }}
           SHARD: ${{ matrix.shard }}
@@ -304,6 +324,14 @@ jobs:
           path: flakes/
           if-no-files-found: ignore
           retention-days: 3
+      # The pictures this machine took (`perf` takes none); ui:approve merges every machine's.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() && inputs.capture && matrix.gates != 'perf' }}
+        with:
+          name: gates-goldens-${{ matrix.slot }}
+          path: tests/ui/gates/goldens/linux
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ failure() }}
         with:
@@ -837,9 +865,12 @@ jobs:
   # The one status. `!cancelled()` makes it run when a job it needs failed (a
   # plain `needs:` job would be skipped, and skipped counts as passing). It
   # fails on any failed or cancelled job, and lets a job be skipped only when
-  # the path map left it out.
+  # the path map left it out. A capture run is no check of the commit: its gate
+  # is skipped, under another name, since a skipped job named `gate` would count
+  # as the required status passing on that commit.
   gate:
-    if: ${{ !cancelled() }}
+    name: ${{ inputs.capture && 'capture' || 'gate' }}
+    if: ${{ !cancelled() && !inputs.capture }}
     needs:
       [
         changes, check, privacy,
