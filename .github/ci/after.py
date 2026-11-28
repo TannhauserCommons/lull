@@ -2,10 +2,12 @@
 
 Run as `python .github/ci/after.py <run_id>`. The order is fixed by the contract
 (docs/context/contract.md, section `after.py`): cancelled runs are ignored, an
-infra-only failure is rerun once, flakes are filed for any other run, and a push
-to `main` opens or updates one `main-red` issue per failed check and closes each
-when that check is next green. A run whose code
-came from another repository (a fork's pull request) files no flake issues.
+infra-only failure is rerun once, flakes of the run's current attempt are filed
+for any other run, and a push to `main` opens or updates one `main-red` issue
+per failed check and closes each when that check is next green; a green `main`
+also closes the issue of a test that has not flaked in 30 green runs. A run
+whose code came from another repository (a fork's pull request) files no flake
+issues.
 """
 
 import argparse
@@ -14,10 +16,17 @@ import sys
 import tempfile
 import unicodedata
 import xml.etree.ElementTree as ET
+import zipfile
 
 import ghapi
 
 FLAKE_LABEL = "flaky"
+FLAKE_TITLE = "flaky: "
+FLAKED_AGAIN = "Flaked again: "
+# Green main runs with no flake of a test before its issue closes. 30 clean
+# runs put its flake rate under 10% (rule of three, 95% confidence); at a few
+# green pushes a day that is about a week and a half.
+STEADY_RUNS = 30
 RED_LABEL = "main-red"
 RED_TITLE = "main is red"
 NEW_ISSUE_CAP = 10
@@ -227,21 +236,30 @@ def read_flake_dir(folder):
     return list(found)
 
 
-def collect_flakes(run_id):
-    """Flaky test ids from the run's `flakes-*` artifacts.
+def collect_flakes(run):
+    """Flaky test ids from the `flakes-*` artifacts this attempt of the run uploaded.
 
-    Lists the artifacts first: `gh run download` fails when none match, and that
-    failure must not be confused with a real download error.
+    A rerun keeps the jobs that passed before and lists their artifacts again,
+    so only artifacts made since this attempt started are read: an earlier
+    attempt's flakes were filed when that attempt finished. Each is downloaded
+    by id, because two attempts can upload artifacts of the same name.
     """
-    listing = ghapi.api(f"actions/runs/{run_id}/artifacts?per_page=100") or {}
+    pages = ghapi.api(f"actions/runs/{run['id']}/artifacts?per_page=100", paginate=True) or []
+    started = run.get("run_started_at") or ""
     wanted = [
-        a for a in listing.get("artifacts", [])
-        if a["name"].startswith("flakes-") and not a.get("expired")
+        a for page in pages for a in page.get("artifacts", [])
+        if a["name"].startswith("flakes-") and not a.get("expired") and a["created_at"] >= started
     ]
     if not wanted:
         return []
     with tempfile.TemporaryDirectory() as tmp:
-        ghapi.gh("run", "download", str(run_id), "--pattern", "flakes-*", "--dir", tmp)
+        for artifact in wanted:
+            archive = os.path.join(tmp, f"{artifact['id']}.zip")
+            with open(archive, "wb") as handle:
+                ghapi.gh("api", f"repos/{ghapi.repo()}/actions/artifacts/{artifact['id']}/zip",
+                         out=handle)
+            with zipfile.ZipFile(archive) as files:
+                files.extractall(os.path.join(tmp, str(artifact["id"])))
         return read_flake_dir(tmp)
 
 
@@ -252,13 +270,13 @@ def report_flakes(run, test_ids):
     workflow = f"{run.get('name') or workflow_file(run)} ({run.get('path') or '?'})"
     opened = commented = skipped = 0
     for test_id in test_ids:
-        title = f"flaky: {test_id}"
+        title = FLAKE_TITLE + test_id
         body = (
             f"Passed only on retry.\n\n"
             f"- Test: {md_code(test_id)}\n- Run: {url}\n"
             f"- Workflow: {workflow}\n- Commit: {sha}\n"
         )
-        comment = f"Flaked again: {url} at {sha[:7]}"
+        comment = f"{FLAKED_AGAIN}{url} at {sha[:7]}"
         # Look before creating so the cap only counts issues that would be new.
         if not ghapi.find_issue(FLAKE_LABEL, title) and opened >= NEW_ISSUE_CAP:
             skipped += 1
@@ -272,6 +290,52 @@ def report_flakes(run, test_ids):
     if skipped:
         print(f"flaky: skipped {skipped} new issues (cap {NEW_ISSUE_CAP} per run)")
     return opened, commented, skipped
+
+
+def last_flaked(issue):
+    """When the issue's test last flaked: its newest `Flaked again` comment, else its opening."""
+    comments = ghapi.api(f"issues/{issue['number']}/comments?per_page=100", paginate=True) or []
+    return max([issue["created_at"]] + [
+        c["created_at"] for c in comments if (c.get("body") or "").startswith(FLAKED_AGAIN)
+    ])
+
+
+def close_steady_flakes(run, flaked_now):
+    """Close each `flaky:` issue whose test has not flaked in STEADY_RUNS green main runs.
+
+    Called on a green run that is main's newest. Counts main's green push runs
+    made after the test last flaked, on main or in a pull request; a red run
+    neither counts nor resets. Why: nothing else ever closes these issues, and
+    a test that was fixed should stop showing as flaky. A `flaky`-labelled issue
+    with another title is someone's own and is left alone.
+    """
+    issues = [
+        issue for issue in ghapi.find_issues(FLAKE_LABEL)
+        if issue["title"].startswith(FLAKE_TITLE)
+        and issue["title"].removeprefix(FLAKE_TITLE) not in flaked_now
+    ]
+    if not issues:
+        return
+    data = ghapi.api(
+        f"actions/workflows/{workflow_file(run)}/runs?branch={branch()}&event=push"
+        f"&status=success&per_page=100"
+    )
+    green = (data or {}).get("workflow_runs", [])
+    for issue in issues:
+        # The issue's opening bounds its last flake, so a young issue needs no comment lookup.
+        if sum(other["created_at"] > issue["created_at"] for other in green) < STEADY_RUNS:
+            continue
+        since = last_flaked(issue)
+        clean = [other for other in green if other["created_at"] > since]
+        if len(clean) < STEADY_RUNS:
+            continue
+        ghapi.close_issue(issue["number"], (
+            f"No flake in {len(clean)} green {branch()} runs since it last flaked ({since}), "
+            f"from {clean[-1]['html_url']} to {clean[0]['html_url']}. An issue closes after "
+            f"{STEADY_RUNS} in a row, which puts the flake rate under 10%. "
+            f"If it flakes again, a new issue opens."
+        ))
+        print(f"flaky: closed #{issue['number']} after {len(clean)} green runs")
 
 
 # --- red and green main ------------------------------------------------------
@@ -452,11 +516,12 @@ def handle(run_id):
         if rerun_if_infra(run, failed):
             return 0
 
+    flakes = []
     if is_foreign(run):
         print(f"flakes: run {run_id} is from {clean(head_repo(run)) or 'an unknown repository'}, "
               f"not {ghapi.repo()}; its artifacts are not read")
     else:
-        flakes = collect_flakes(run_id)
+        flakes = collect_flakes(run)
         if flakes:
             report_flakes(run, flakes)
 
@@ -465,6 +530,7 @@ def handle(run_id):
             report_red(run, failed, jobs)
         elif conclusion == "success":
             report_green(run)
+            close_steady_flakes(run, set(flakes))
     return 0
 
 
