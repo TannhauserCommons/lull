@@ -40,16 +40,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # check.yml's `aur` job: the same tasks (scripts/ci/aur-release.sh, scripts/ci/aur.sh) on the same image. Arch's own
+  # image, dated, which has no git: checkout then downloads the tree, and the script's pacman brings the system current.
   package:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    # Arch's own image, dated; pacman -Syu brings it current, as an Arch install is.
     container: archlinux:base-devel-20261018.0.612668
     steps:
-      - run: pacman -Syu --noconfirm --needed git nodejs minisign namcap xorg-server-xvfb xorg-xauth imagemagick dbus procps-ng
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache: false
+          cache_save: false
+      # The release asked for, else the newest one (looked up as check.yml does).
       - name: The release
         id: release
         env:
@@ -57,61 +63,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=${VERSION#v}
-          if [ -z "$VERSION" ]; then
-            VERSION=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest" \
-              | node -e "let s=''; process.stdin.on('data', d => s += d).on('end', () => console.log(JSON.parse(s).tag_name.replace(/^v/, '')))")
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-      # The release's files, kept by its tag between runs: the newest release is still looked up each run (it is what
-      # this tests), but a tag already seen is not downloaded again. Only main saves.
+          if [ -n "$VERSION" ]; then echo "version=$VERSION" >> "$GITHUB_OUTPUT"; else mise run aur:release; fi
+      # The release's files, kept by its tag between runs: a tag already seen is not downloaded again. Only main saves.
       - id: bundles
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: bundles
           key: aur-bundles-${{ steps.release.outputs.version }}
-      - name: Its files
+      - name: mise run aur:package
+        run: mise run aur:package
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          mkdir -p bundles
-          for f in "lull_${VERSION}_amd64.deb" "lull_${VERSION}_amd64.deb.sig" "lull_${VERSION}_arm64.deb" "lull_${VERSION}_arm64.deb.sig"; do
-            [ -f "bundles/$f" ] || curl -fsSL -o "bundles/$f" "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/$f"
-          done
       - if: steps.bundles.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: bundles
           key: ${{ steps.bundles.outputs.cache-primary-key }}
-      - run: sh scripts/aur-pkgbuild.sh "${{ steps.release.outputs.version }}" bundles aur
-      # makepkg won't run as root, and its user can't install what the package needs: root does, from .SRCINFO.
-      - name: makepkg
-        run: |
-          useradd -m builder
-          chown -R builder aur
-          cd aur
-          su builder -c 'makepkg --printsrcinfo > .SRCINFO'
-          pacman -S --noconfirm --needed $(sed -n 's/^\t\(make\)\?depends = //p' .SRCINFO)
-          su builder -c 'makepkg -f --noconfirm'
-          # aarch64: its sources downloaded and checked (checksums, then prepare's minisign check), on this x86_64 machine
-          sed 's/^CARCH=.*/CARCH="aarch64"/' /etc/makepkg.conf > /tmp/aarch64.conf
-          su builder -c 'makepkg -f --nobuild --nodeps --config /tmp/aarch64.conf'
-      - name: namcap
-        run: |
-          cd aur
-          namcap PKGBUILD
-          namcap -i lull-bin-*.pkg.tar.zst | tee namcap.txt
-          # The depends are exactly what the binaries link: one missing, or one not needed, fails it. AppIndicator is
-          # loaded at run time (the tray), which namcap can't see.
-          ! grep -E ' E: | W: .*(Referenced library|detected and not included|implicitly satisfied|may not be needed)' namcap.txt \
-            | grep -v "may not be needed ('libayatana-appindicator')"
-      - run: pacman -U --noconfirm aur/lull-bin-*.pkg.tar.zst
-      - name: lull starts, draws, and runs its own hub and slskd, on Arch
-        run: |
-          test "$(readlink -f /usr/bin/lull)" = /usr/lib/lull/lull
-          for tool in slskd yt-dlp deno; do test -x /usr/lib/lull/$tool; done
-          useradd -m listener
-          su listener -c 'xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- sh packaging/aur/check-installed.sh'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: aur-lull-bin
           # .SRCINFO is a hidden file, which the upload leaves out unless asked: the AUR refuses a push without it.
