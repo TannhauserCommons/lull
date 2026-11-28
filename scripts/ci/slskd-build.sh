@@ -1,7 +1,8 @@
 #!/bin/sh
 # lull's slskd for Windows (ADR-0062): app/slskd/build.sh, run twice in different folders, must give the same bytes,
 # and the bytes app/build.rs pins once it pins this build. Builds from upstream's pinned release (network; needs git,
-# curl and python3, on Linux). The `slskd-build` job of .github/workflows/check.yml runs it.
+# curl and python3, on Linux). The `slskd-build` job of .github/workflows/check.yml runs it, and slskd-windows.yml before
+# a publish: with $SLSKD_OUT set, the first build's zips are kept there.
 set -eu
 cd "$(dirname "$0")/../.."
 root=$PWD
@@ -30,3 +31,7 @@ for zip in "$@"; do
     echo "$zip: $a, as pinned"
   fi
 done
+if [ -n "${SLSKD_OUT:-}" ]; then
+  mkdir -p "$SLSKD_OUT"
+  cp "$@" "$SLSKD_OUT/"
+fi
