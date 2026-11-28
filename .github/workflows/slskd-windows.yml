@@ -27,50 +27,41 @@ jobs:
     outputs:
       build: ${{ steps.same.outputs.build }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.23
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
       # No setup-dotnet: build.sh fetches the exact SDK and builds on it alone (setup-dotnet also adds the newest
       # LTS runtime, which the SDK then runs on).
-      # The pinned .NET SDK, kept by hash between runs (the second build below reads what the first kept): a warm run
+      # The pinned .NET SDK, kept by hash between runs (the second build reads what the first kept): a warm run
       # downloads nothing. Only main saves.
       - id: sdk
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/pinned-downloads
           key: slskd-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/slskd/build.sh', 'app/slskd/global.json') }}
-      - run: sh app/slskd/build.sh "$RUNNER_TEMP/first"
+      # check.yml's `slskd-build`: two builds, the same bytes twice and the ones app/build.rs pins. The first build's
+      # zips are kept for the publish.
+      - name: mise run slskd:build
+        run: mise run slskd:build
         env:
           DOWNLOADS_CACHE: ${{ runner.temp }}/pinned-downloads
-      - run: sh app/slskd/build.sh "$RUNNER_TEMP/second"
-        env:
-          DOWNLOADS_CACHE: ${{ runner.temp }}/pinned-downloads
+          SLSKD_OUT: ${{ runner.temp }}/slskd
       - if: steps.sdk.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/pinned-downloads
           key: ${{ steps.sdk.outputs.cache-primary-key }}
       - id: same
-        name: The same bytes twice, and the ones app/build.rs pins
+        name: The build's name
         run: |
-          cd "$RUNNER_TEMP/first"
-          for zip in slskd-*.zip; do
-            a=$(sha256sum "$zip" | cut -d' ' -f1)
-            b=$(sha256sum "../second/$zip" | cut -d' ' -f1)
-            [ "$a" = "$b" ] || { echo "::error::$zip differs between two builds ($a, $b): the recipe isn't reproducible"; exit 1; }
-            # A pin names its zip in the URL and its sha256 beside it (app/build.rs, SLSKD).
-            pinned=$(grep -A3 "$zip\"" "$GITHUB_WORKSPACE/app/build.rs" | grep -o '[0-9a-f]\{64\}' | head -n 1 || true)
-            if [ -z "$pinned" ]; then
-              echo "$zip: $a (not pinned in app/build.rs yet)"
-            elif [ "$pinned" != "$a" ]; then
-              echo "::error::$zip builds to $a, but app/build.rs pins $pinned"; exit 1
-            else
-              echo "$zip: $a, as pinned"
-            fi
-          done
+          cd "$RUNNER_TEMP/slskd"
           echo "build=$(ls slskd-*-win-x64.zip | sed -E 's/^slskd-(.*)-win-x64\.zip$/\1/')" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: slskd-windows
-          path: ${{ runner.temp }}/first/slskd-*.zip
+          path: ${{ runner.temp }}/slskd/slskd-*.zip
           retention-days: 7
