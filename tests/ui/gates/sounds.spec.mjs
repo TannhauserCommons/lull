@@ -4,7 +4,7 @@
 // source started or stopped), named by the page's `sound` event.
 import { expect, test as base } from '@playwright/test';
 import * as L from '../fixture-hub/library.mjs';
-import { openScreen, ownHub } from './lib.mjs';
+import { emitted, hearServerEvents, openScreen, ownHub, pageTimers } from './lib.mjs';
 
 // a fixture hub of its own: a slow transfer is per song on a hub, and another gate's (fit.spec) must not reset this one's
 const test = base.extend({
@@ -13,6 +13,7 @@ const test = base.extend({
 });
 
 async function listen(page, { standalone = false } = {}) {
+  await page.addInitScript(hearServerEvents);
   await page.addInitScript((standalone) => {
     window.__sounds = []; window.__stops = []; window.__heard = [];
     const start = AudioBufferSourceNode.prototype.start, stop = AudioScheduledSourceNode.prototype.stop;
@@ -48,7 +49,7 @@ test('a browser tab nobody has tapped fetches none of the sounds, and its first 
   });
   await listen(page);
   await openScreen(page, '/home', { clock: false });
-  await page.waitForTimeout(4000);              // longer than the packs wait for the first screen to settle (1.5 s, then idle)
+  await pageTimers(page, 4000);                 // what is checked is that nothing comes: longer than the packs wait for the first screen to settle (1.5 s, then idle)
   expect(asked, 'fetched before a tap').toEqual([]);
   expect(await page.evaluate(() => !!window.App.sounds)).toBe(false);
   await page.mouse.click(5, 5);
@@ -62,9 +63,15 @@ test('a browser tab nobody has tapped fetches none of the sounds, and its first 
 // design, and this gate then checks that the page said so truthfully.
 const decisions = (page) => page.evaluate(() => window.__boots.slice());
 const decided = (page) => page.waitForFunction(() => window.__boots.length > 0);
-// A start that decided to play but whose sound never came (the one red so far, run 45312501574, waited out the whole
-// test timeout with nothing to read): what the page's rules for a sound look at, when it gives up
-const bootSounded = (page) => page.waitForFunction(() => window.__named.includes('boot'), null, { timeout: 15000 }).catch(async (err) => {
+// The start-up sound is `boot`, or an egg the packs have take its place (lull's and the default pack's `rare-boot`, one
+// start in 40 by Math.random: egg-rules.js `chance`), named for the egg. Waiting for `boot` alone failed that one start in
+// 40 (#83: run 45312501574 decided `play` and waited out the test for a `boot` that a `rare-boot` had replaced).
+const bootNames = (page) => page.evaluate(() => {
+  const eggs = App.sounds.eggs();
+  return ['boot', ...Object.keys(eggs).filter((n) => eggs[n].instead && eggs[n].when.some((w) => w.event && w.event.on === 'boot'))];
+});
+// A start that decided to play but whose sound never came: what the page's rules for a sound look at, when it gives up
+const bootSounded = (page, names) => page.waitForFunction((names) => window.__named.some((n) => names.includes(n)), names, { timeout: 15000 }).catch(async (err) => {
   const seen = await page.evaluate(() => ({
     decision: window.__boots[0], context: window.__ctx?.state ?? 'none', started: window.__sounds.length, named: window.__named,
     visible: document.visibilityState, focused: document.hasFocus(), packLoaded: !!window.App.sounds?.vocab(),
@@ -77,14 +84,15 @@ test('the start-up sound plays once per app start, and a reload makes no sound',
   await openScreen(page, '/home', { clock: false });
   await decided(page);
   const [start] = await decisions(page);
+  const names = await bootNames(page);
   if (start.decision === 'play') {
-    await bootSounded(page);
+    await bootSounded(page, names);
   } else {
     expect(start.decision, 'the start-up sound is played or dropped as late').toBe('late');
     expect(start.after, 'dropped only when the start took longer than its window (ms)').toBeGreaterThan(4000);
   }
   expect(await decisions(page), 'one decision per app start').toHaveLength(1);
-  expect((await named(page)).filter((n) => n === 'boot').length, 'start-up sounds this start').toBe(start.decision === 'play' ? 1 : 0);
+  expect((await named(page)).filter((n) => names.includes(n)).length, `start-up sounds (${names.join(', ')}) this start`).toBe(start.decision === 'play' ? 1 : 0);
 
   await page.reload();
   await decided(page);
@@ -104,13 +112,13 @@ test('while music plays only play and pause sound; a like sounds once the music 
   await page.evaluate(() => { window.__named.length = 0; });
   const like = page.locator('#pbar [data-act="like"]').first();
   await like.click();
-  await page.waitForTimeout(600);
+  await expect(like).toHaveAttribute('aria-pressed', 'true');
+  await page.waitForTimeout(600);               // what is checked is that no sound comes: a while for one to come
   expect(await named(page), 'a like while the music plays').toEqual([]);
   await page.locator('#pbar [data-act="play"]').first().click();
   await page.waitForFunction(() => window.__named.includes('pause'));
-  await page.waitForTimeout(200);
   await like.click();                            // unliked: silent
-  await page.waitForTimeout(200);
+  await expect(like).toHaveAttribute('aria-pressed', 'false');
   await like.click();                            // liked again, in silence
   await page.waitForFunction(() => window.__named.includes('liked'));
 });
@@ -166,7 +174,7 @@ test('the buffering loop plays on while a found peer\'s first bytes are awaited 
   const n = await loopStops();
   await say(found, 'buffering', { peer: 'mira' });
   await page.waitForFunction(() => App.player.state.status === 'buffering' && App.player.state.peer && App.player.state.peer.name === 'mira', null, { timeout: 10000 });
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(1500);               // what is checked is that the loop plays on: a while for it to stop in
   expect.soft(await page.evaluate(() => App.player.heard()), 'a found peer\'s first bytes awaited: nothing sounds').toBe(false);
   expect.soft(await loopStops() - n, 'a found peer\'s first bytes awaited: times the loop was stopped').toBe(0);
   expect.soft(await looping(), 'a found peer\'s first bytes awaited: the loop plays').toBe(true);
@@ -177,7 +185,7 @@ test('the buffering loop plays on while a found peer\'s first bytes are awaited 
   await say(fell, 'fallback', { peer: 'nova', attempt: 1, failedPeers: ['mira'] });
   await page.waitForFunction(() => App.player.state.fallback && App.player.state.status === 'buffering', null, { timeout: 10000 });
   await expect.poll(looping, { message: 'the loop, through the fallback in silence', timeout: 5000 }).toBe(true);
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(1500);               // what is checked is that the loop plays on: a while for it to stop in
   expect.soft(await page.evaluate(() => App.player.heard()), 'the fallback: nothing sounds').toBe(false);
   expect.soft(await looping(), 'the fallback: the loop still plays').toBe(true);
 });
@@ -186,8 +194,11 @@ test('the buffering loop plays on while a found peer\'s first bytes are awaited 
 // (buffering) once its sound stops, however many of the output's `time` events came between the hub's words: the loop
 // comes in at once (the round-3 review's R1).
 const soundsAt = (page) => page.evaluate(() => ({ heard: window.__heard.length, sounds: window.__sounds.length }));
-const streamSays = (request, id, job) => (status, more = {}) => request.post('/__fixture/emit', { data: { topic: 'stream', data: {
-  trackId: id, jobId: job + '-' + id, attempt: 0, received: 0, size: 4000000, peersFound: 3, peer: 'mira', failedPeers: [], status, ...more } } });
+/* the hub's word on the song's stream, once the page has handled it */
+const streamSays = (page, request, id, job) => (status, more = {}) => emitted(page, request, 'stream', {
+  trackId: id, jobId: job + '-' + id, attempt: 0, received: 0, size: 4000000, peersFound: 3, peer: 'mira', failedPeers: [], status, ...more });
+/* the song has moved on half a second since now: the output's time events have come */
+const movedOn = async (page) => page.waitForFunction((p0) => App.player.state.pos >= p0 + 0.5, await page.evaluate(() => App.player.state.pos), { timeout: 10000 });
 /* a song's stream: it comes, and never again once `held` is set */
 async function holdable(page, id) {
   const s = { held: false };
@@ -207,22 +218,22 @@ test('the buffering loop comes in as a song that sounded falls silent on a fallb
   await listen(page);
   const stream = await holdable(page, song);
   await ready(page, `/album/${L.tracks[song].albumId}`);
-  const say = streamSays(request, song, 'fell');
+  const say = streamSays(page, request, song, 'fell');
   await page.evaluate((id) => App.player.playList([id], 0), song);
   await say('streaming', { attempt: 1, received: 400000 });
   await sounding(page, song);
   // the peer stalls and the hub falls back while what arrived still plays: the output's time events come between
   await say('stalled', { attempt: 1, received: 400000 });
-  await page.waitForTimeout(800);
+  await movedOn(page);
   await say('fallback', { attempt: 1, received: 400000, failedPeers: ['mira'] });
-  await page.waitForTimeout(800);
+  await movedOn(page);
   expect(await page.evaluate(() => App.player.heard()), 'the song still sounds through the fallback').toBe(true);
   // the new peer's attempt: the page reopens the song on it, and its bytes never come
   stream.held = true;
   const at = await soundsAt(page);
   await say('queued', { attempt: 2, peer: 'nova', failedPeers: ['mira'] });
   await page.waitForFunction((n) => window.__heard.slice(n).some((h) => !h.v), at.heard, { timeout: 10000 });
-  await page.waitForTimeout(2500);
+  await expect.poll(() => page.evaluate((n) => window.__sounds.slice(n).some((s) => s.loop), at.sounds), { message: 'the loop, once the song is silent', timeout: 10000 }).toBe(true);
   const r = await page.evaluate((at) => {
     const silent = window.__heard.slice(at.heard).find((h) => !h.v).at, loop = window.__sounds.slice(at.sounds).find((s) => s.loop);
     return { after: loop ? loop.at - silent : null, heard: App.player.heard(), status: App.player.state.status };
@@ -246,6 +257,6 @@ test('nothing sounds while the page is hidden', async ({ page }) => {
   const t = await page.evaluate(() => App.data.api('/api/feed').then((f) => f.newReleases[0]));
   await page.evaluate((id) => { location.hash = '#/album/' + id; }, t);
   await page.locator('#view .trow [data-act="like"]').first().click({ force: true });
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(600);               // what is checked is that no sound comes: a while for one to come
   expect(await named(page)).toEqual([]);
 });
